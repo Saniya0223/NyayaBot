@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DEMAND NOTICE FOR REFUND OF TENANCY SECURITY DEPOSIT</title>
+<style>
+  @page { size: a4; margin: 2cm; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #111; padding: 10px; }
+  .header-box { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 20px; }
+  .header-title { font-size: 14pt; font-weight: bold; text-transform: uppercase; }
+  .to-box { margin-bottom: 18px; }
+  .numbered-para { text-align: justify; margin-bottom: 12px; padding-left: 25px; text-indent: -25px; }
+  .demand-box { border: 1px solid #333; background-color: #f9f9f9; padding: 12px; margin: 18px 0; }
+</style>
+</head>
+<body>
+
+<div class="header-box">
+  <div class="header-title">FORMAL LEGAL NOTICE FOR REFUND OF SECURITY DEPOSIT</div>
+  <div style="font-size: 10pt; font-style: italic;">UNDER THE TENANCY AGREEMENT AND APPLICABLE STATE / CONTRACT LAW</div>
+</div>
+
+<div style="margin-bottom: 15px;"><strong>DATE:</strong> {{ date_today }}</div>
+
+<div class="to-box">
+  <strong>TO:</strong><br>
+  <strong>{{ opposite_party.name }} (Landlord / Property Owner)</strong><br>
+  {% if opposite_party.address %}{{ opposite_party.address }}<br>{% endif %}
+  {{ opposite_party.city }}, {{ opposite_party.state }}
+</div>
+
+<div class="to-box">
+  <strong>FROM:</strong><br>
+  <strong>{{ complainant.name }} (Former Tenant)</strong><br>
+  {{ complainant.city }}, {{ complainant.state }}<br>
+  Phone: {{ complainant.phone or 'N/A' }}
+</div>
+
+<div style="font-weight: bold; text-decoration: underline; margin: 15px 0;">
+  SUBJECT: FINAL DEMAND FOR IMMEDIATE REFUND OF UNLAWFULLY WITHHELD SECURITY DEPOSIT AMOUNTING TO ₹{{ "{:,.2f}".format(financials.amount_paid) }}
+</div>
+
+<p>Sir / Madam,</p>
+
+<div class="numbered-para">
+  1. That the undersigned was a tenant at the premises situated at <strong>{{ property_address or opposite_party.address or complainant.city }}</strong> and paid a security deposit of <strong>₹{{ "{:,.2f}".format(financials.amount_paid) }}</strong>.
+</div>
+
+<div class="numbered-para">
+  2. That the undersigned peacefully handed over vacant possession of the premises on or around <strong>{{ incident_date or 'the stated date' }}</strong> with all utilities and maintenance settled.
+</div>
+
+<div class="numbered-para">
+  3. <strong>UNLAWFUL RETENTION:</strong> {{ incident_narrative }}
+</div>
+
+<div class="demand-box">
+  <strong>MANDATORY DEMAND:</strong><br>
+  You are requested to refund the security deposit of <strong>₹{{ "{:,.2f}".format(financials.refund_claimed) }}</strong>, after providing an itemised explanation and supporting proof for any lawful deduction, within <strong>{{ response_period or 'fifteen (15) days' }}</strong> of receipt. If the matter remains unresolved, the undersigned reserves the right to approach the forum competent under the applicable state law and the tenancy agreement.
+</div>
+
+<div style="margin-top: 40px; text-align: right;">
+  Yours sincerely,<br><br>
+  _______________________<br>
+  <strong>{{ complainant.name }}</strong>
+</div>
+
+</body>
+</html>

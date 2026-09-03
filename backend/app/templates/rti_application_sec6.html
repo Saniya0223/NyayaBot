@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>APPLICATION UNDER SECTION 6(1) OF THE RTI ACT, 2005</title>
+<style>
+  @page { size: a4; margin: 2cm; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #111; padding: 10px; }
+  .header-box { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 20px; }
+  .header-title { font-size: 14pt; font-weight: bold; }
+  .to-box { margin-bottom: 18px; }
+  .info-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+  .info-table td, .info-table th { border: 1px solid #333; padding: 8px; vertical-align: top; }
+</style>
+</head>
+<body>
+
+<div class="header-box">
+  <div class="header-title">APPLICATION FOR OBTAINING INFORMATION UNDER SECTION 6(1)</div>
+  <div style="font-weight: bold;">RIGHT TO INFORMATION ACT, 2005</div>
+</div>
+
+<div style="margin-bottom: 15px;"><strong>DATE:</strong> {{ date_today }}</div>
+
+<div class="to-box">
+  <strong>TO:</strong><br>
+  <strong>The Central / State Public Information Officer (CPIO / SPIO)</strong><br>
+  <strong>{{ opposite_party.name }}</strong><br>
+  {{ opposite_party.city }}, {{ opposite_party.state }}
+</div>
+
+<table class="info-table">
+  <tr>
+    <td style="width: 30%; font-weight: bold;">1. Full Name of Applicant:</td>
+    <td>{{ complainant.name }}</td>
+  </tr>
+  <tr>
+    <td style="font-weight: bold;">2. Complete Postal Address:</td>
+    <td>{{ complainant.address or complainant.city }}, {{ complainant.state }}</td>
+  </tr>
+  <tr>
+    <td style="font-weight: bold;">3. Contact Details:</td>
+    <td>Phone: {{ complainant.phone or 'N/A' }} | Email: {{ complainant.email or 'N/A' }}</td>
+  </tr>
+  <tr>
+    <td style="font-weight: bold;">4. Citizenship Status:</td>
+    <td>Citizen of India (Eligible under Section 3 of RTI Act, 2005)</td>
+  </tr>
+  <tr>
+    <td style="font-weight: bold;">5. Subject Matter / Particulars of Information Sought:</td>
+    <td>
+      <strong>Context:</strong> {{ incident_narrative }}<br><br>
+      <strong>Specific Queries Requested:</strong>
+      <ol style="margin: 5px 0 0 15px; padding: 0;">
+        <li>Please provide certified copies of all file notings, orders, and action-taken reports regarding the aforesaid subject matter.</li>
+        <li>Please furnish the designation, name, and official responsibilities of the officer(s) responsible for the delayed resolution or pending action.</li>
+        <li>Please provide the citizen charter timeline prescribed for disposal of this category of grievance.</li>
+      </ol>
+    </td>
+  </tr>
+  <tr>
+    <td style="font-weight: bold;">6. Application Fee Details:</td>
+    <td>Statutory fee of ₹10 attached via Postal Order / Court Fee Stamp / Online Payment receipt.</td>
+  </tr>
+  <tr>
+    <td style="font-weight: bold;">7. Statutory Response Period:</td>
+    <td>Within thirty (30) days from date of receipt as mandated under Section 7(1) of the RTI Act, 2005.</td>
+  </tr>
+</table>
+
+<div style="margin-top: 40px; text-align: right;">
+  Yours faithfully,<br><br>
+  _______________________<br>
+  <strong>{{ complainant.name }}</strong><br>
+  (Applicant)
+</div>
+
+</body>
+</html>

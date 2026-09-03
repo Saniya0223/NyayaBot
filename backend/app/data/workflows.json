@@ -1,0 +1,361 @@
+{
+  "HOUSING_TENANT": {
+    "category_display_name": "Housing & Tenancy Dispute",
+    "issue_type": "Security Deposit Withholding",
+    "required_fields": [
+      "user_city",
+      "disputed_amount",
+      "opposite_party_name",
+      "vacating_date",
+      "rental_agreement_exists"
+    ],
+    "evidence_items": [
+      {
+        "id": "rental_agreement",
+        "name": "Rental / Lease Agreement",
+        "why_needed": "Proves the contractual tenancy terms and the exact security deposit amount agreed upon.",
+        "annexure_label": "Annexure A-1"
+      },
+      {
+        "id": "deposit_payment_proof",
+        "name": "Deposit Payment Proof / Bank Transfer Receipt",
+        "why_needed": "Establishes that the security deposit money was actually paid into the landlord's account.",
+        "annexure_label": "Annexure A-2"
+      },
+      {
+        "id": "move_out_photos",
+        "name": "Move-out Photographs / Video Proof",
+        "why_needed": "Rebuts false damage claims or excessive painting deductions made by the landlord.",
+        "annexure_label": "Annexure A-3"
+      },
+      {
+        "id": "landlord_chat",
+        "name": "WhatsApp / Email Communications",
+        "why_needed": "Proves you gave timely notice to vacate and requested the deposit peacefully.",
+        "annexure_label": "Annexure A-4"
+      }
+    ],
+    "stages": [
+      {
+        "id": "INFORMAL_REQUEST",
+        "title": "Deposit Requested Informally",
+        "description": "Tenant vacated premises and requested deposit refund via phone, chat, or email."
+      },
+      {
+        "id": "FORMAL_DEMAND_SENT",
+        "title": "Formal Written Notice Issued",
+        "description": "A written demand records the facts, the requested refund, and a reasonable response date chosen for this case."
+      },
+      {
+        "id": "AWAITING_LANDLORD_RESPONSE",
+        "title": "Awaiting Landlord Response",
+        "description": "Notice served; waiting for landlord to refund or state formal objections."
+      },
+      {
+        "id": "RENT_AUTHORITY_ESCALATION",
+        "title": "Rent Authority / Civil Recovery Petition",
+        "description": "Consider the appropriate State rent authority or civil recovery forum after checking local law, jurisdiction, and the agreement."
+      }
+    ],
+    "rights_summary": {
+      "what_this_means": "Your right to a deposit refund usually depends on the tenancy agreement and the law in the State where the property is located. A landlord should be asked to explain and support any deduction.",
+      "possible_rights": [
+        "Possible right to recover the balance deposit after lawful, documented deductions.",
+        "Possible contractual claim if the landlord breaches the refund terms in the tenancy agreement.",
+        "The correct forum and any interest claim depend on the applicable State law and contract."
+      ],
+      "useful_evidence": [
+        "Copy of bank statement showing initial transfer",
+        "Handover message / key handover confirmation",
+        "Condition photos on the date of vacating"
+      ],
+      "legal_source": "Tenancy agreement, applicable State tenancy/rent law, and potentially Section 73 of the Indian Contract Act, 1872. The Model Tenancy Act is not automatically the governing law in every State."
+    },
+    "default_doc_type": "TENANT_DEMAND_NOTICE",
+    "default_doc_label": "Prepare Security Deposit Demand Letter"
+  },
+  "EMPLOYMENT": {
+    "category_display_name": "Employment & Labour Dispute",
+    "issue_type": "Unpaid Salary / Delayed Wages",
+    "required_fields": [
+      "user_city",
+      "disputed_amount",
+      "opposite_party_name",
+      "unpaid_months"
+    ],
+    "evidence_items": [
+      {
+        "id": "offer_letter",
+        "name": "Offer Letter / Employment Contract",
+        "why_needed": "Proves the employment relationship, designated salary, and notice period obligations.",
+        "annexure_label": "Annexure A-1"
+      },
+      {
+        "id": "salary_slips",
+        "name": "Past Salary Slips / Bank Credit Statements",
+        "why_needed": "Demonstrates regular past compensation and established monthly wage rate.",
+        "annexure_label": "Annexure A-2"
+      },
+      {
+        "id": "hr_emails",
+        "name": "Written Follow-up with HR / Management",
+        "why_needed": "Proves you formally demanded payment of arrears and gave the employer opportunities to pay.",
+        "annexure_label": "Annexure A-3"
+      },
+      {
+        "id": "relieving_letter",
+        "name": "Resignation / Relieving Communication (if applicable)",
+        "why_needed": "Establishes last working day and settlement timeline.",
+        "annexure_label": "Annexure A-4"
+      }
+    ],
+    "stages": [
+      {
+        "id": "INFORMAL_REQUEST",
+        "title": "Internal HR / Management Follow-up",
+        "description": "Employee followed up via internal emails or tickets regarding delayed compensation."
+      },
+      {
+        "id": "FORMAL_DEMAND_SENT",
+        "title": "Written Salary Demand Sent",
+        "description": "A factual salary demand is sent to HR or management with supporting employment records."
+      },
+      {
+        "id": "AWAITING_EMPLOYER_RESPONSE",
+        "title": "Awaiting Employer Settlement",
+        "description": "Waiting for the response period stated in the written demand before reassessing escalation options."
+      },
+      {
+        "id": "LABOUR_COMMISSIONER_COMPLAINT",
+        "title": "Labour Authority / Recovery Route",
+        "description": "The appropriate labour authority, contractual remedy, or court depends on the role, establishment, State, and current law."
+      }
+    ],
+    "rights_summary": {
+      "what_this_means": "Earned salary is normally payable under the employment terms and applicable wage or labour law. The correct authority depends on your role, establishment, State, and employment status.",
+      "possible_rights": [
+        "Possible right to recover salary already earned under the employment contract and applicable wage law.",
+        "Possible grievance before a labour authority where the law covers the employee and establishment.",
+        "A civil or contractual remedy may be relevant in some cases; the correct route should be verified."
+      ],
+      "useful_evidence": [
+        "Official work email threads acknowledging work done",
+        "Attendance/timesheet records",
+        "Past 3 months salary credit bank statements"
+      ],
+      "legal_source": "Employment terms and applicable Central/State wage and labour law. Coverage and the competent authority must be verified for the employee and establishment."
+    },
+    "default_doc_type": "SALARY_DEMAND_NOTICE",
+    "default_doc_label": "Prepare Salary Demand Notice"
+  },
+  "CONSUMER": {
+    "category_display_name": "Consumer Rights & Defective Goods",
+    "issue_type": "Defective Product / Refund Refusal",
+    "required_fields": [
+      "user_city",
+      "disputed_amount",
+      "opposite_party_name",
+      "incident_date"
+    ],
+    "evidence_items": [
+      {
+        "id": "invoice",
+        "name": "Tax Invoice / Purchase Order Receipt",
+        "why_needed": "Proves date of purchase, warranty coverage, and exact consideration paid.",
+        "annexure_label": "Annexure A-1"
+      },
+      {
+        "id": "defect_photos",
+        "name": "Defect Photographs / Technician Job Sheet",
+        "why_needed": "Conclusive evidence demonstrating the product failure or deficiency of service.",
+        "annexure_label": "Annexure A-2"
+      },
+      {
+        "id": "support_tickets",
+        "name": "Customer Care Grievance History / Ticket IDs",
+        "why_needed": "Establishes repeated failed attempts to seek replacement or service from the seller.",
+        "annexure_label": "Annexure A-3"
+      },
+      {
+        "id": "seller_rejection",
+        "name": "Seller / Platform Written Rejection Email",
+        "why_needed": "Proves refusal to honor warranty, establishing cause of action for formal complaint.",
+        "annexure_label": "Annexure A-4"
+      }
+    ],
+    "stages": [
+      {
+        "id": "INFORMAL_REQUEST",
+        "title": "Customer Support Contacted",
+        "description": "Consumer raised return or repair request on portal or customer helpline."
+      },
+      {
+        "id": "FORMAL_DEMAND_SENT",
+        "title": "Formal Consumer Grievance Sent",
+        "description": "A written grievance records the defect, prior requests, evidence, and the remedy requested under the Consumer Protection Act, 2019."
+      },
+      {
+        "id": "AWAITING_SELLER_RESPONSE",
+        "title": "Awaiting Seller / Platform Response",
+        "description": "Waiting through the response period stated in the grievance before deciding whether to escalate."
+      },
+      {
+        "id": "EDAAKHIL_COMPLAINT",
+        "title": "e-Daakhil Consumer Commission Complaint",
+        "description": "Formal complaint filed before District Consumer Commission under Section 35 CPA 2019."
+      }
+    ],
+    "rights_summary": {
+      "what_this_means": "A defective product or deficient service may support remedies under the Consumer Protection Act, 2019. The available remedy depends on the evidence, contract, warranty, and facts.",
+      "possible_rights": [
+        "Possible repair, replacement, refund, or other relief if defect or deficiency is established.",
+        "Possible compensation where legally supported by the evidence and loss proved.",
+        "Possible online consumer-commission complaint after confirming territorial and pecuniary jurisdiction."
+      ],
+      "useful_evidence": [
+        "Original GST tax invoice",
+        "Photographs / video of unboxing or defect",
+        "Customer support chat transcript"
+      ],
+      "legal_source": "Consumer Protection Act, 2019 (Sections 2(11), 2(47), and 35)."
+    },
+    "default_doc_type": "FORMAL_LEGAL_NOTICE",
+    "default_doc_label": "Prepare Consumer Grievance Letter"
+  },
+  "CYBER_FRAUD": {
+    "category_display_name": "Cybercrime & Online Fraud",
+    "issue_type": "UPI / Banking Scam / Financial Fraud",
+    "required_fields": [
+      "user_city",
+      "disputed_amount",
+      "incident_date",
+      "transaction_ref"
+    ],
+    "evidence_items": [
+      {
+        "id": "upi_receipt",
+        "name": "UPI / Net Banking Transaction Slip (UTR / Ref No)",
+        "why_needed": "Contains critical 12-digit UTR/RRN number required by banks to track beneficiary accounts.",
+        "annexure_label": "Annexure A-1"
+      },
+      {
+        "id": "scammer_chat",
+        "name": "Chat Screenshots / Call Records with Fraudster",
+        "why_needed": "Demonstrates deception, fake links, or phishing inducement.",
+        "annexure_label": "Annexure A-2"
+      },
+      {
+        "id": "bank_complaint_ack",
+        "name": "Bank Fraud Reporting Acknowledgement",
+        "why_needed": "Records when the bank was notified, which is relevant to the bank's investigation and any customer-liability assessment.",
+        "annexure_label": "Annexure A-3"
+      }
+    ],
+    "stages": [
+      {
+        "id": "FRAUD_OCCURRED",
+        "title": "Fraudulent Debit / Transfer Occurred",
+        "description": "Unauthorized transfer or scam transaction executed via UPI / Net Banking."
+      },
+      {
+        "id": "BANK_REPORTED",
+        "title": "Bank Alerted & 1930 Helpline Called",
+        "description": "The bank and Cyber Helpline 1930 are alerted promptly so they can consider available tracing or hold measures."
+      },
+      {
+        "id": "CYBERCRIME_PORTAL_FILED",
+        "title": "Formal Cyber Crime Portal & Bank Requisition Drafted",
+        "description": "Complaint filed on cybercrime.gov.in and formal letter sent to Nodal Officer."
+      },
+      {
+        "id": "POLICE_FIR_ESCALATION",
+        "title": "Cyber Cell Police Complaint / FIR",
+        "description": "Escalation to the cybercrime police unit; the applicable offence provisions depend on how the fraud occurred."
+      }
+    ],
+    "rights_summary": {
+      "what_this_means": "Prompt reporting to the bank and the National Cyber Crime Reporting system can improve the chance of tracing funds. RBI customer-liability protection depends on whether the transaction was unauthorised and on the facts of the breach and reporting delay.",
+      "possible_rights": [
+        "Possible zero or limited liability in the circumstances defined by the RBI framework for unauthorised electronic transactions.",
+        "Right to report the transaction promptly to the bank and request urgent tracing or hold measures.",
+        "Ability to report financial cyber fraud through 1930 and cybercrime.gov.in."
+      ],
+      "useful_evidence": [
+        "Bank statement showing debit with exact timestamp",
+        "12-digit UPI UTR number",
+        "Fraudster phone number, website link, or UPI ID"
+      ],
+      "legal_source": "RBI framework for unauthorised electronic banking transactions, the National Cyber Crime Reporting Portal, and offence provisions applicable to the facts."
+    },
+    "default_doc_type": "CYBERCRIME_BANK_FREEZE",
+    "default_doc_label": "Prepare Cybercrime Complaint & Bank Fraud Report"
+  },
+  "POLICE_COMPLAINT": {
+    "category_display_name": "Police Complaint & FIR Assistance",
+    "issue_type": "Police Refusal to Register FIR / Formal Written Complaint",
+    "required_fields": [
+      "user_city",
+      "opposite_party_name",
+      "incident_date",
+      "police_station_name"
+    ],
+    "evidence_items": [
+      {
+        "id": "incident_proof",
+        "name": "Evidence of Offence (Photos / Video / Audio / Medical Memo)",
+        "why_needed": "Substantiates the factual allegations of the cognizable offence.",
+        "annexure_label": "Annexure A-1"
+      },
+      {
+        "id": "complaint_copy",
+        "name": "Copy of Original Written Representation / GD Entry",
+        "why_needed": "Proves the matter was first presented to the local Station House Officer (SHO).",
+        "annexure_label": "Annexure A-2"
+      },
+      {
+        "id": "speed_post_receipt",
+        "name": "Speed Post / Registered Post Delivery Proof to DCP/SP",
+        "why_needed": "Helps prove when and where an escalation was delivered if a written complaint is sent to the Superintendent of Police.",
+        "annexure_label": "Annexure A-3"
+      }
+    ],
+    "stages": [
+      {
+        "id": "SHO_APPROACHED",
+        "title": "Reported to Local Police Station (SHO)",
+        "description": "Informal or verbal complaint made at the jurisdictional police station."
+      },
+      {
+        "id": "FORMAL_WRITTEN_COMPLAINT",
+        "title": "Formal Written Complaint Submitted under Sec 173(1) BNSS",
+        "description": "Detailed written complaint presented to SHO with acknowledgment sought."
+      },
+      {
+        "id": "SP_ESCALATION",
+        "title": "Escalation to Superintendent of Police (SP / DCP)",
+        "description": "Complaint dispatched via Registered Post to SP / DCP if local police station refuses registration."
+      },
+      {
+        "id": "MAGISTRATE_PETITION",
+        "title": "Consider Magistrate Application under BNSS",
+        "description": "A Magistrate application may be considered with legal advice after checking the offence, prior representations, evidence, and current procedure."
+      }
+    ],
+    "rights_summary": {
+      "what_this_means": "If the information discloses a cognizable offence, FIR-registration duties may arise under the BNSS and Supreme Court precedent. Classification depends on the facts and should not be guessed.",
+      "possible_rights": [
+        "Right to a free copy of the FIR immediately upon registration under Section 173(2) BNSS.",
+        "Right to send written complaint by Registered Post to the Superintendent of Police under Section 173(3) BNSS.",
+        "Possible route to approach a Judicial Magistrate under the BNSS after checking procedural requirements with counsel or legal aid."
+      ],
+      "useful_evidence": [
+        "Written acknowledgment / GD diary number",
+        "Timestamped photo/video proof",
+        "Witness names and contact information"
+      ],
+      "legal_source": "Bharatiya Nagarik Suraksha Sanhita, 2023 (Section 173) & Lalita Kumari v. Govt of UP (2014 SC)."
+    },
+    "default_doc_type": "POLICE_COMPLAINT_BNSS",
+    "default_doc_label": "Prepare Written Police Complaint Draft"
+  }
+}

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FORMAL CONSUMER COMPLAINT UNDER SECTION 35 OF THE CONSUMER PROTECTION ACT, 2019</title>
+<style>
+  @page {
+    size: a4;
+    margin: 2cm;
+  }
+  body {
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 11pt;
+    line-height: 1.5;
+    color: #111;
+    margin: 0;
+    padding: 10px;
+  }
+  .court-header {
+    text-align: center;
+    font-weight: bold;
+    margin-bottom: 25px;
+    line-height: 1.4;
+  }
+  .case-title {
+    font-size: 13pt;
+    text-decoration: underline;
+    margin-bottom: 5px;
+  }
+  .parties-table {
+    width: 100%;
+    margin-bottom: 25px;
+    border-collapse: collapse;
+  }
+  .parties-table td {
+    vertical-align: top;
+    padding: 5px 0;
+  }
+  .vs-box {
+    text-align: center;
+    font-weight: bold;
+    margin: 10px 0;
+  }
+  .complaint-heading {
+    text-align: center;
+    font-weight: bold;
+    text-decoration: underline;
+    font-size: 12pt;
+    margin: 20px 0;
+  }
+  .numbered-para {
+    text-align: justify;
+    margin-bottom: 12px;
+    padding-left: 30px;
+    text-indent: -30px;
+  }
+  .prayer-box {
+    margin-top: 20px;
+    padding: 10px 15px;
+    border: 1px solid #222;
+    background-color: #fafafa;
+  }
+  .prayer-title {
+    font-weight: bold;
+    text-align: center;
+    text-decoration: underline;
+    margin-bottom: 10px;
+  }
+  .affidavit-box {
+    page-break-before: always;
+    margin-top: 30px;
+    border-top: 2px solid #000;
+    padding-top: 20px;
+  }
+  .affidavit-title {
+    text-align: center;
+    font-weight: bold;
+    font-size: 13pt;
+    text-decoration: underline;
+    margin-bottom: 15px;
+  }
+</style>
+</head>
+<body>
+
+<div class="court-header">
+  <div class="case-title">BEFORE THE HON'BLE {{ appropriate_forum | upper }}</div>
+  <div>CONSUMER COMPLAINT NO. _________ OF {{ year_current }}</div>
+</div>
+
+<table class="parties-table">
+  <tr>
+    <td style="width: 75%;">
+      <strong>{{ complainant.name }}</strong><br>
+      Residing at: {{ complainant.address or complainant.city }}<br>
+      City: {{ complainant.city }}, State: {{ complainant.state }}<br>
+      Contact: {{ complainant.phone or 'N/A' }} | Email: {{ complainant.email or 'N/A' }}
+    </td>
+    <td style="width: 25%; text-align: right; font-weight: bold;">
+      ... COMPLAINANT
+    </td>
+  </tr>
+</table>
+
+<div class="vs-box">VERSUS</div>
+
+<table class="parties-table">
+  <tr>
+    <td style="width: 75%;">
+      <strong>{{ opposite_party.name }}</strong><br>
+      Having office at: {{ opposite_party.address or 'Principal Office' }}<br>
+      City: {{ opposite_party.city }}, State: {{ opposite_party.state }}<br>
+      Email: {{ opposite_party.email or 'N/A' }}
+    </td>
+    <td style="width: 25%; text-align: right; font-weight: bold;">
+      ... OPPOSITE PARTY
+    </td>
+  </tr>
+</table>
+
+<div class="complaint-heading">
+  COMPLAINT UNDER SECTION 35 OF THE CONSUMER PROTECTION ACT, 2019 FOR DEFICIENCY OF SERVICE AND UNFAIR TRADE PRACTICE
+</div>
+
+<div class="numbered-para">
+  1. <strong>JURISDICTION OF THIS HON'BLE FORUM:</strong> That the Complainant resides and works for gain in {{ complainant.city }}, within the territorial jurisdiction of this Hon'ble Commission under Section 34(2)(d) of the Consumer Protection Act, 2019. Further, the total value of consideration and claim does not exceed ₹50,00,000, thereby conferring pecuniary jurisdiction upon this Hon'ble District Commission.
+</div>
+
+<div class="numbered-para">
+  2. <strong>LIMITATION:</strong> That the cause of action arose on <strong>{{ incident_date or 'the stated date' }}</strong>. The present complaint is instituted well within the prescribed period of two years under Section 69 of the Consumer Protection Act, 2019.
+</div>
+
+<div class="numbered-para">
+  3. <strong>TRANSACTION DETAILS:</strong> That on or about {{ incident_date or 'the transaction date' }}, the Complainant purchased goods / engaged services from the Opposite Party for a consideration of <strong>₹{{ "{:,.2f}".format(financials.amount_paid) }}</strong>.
+</div>
+
+<div class="numbered-para">
+  4. <strong>FACTS & DEFICIENCY OF SERVICE:</strong> {{ incident_narrative }}
+</div>
+
+<div class="numbered-para">
+  5. <strong>DEFICIENCY IN SERVICE & UNFAIR TRADE PRACTICE:</strong> That despite repeated demands and issuance of notice, the Opposite Party has failed and refused to redress the legitimate grievance. The conduct of the Opposite Party amounts to gross Deficiency in Service under Section 2(11) and Unfair Trade Practice under Section 2(47) of the Consumer Protection Act, 2019.
+</div>
+
+<div class="prayer-box">
+  <div class="prayer-title">PRAYER</div>
+  In the premises aforesaid, the Complainant most respectfully prays that this Hon'ble Commission may graciously be pleased to:
+  <ol style="margin: 8px 0 0 20px; padding: 0;">
+    <li>Direct the Opposite Party to refund the sum of <strong>₹{{ "{:,.2f}".format(financials.refund_claimed) }}</strong> along with interest @ 12% per annum from {{ incident_date or 'the date of payment' }} until realization;</li>
+    <li>Direct the Opposite Party to pay a sum of <strong>₹{{ "{:,.2f}".format(financials.compensation_claimed) }}</strong> towards damages for mental harassment, financial agony, and loss of time;</li>
+    <li>Direct the Opposite Party to pay litigation expenses quantified at <strong>₹{{ "{:,.2f}".format(financials.litigation_costs_claimed) }}</strong>;</li>
+    <li>Pass such other and further order(s) as this Hon'ble Commission may deem fit in the interest of justice.</li>
+  </ol>
+</div>
+
+<div style="margin-top: 30px; text-align: right;">
+  <strong>COMPLAINANT IN PERSON</strong><br><br><br>
+  ({{ complainant.name }})
+</div>
+
+<div class="affidavit-box">
+  <div class="affidavit-title">VERIFICATION AFFIDAVIT</div>
+  <p style="text-align: justify; text-indent: 30px;">
+    I, <strong>{{ complainant.name }}</strong>, residing at {{ complainant.city }}, {{ complainant.state }}, do hereby solemnly declare and verify that the contents of paragraphs 1 to 5 of the accompanying complaint are true and correct to the best of my personal knowledge and belief, and nothing material has been concealed therefrom.
+  </p>
+  <p style="margin-top: 30px;">
+    Verified at <strong>{{ complainant.city }}</strong> on this <strong>{{ date_today }}</strong>.
+  </p>
+  <div style="margin-top: 40px; text-align: right;">
+    __________________________<br>
+    <strong>DEPONENT / COMPLAINANT</strong>
+  </div>
+</div>
+
+</body>
+</html>

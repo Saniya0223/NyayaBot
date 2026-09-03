@@ -1,0 +1,8 @@
+RENTAL AGREEMENT EXTRACT - DEMO ONLY
+
+Tenant: Rahul Sharma
+Landlord: Raj Verma
+Security Deposit: Rs 50,000
+Property Address: B-1204 Sector 62 Noida Uttar Pradesh
+
+This plain-text fixture is fictional and is used only to verify NyayaBot's upload-confirmation flow.

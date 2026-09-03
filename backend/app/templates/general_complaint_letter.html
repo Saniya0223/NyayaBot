@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>GENERAL COMPLAINT LETTER</title>
+<style>
+  @page { size: a4; margin: 2cm; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 11pt; line-height: 1.55; color: #111; }
+  .header { text-align: center; border-bottom: 2px solid #222; padding-bottom: 10px; margin-bottom: 22px; }
+  .box { margin: 16px 0; }
+</style>
+</head>
+<body>
+  <div class="header"><strong>GENERAL COMPLAINT LETTER</strong></div>
+  <p><strong>Date:</strong> {{ date_today }}</p>
+  <div class="box"><strong>To:</strong><br>{{ opposite_party.name }}<br>{{ opposite_party.address or '' }}</div>
+  <div class="box"><strong>From:</strong><br>{{ complainant.name }}<br>{{ complainant.address or '' }}<br>{{ complainant.city or '' }}, {{ complainant.state or '' }}</div>
+  <p><strong>Subject: Written complaint and request for appropriate action</strong></p>
+  <p>Sir / Madam,</p>
+  <p>I am submitting this written complaint concerning the following facts:</p>
+  <p>{{ incident_narrative }}</p>
+  {% if incident_date %}<p><strong>Relevant date:</strong> {{ incident_date }}</p>{% endif %}
+  <p>I request that the matter be acknowledged, examined under the law and procedure applicable to your authority, and that I be informed of the action taken.</p>
+  <p>Yours faithfully,</p><br><p>_______________________<br><strong>{{ complainant.name }}</strong></p>
+</body>
+</html>

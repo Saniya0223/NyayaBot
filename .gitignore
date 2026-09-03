@@ -1,0 +1,42 @@
+# --- Secrets -----------------------------------------------------------
+# The Gemini API key lives in backend/.env and must never be committed.
+.env
+.env.*
+!.env.example
+
+# --- Local data --------------------------------------------------------
+# SQLite databases hold real case profiles and conversation history.
+*.db
+*.sqlite
+*.sqlite3
+
+# Generated legal documents and uploaded evidence contain personal details.
+backend/storage/
+
+# --- Python ------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+venv/
+.venv/
+
+# --- Node / Next.js ----------------------------------------------------
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# --- Tooling output ----------------------------------------------------
+metrics.json
+npm-debug.log*
+yarn-error.log*
+
+# --- OS / editor -------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+*.swp

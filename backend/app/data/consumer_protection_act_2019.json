@@ -1,0 +1,51 @@
+[
+  {
+    "section": "Section 2(11)",
+    "act": "Consumer Protection Act, 2019",
+    "title": "Deficiency in Service",
+    "description": "Deficiency means any fault, imperfection, shortcoming or inadequacy in the quality, nature and manner of performance which is required to be maintained by or under any law for the time being in force or has been undertaken to be performed by a person in pursuance of a contract or otherwise in relation to any service.",
+    "applicable_situations": ["delayed delivery", "faulty repair", "non-responsive customer support", "refusal to honour warranty", "cancellation without refund"]
+  },
+  {
+    "section": "Section 2(47)",
+    "act": "Consumer Protection Act, 2019",
+    "title": "Unfair Trade Practice",
+    "description": "A trade practice which, for the purpose of promoting the sale, use or supply of any goods or for the provision of any service, adopts any unfair method or unfair or deceptive practice including falsely representing goods to be of a particular standard, quality, quantity, grade, composition, style or model, or refusing to take back defective goods or refund the amount paid within the stipulated period.",
+    "applicable_situations": ["misleading advertisement", "refusal to refund for defective goods", "hidden charges", "fake reviews", "bait pricing"]
+  },
+  {
+    "section": "Section 2(34)",
+    "act": "Consumer Protection Act, 2019",
+    "title": "Product Liability",
+    "description": "The responsibility of a product manufacturer or product seller, of any product or service, to compensate for any harm caused to a consumer by such defective product manufactured or sold or by deficiency in services relating thereto.",
+    "applicable_situations": ["physical injury caused by defective product", "property damage caused by malfunctioning appliance", "burst battery"]
+  },
+  {
+    "section": "Section 34 & 35",
+    "act": "Consumer Protection Act, 2019",
+    "title": "Jurisdiction of District Consumer Disputes Redressal Commission",
+    "description": "A complaint in relation to goods or services where the value of the goods or services paid as consideration does not exceed fifty lakh rupees (₹50,00,000) may be instituted in the District Commission within the local limits of whose jurisdiction the complainant resides or personally works for gain, or where the opposite party resides or carries on business, or where the cause of action arises.",
+    "applicable_situations": ["filing complaint for claim value <= 50 lakhs", "filing at complainant's local district commission"]
+  },
+  {
+    "section": "Section 47",
+    "act": "Consumer Protection Act, 2019",
+    "title": "Jurisdiction of State Consumer Disputes Redressal Commission",
+    "description": "Complaints where the value of goods or services paid as consideration exceeds fifty lakh rupees (₹50,00,000) but does not exceed two crore rupees (₹2,00,00,000).",
+    "applicable_situations": ["claim value between 50 lakhs and 2 crores"]
+  },
+  {
+    "section": "Section 58",
+    "act": "Consumer Protection Act, 2019",
+    "title": "Jurisdiction of National Consumer Disputes Redressal Commission",
+    "description": "Complaints where the value of goods or services paid as consideration exceeds two crore rupees (₹2,00,00,000).",
+    "applicable_situations": ["claim value exceeding 2 crores"]
+  },
+  {
+    "section": "Section 69",
+    "act": "Consumer Protection Act, 2019",
+    "title": "Limitation Period for Consumer Complaints",
+    "description": "The District Commission, the State Commission or the National Commission shall not admit a complaint unless it is filed within two (2) years from the date on which the cause of action has arisen.",
+    "applicable_situations": ["determining limitation deadline", "2-year statutory filing window"]
+  }
+]

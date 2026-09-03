@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FORMAL WRITTEN POLICE COMPLAINT UNDER SECTION 173(1) BNSS 2023</title>
+<style>
+  @page { size: a4; margin: 2cm; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #111; padding: 10px; }
+  .header-box { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 20px; }
+  .header-title { font-size: 14pt; font-weight: bold; text-transform: uppercase; }
+  .to-box { margin-bottom: 18px; }
+  .numbered-para { text-align: justify; margin-bottom: 12px; padding-left: 25px; text-indent: -25px; }
+  .prayer-box { border: 1px solid #333; background-color: #f9f9f9; padding: 12px; margin: 18px 0; }
+</style>
+</head>
+<body>
+
+<div class="header-box">
+  <div class="header-title">FORMAL WRITTEN POLICE COMPLAINT</div>
+  <div style="font-size: 9.5pt; font-style: italic; margin-top: 4px;">
+    SUBMITTED UNDER SECTION 173(1) OF THE BHARATIYA NAGARIK SURAKSHA SANHITA, 2023 (BNSS)
+  </div>
+</div>
+
+<div style="margin-bottom: 15px;"><strong>DATE:</strong> {{ date_today }}</div>
+
+<div class="to-box">
+  <strong>TO:</strong><br>
+  <strong>The Station House Officer (SHO)</strong><br>
+  Police Station: {{ opposite_party.address or 'Jurisdictional Police Station' }}<br>
+  {{ complainant.city }}, {{ complainant.state }}
+</div>
+
+<div class="to-box">
+  <strong>FROM / COMPLAINANT:</strong><br>
+  <strong>{{ complainant.name }}</strong><br>
+  {{ complainant.city }}, {{ complainant.state }}<br>
+  Phone: {{ complainant.phone or 'N/A' }} | Email: {{ complainant.email or 'N/A' }}
+</div>
+
+<div style="font-weight: bold; text-decoration: underline; margin: 15px 0;">
+  SUBJECT: COMPLAINT REGARDING COGNIZABLE OFFENCE OF CHEATING / CRIMINAL BREACH OF TRUST / WRONGFUL ACT ON {{ incident_date or 'RECENT DATE' }} WITH REQUEST FOR REGISTRATION OF FIR
+</div>
+
+<p>Respected Sir / Madam,</p>
+
+<div class="numbered-para">
+  1. That the Complainant is a law-abiding citizen residing at {{ complainant.city }}, {{ complainant.state }}.
+</div>
+
+<div class="numbered-para">
+  2. <strong>STATEMENT OF FACTS & OFFENCE:</strong> {{ incident_narrative }}
+</div>
+
+<div class="numbered-para">
+  3. That the aforesaid actions disclose the commission of cognizable offences under the Bharatiya Nyaya Sanhita, 2023 (BNS) including Section 318 (Cheating) and Section 316 (Criminal Breach of Trust).
+</div>
+
+<div class="numbered-para">
+  4. That under the binding mandate of the Hon'ble Supreme Court of India in <em>Lalita Kumari v. Govt of UP (2014)</em> and Section 173(1) of BNSS 2023, registration of an FIR is mandatory upon receipt of information disclosing a cognizable offence.
+</div>
+
+<div class="prayer-box">
+  <strong>PRAYER / REQUEST:</strong><br>
+  It is therefore respectfully requested that:
+  <ol style="margin: 5px 0 0 20px; padding: 0;">
+    <li>A First Information Report (FIR) be registered forthwith against the accused persons;</li>
+    <li>Appropriate investigation be initiated and strict action be taken in accordance with law;</li>
+    <li>A certified free copy of the registered FIR be supplied to the Complainant as mandated by law.</li>
+  </ol>
+</div>
+
+<div style="margin-top: 40px; text-align: right;">
+  Yours faithfully,<br><br><br>
+  _______________________<br>
+  <strong>{{ complainant.name }}</strong><br>
+  (Complainant)
+</div>
+
+</body>
+</html>

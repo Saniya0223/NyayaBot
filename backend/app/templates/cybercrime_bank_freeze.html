@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CYBER FINANCIAL FRAUD COMPLAINT & BANK FREEZE REQUISITION</title>
+<style>
+  @page { size: a4; margin: 2cm; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #111; padding: 10px; }
+  .header-box { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 20px; }
+  .header-title { font-size: 13pt; font-weight: bold; text-transform: uppercase; }
+  .to-box { margin-bottom: 18px; }
+  .numbered-para { text-align: justify; margin-bottom: 12px; padding-left: 25px; text-indent: -25px; }
+  .freeze-box { border: 1px solid #c00; background-color: #fff5f5; padding: 12px; margin: 18px 0; }
+</style>
+</head>
+<body>
+
+<div class="header-box">
+  <div class="header-title">URGENT CYBER FRAUD INTIMATION & BENEFICIARY LIEN REQUISITION</div>
+  <div style="font-size: 9pt; font-style: italic; margin-top: 4px;">
+    SUBMITTED UNDER SECTION 66D INFORMATION TECHNOLOGY ACT, 2000 & RBI CUSTOMER PROTECTION CIRCULARS
+  </div>
+</div>
+
+<div style="margin-bottom: 15px;"><strong>DATE:</strong> {{ date_today }}</div>
+
+<div class="to-box">
+  <strong>TO:</strong><br>
+  <strong>The Nodal Cyber Crime Officer / Fraud Risk Management Cell</strong><br>
+  {{ opposite_party.name }} (Bank / Financial Entity)<br>
+  {{ complainant.city }}, {{ complainant.state }}
+</div>
+
+<div class="to-box">
+  <strong>FROM / VICTIM:</strong><br>
+  <strong>{{ complainant.name }}</strong><br>
+  {{ complainant.city }}, {{ complainant.state }}<br>
+  Phone: {{ complainant.phone or 'N/A' }} | Email: {{ complainant.email or 'N/A' }}
+</div>
+
+<div style="font-weight: bold; text-decoration: underline; margin: 15px 0;">
+  SUBJECT: URGENT REPORTING OF FRAUDULENT ELECTRONIC TRANSACTION OF ₹{{ "{:,.2f}".format(financials.amount_paid) }} & REQUEST TO MARK LIEN / FREEZE DESTINATION ACCOUNT
+</div>
+
+<p>Respected Nodal Officer,</p>
+
+<div class="numbered-para">
+  1. That the Complainant is an account holder who suffered an unauthorized / fraudulent digital financial debit on <strong>{{ incident_date or 'recent date' }}</strong>.
+</div>
+
+<div class="numbered-para">
+  2. <strong>FRAUD DETAILS & MODUS OPERANDI:</strong> {{ incident_narrative }}
+</div>
+
+<div class="numbered-para">
+  3. That a disputed sum of <strong>₹{{ "{:,.2f}".format(financials.amount_paid) }}</strong> was fraudulently debited and channeled to the beneficiary account.
+</div>
+
+<div class="freeze-box">
+  <strong>URGENT ACTION SOUGHT:</strong><br>
+  Under the RBI framework on <em>Limiting Liability of Customers in Unauthorised Electronic Banking Transactions</em> (where applicable to the facts) and the National Cyber Crime Reporting process:
+  <ol style="margin: 5px 0 0 20px; padding: 0;">
+    <li>Urgently examine whether a <strong>debit freeze / lien</strong> can be placed on the recipient beneficiary wallet/bank account;</li>
+    <li>Take available steps to trace, hold, recall, or reverse the transaction in coordination with the beneficiary institution;</li>
+    <li>Provide complete audit logs and IP addresses to the investigating Cyber Crime Cell (Helpline 1930).</li>
+  </ol>
+</div>
+
+<div style="margin-top: 40px; text-align: right;">
+  Yours sincerely,<br><br><br>
+  _______________________<br>
+  <strong>{{ complainant.name }}</strong><br>
+  (Aggrieved Customer)
+</div>
+
+</body>
+</html>

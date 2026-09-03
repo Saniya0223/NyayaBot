@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FORMAL LEGAL DEMAND NOTICE FOR PAYMENT OF ARREARS OF SALARY</title>
+<style>
+  @page { size: a4; margin: 2cm; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #111; padding: 10px; }
+  .header-box { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 20px; }
+  .header-title { font-size: 14pt; font-weight: bold; text-transform: uppercase; }
+  .to-box { margin-bottom: 18px; }
+  .numbered-para { text-align: justify; margin-bottom: 12px; padding-left: 25px; text-indent: -25px; }
+  .demand-box { border: 1px solid #333; background-color: #f9f9f9; padding: 12px; margin: 18px 0; }
+</style>
+</head>
+<body>
+
+<div class="header-box">
+  <div class="header-title">LEGAL DEMAND NOTICE FOR UNPAID SALARY & STATUTORY ARREARS</div>
+  <div style="font-size: 9.5pt; font-style: italic; margin-top: 4px;">
+    ISSUED WITH REFERENCE TO THE EMPLOYMENT TERMS AND APPLICABLE WAGE / LABOUR LAW
+  </div>
+</div>
+
+<div style="margin-bottom: 15px;"><strong>DATE:</strong> {{ date_today }}</div>
+
+<div class="to-box">
+  <strong>TO:</strong><br>
+  <strong>{{ opposite_party.name }} (Management / Board of Directors)</strong><br>
+  {% if opposite_party.address %}{{ opposite_party.address }}<br>{% endif %}
+  {{ opposite_party.city }}, {{ opposite_party.state }}
+</div>
+
+<div class="to-box">
+  <strong>FROM:</strong><br>
+  <strong>{{ complainant.name }} (Aggrieved Employee)</strong><br>
+  {{ complainant.city }}, {{ complainant.state }}<br>
+  Phone: {{ complainant.phone or 'N/A' }} | Email: {{ complainant.email or 'N/A' }}
+</div>
+
+<div style="font-weight: bold; text-decoration: underline; margin: 15px 0;">
+  SUBJECT: FINAL DEMAND FOR IMMEDIATE RELEASE OF OUTSTANDING SALARY ARREARS AMOUNTING TO ₹{{ "{:,.2f}".format(financials.amount_paid) }}
+</div>
+
+<p>Sir / Madam,</p>
+
+<div class="numbered-para">
+  1. That the undersigned was/is an employee in your organization <strong>{{ opposite_party.name }}</strong>, having diligently discharged all professional duties and responsibilities assigned.
+</div>
+
+<div class="numbered-para">
+  2. That despite rendering satisfactory services, you have unlawfully withheld the lawful earned wages/salary amounting to a total sum of <strong>₹{{ "{:,.2f}".format(financials.amount_paid) }}</strong>.
+</div>
+
+<div class="numbered-para">
+  3. <strong>STATEMENT OF GRIEVANCE:</strong> {{ incident_narrative }}
+</div>
+
+<div class="numbered-para">
+  4. <strong>BASIS OF DEMAND:</strong> Earned wages are payable in accordance with the employment terms and the wage and labour law applicable to the employee, establishment, and State. The appropriate statutory route should be verified for the employee's role and facts.
+</div>
+
+<div class="demand-box">
+  <strong>MANDATORY DEMAND:</strong><br>
+  You are requested to disburse the outstanding salary arrears of <strong>₹{{ "{:,.2f}".format(financials.refund_claimed) }}</strong> and provide a written response within <strong>{{ response_period or 'fifteen (15) days' }}</strong> of receipt. If unresolved, the undersigned may approach the labour authority or other forum competent for the employee's role, establishment, and State.
+</div>
+
+<div style="margin-top: 40px; text-align: right;">
+  Yours faithfully,<br><br><br>
+  _______________________<br>
+  <strong>{{ complainant.name }}</strong>
+</div>
+
+</body>
+</html>

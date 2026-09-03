@@ -1,0 +1,30 @@
+[
+  {
+    "section": "Section 6(1)",
+    "act": "Right to Information Act, 2005",
+    "title": "Request for Obtaining Information",
+    "description": "A person who desires to obtain any information under this Act shall make a request in writing or through electronic means in English or Hindi or in the official language of the area in which the application is being made, accompanying such fee as may be prescribed, to the Central Public Information Officer (CPIO) or State Public Information Officer (SPIO) specifying the particulars of the information sought.",
+    "applicable_situations": ["filing original RTI application", "seeking government records, tender documents, inspection reports, public expenditure"]
+  },
+  {
+    "section": "Section 7(1)",
+    "act": "Right to Information Act, 2005",
+    "title": "Disposal of Request & Statutory Time Limits",
+    "description": "The CPIO/SPIO on receipt of a request shall, as expeditiously as possible, and in any case within thirty (30) days of the receipt of the request, either provide the information on payment of such fee as may be prescribed or reject the request for any of the reasons specified in sections 8 and 9. Where the information sought concerns the life or liberty of a person, the same shall be provided within forty-eight (48) hours of the receipt of the request.",
+    "applicable_situations": ["30-day response deadline", "48-hour emergency life and liberty request"]
+  },
+  {
+    "section": "Section 19(1)",
+    "act": "Right to Information Act, 2005",
+    "title": "First Appeal",
+    "description": "Any person who does not receive a decision within the time specified in Section 7(1), or is aggrieved by a decision of the CPIO/SPIO, may within thirty (30) days from the expiry of such period or from the receipt of such a decision prefer an appeal to the First Appellate Authority (FAA).",
+    "applicable_situations": ["no response received within 30 days", "incomplete or misleading information provided by PIO", "filing First Appeal"]
+  },
+  {
+    "section": "Section 20",
+    "act": "Right to Information Act, 2005",
+    "title": "Penalties on Public Information Officers",
+    "description": "Where the Central Information Commission or the State Information Commission finds that the CPIO/SPIO has without reasonable cause refused to receive an application, delayed information, knowingly given incorrect, incomplete or misleading information, it shall impose a penalty of two hundred and fifty rupees (₹250) each day till application is received or information is furnished, up to a maximum of ₹25,000.",
+    "applicable_situations": ["seeking penalty against delinquent PIO in Second Appeal"]
+  }
+]

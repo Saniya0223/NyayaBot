@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FORMAL LEGAL DEMAND NOTICE</title>
+<style>
+  @page {
+    size: a4;
+    margin: 2cm;
+  }
+  body {
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 11pt;
+    line-height: 1.5;
+    color: #111;
+    margin: 0;
+    padding: 10px;
+  }
+  .header-box {
+    text-align: center;
+    border-bottom: 2px solid #000;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+  }
+  .header-title {
+    font-size: 15pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .header-sub {
+    font-size: 10pt;
+    font-style: italic;
+    margin-top: 4px;
+  }
+  .meta-table {
+    width: 100%;
+    margin-bottom: 20px;
+    border-collapse: collapse;
+  }
+  .meta-table td {
+    vertical-align: top;
+    padding: 3px 0;
+  }
+  .to-box {
+    margin-bottom: 18px;
+  }
+  .subject-line {
+    font-weight: bold;
+    text-decoration: underline;
+    margin: 15px 0;
+    text-align: justify;
+  }
+  .para {
+    text-align: justify;
+    text-indent: 30px;
+    margin-bottom: 12px;
+  }
+  .numbered-para {
+    text-align: justify;
+    margin-bottom: 12px;
+    padding-left: 25px;
+    text-indent: -25px;
+  }
+  .demand-box {
+    border: 1px solid #333;
+    background-color: #f9f9f9;
+    padding: 12px 15px;
+    margin: 18px 0;
+  }
+  .demand-title {
+    font-weight: bold;
+    text-transform: uppercase;
+    font-size: 11pt;
+    margin-bottom: 8px;
+  }
+  .statute-tag {
+    font-weight: bold;
+    color: #000;
+  }
+  .signature-table {
+    width: 100%;
+    margin-top: 40px;
+  }
+  .annexure-list {
+    margin-top: 25px;
+    border-top: 1px dashed #666;
+    padding-top: 10px;
+    font-size: 10.5pt;
+  }
+</style>
+</head>
+<body>
+
+<div class="header-box">
+  <div class="header-title">LEGAL DEMAND NOTICE</div>
+  <div class="header-sub">ISSUED UNDER SECTION 2(11), 2(47) & 35 OF THE CONSUMER PROTECTION ACT, 2019</div>
+  <div class="header-sub">BY REGISTERED POST A.D. / SPEED POST / LEGAL EMAIL TRANSMISSION</div>
+</div>
+
+<table class="meta-table">
+  <tr>
+    <td style="width: 50%;"><strong>DATE:</strong> {{ date_today }}</td>
+    <td style="width: 50%; text-align: right;"><strong>NOTICE REF:</strong> {{ notice_ref }}</td>
+  </tr>
+</table>
+
+<div class="to-box">
+  <strong>TO,</strong><br>
+  <strong>{{ opposite_party.name }}</strong><br>
+  {% if opposite_party.address %}{{ opposite_party.address }}<br>{% endif %}
+  {% if opposite_party.city %}{{ opposite_party.city }}, {{ opposite_party.state }}<br>{% endif %}
+  {% if opposite_party.email %}Email: {{ opposite_party.email }}<br>{% endif %}
+</div>
+
+<div class="to-box">
+  <strong>FROM / COMPLAINANT:</strong><br>
+  <strong>{{ complainant.name }}</strong><br>
+  {% if complainant.address %}{{ complainant.address }}<br>{% endif %}
+  {{ complainant.city }}, {{ complainant.state }}<br>
+  {% if complainant.phone %}Phone: {{ complainant.phone }}<br>{% endif %}
+  {% if complainant.email %}Email: {{ complainant.email }}{% endif %}
+</div>
+
+<div class="subject-line">
+  SUBJECT: FORMAL DEMAND NOTICE FOR DEFICIENCY IN SERVICE AND UNFAIR TRADE PRACTICE CONCERNING PURCHASE / SERVICE ON {{ incident_date or 'RECENT DATE' }} WITH CLAIM OF ₹{{ "{:,.2f}".format(financials.total_claim_amount) }}
+</div>
+
+<p class="para">Sir / Madam,</p>
+
+<p class="para">Under instructions and on behalf of my own legal rights as a bona fide Consumer under the Consumer Protection Act, 2019, I hereby serve upon you this formal Legal Notice:</p>
+
+<div class="numbered-para">
+  1. That the Complainant is an individual residing at {{ complainant.city }}, {{ complainant.state }}, and is a bona fide Consumer who engaged your services / purchased goods from your entity.
+</div>
+
+<div class="numbered-para">
+  2. That on or around <strong>{{ incident_date or 'the stated transaction date' }}</strong>, the Complainant paid a total sum of <strong>₹{{ "{:,.2f}".format(financials.amount_paid) }}</strong> towards the consideration of the product/service.
+</div>
+
+<div class="numbered-para">
+  3. <strong>STATEMENT OF GRIEVANCE:</strong> {{ incident_narrative }}
+</div>
+
+<div class="numbered-para">
+  4. <strong>STATUTORY VIOLATIONS:</strong> Your aforesaid act and failure to redress the grievance constitutes an explicit <span class="statute-tag">Deficiency in Service under Section 2(11)</span> and an <span class="statute-tag">Unfair Trade Practice under Section 2(47)</span> of the Consumer Protection Act, 2019. You have unlawfully retained the consideration amount while failing to fulfill your contractual and statutory obligations.
+</div>
+
+<div class="demand-box">
+  <div class="demand-title">FINAL DEMAND & REQUISITION:</div>
+  I hereby call upon you to comply with the following demands within <strong>fifteen (15) days</strong> from the receipt of this Notice:
+  <ol style="margin: 5px 0 0 20px; padding: 0;">
+    <li>Immediately refund the entire principal sum of <strong>₹{{ "{:,.2f}".format(financials.refund_claimed) }}</strong> to the Complainant's bank account;</li>
+    <li>Pay a sum of <strong>₹{{ "{:,.2f}".format(financials.compensation_claimed) }}</strong> towards compensation for severe mental harassment, financial agony, and loss of valuable time;</li>
+    <li>Pay a sum of <strong>₹{{ "{:,.2f}".format(financials.litigation_costs_claimed) }}</strong> towards legal notice and drafting expenses.</li>
+  </ol>
+</div>
+
+<div class="numbered-para">
+  5. <strong>WARNING OF STATUTORY LITIGATION:</strong> Take notice that should you fail or neglect to comply with the requisitions made herein within the stipulated 15 days, the Complainant shall institute formal legal proceedings before the competent <strong>{{ appropriate_forum }}</strong> under Section 35 of the Consumer Protection Act, 2019, at your sole risk, peril, and cost.
+</div>
+
+<table class="signature-table">
+  <tr>
+    <td style="width: 50%;"></td>
+    <td style="width: 50%; text-align: right;">
+      Yours faithfully,<br><br><br>
+      ________________________________<br>
+      <strong>{{ complainant.name }}</strong><br>
+      (Complainant in Person)
+    </td>
+  </tr>
+</table>
+
+{% if evidence_inventory %}
+<div class="annexure-list">
+  <strong>SCHEDULE OF ATTACHED DOCUMENTS & EVIDENCE:</strong>
+  <ul>
+    {% for ev in evidence_inventory %}
+      <li><strong>{{ ev.annexure_label or 'Annexure' }}:</strong> {{ ev.doc_name }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+</body>
+</html>

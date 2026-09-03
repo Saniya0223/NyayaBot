@@ -1,0 +1,30 @@
+[
+  {
+    "section": "Section 11",
+    "act": "Model Tenancy Act / State Rent Control Acts",
+    "title": "Security Deposit and Refund Obligation",
+    "description": "The security deposit to be paid by the tenant in advance shall not exceed two months rent for residential premises and six months rent for non-residential premises. The security deposit shall be refunded to the tenant on the date of vacating premises after making lawful deductions for unpaid rent or damage caused to premises.",
+    "applicable_situations": ["refusal to return security deposit", "unreasonable deductions from deposit", "delayed deposit refund"]
+  },
+  {
+    "section": "Section 15",
+    "act": "Model Tenancy Act / State Rent Control Acts",
+    "title": "Maintenance of Premises and Basic Amenities",
+    "description": "Every landlord and tenant shall keep the premises in good condition. Landlord shall not withhold or cut off any essential supply or service including electricity, water, sanitation, or access to common passages.",
+    "applicable_situations": ["cutting off water or power", "refusal to fix structural leaks or sewage", "harassment by withholding amenities"]
+  },
+  {
+    "section": "Section 21",
+    "act": "Model Tenancy Act / State Rent Control Acts",
+    "title": "Protection Against Unlawful Eviction",
+    "description": "No landlord shall evict a tenant except on an order made by the Rent Court on an application made for grounds specified under the Act. Forceful eviction without due process of law is strictly unlawful.",
+    "applicable_situations": ["threat of forceful eviction", "locking out tenant without court order", "unreasonable notice to vacate"]
+  },
+  {
+    "section": "Section 30",
+    "act": "Model Tenancy Act / State Rent Control Acts",
+    "title": "Jurisdiction of Rent Authority and Rent Court",
+    "description": "Any dispute between landlord and tenant regarding tenancy agreement, deposit refund, or basic amenities shall be adjudicated by the Rent Authority and Rent Court of the local jurisdiction.",
+    "applicable_situations": ["filing petition for recovery of deposit", "approaching Rent Tribunal / Civil Court"]
+  }
+]
