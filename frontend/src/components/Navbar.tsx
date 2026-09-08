@@ -1,8 +1,10 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { BookOpenText, FileText, FolderOpen, MessageCircleMore, Scale, UserRound } from 'lucide-react';
+import { getStoredUser, NyayaUser } from '@/lib/auth';
 
 const links = [
   { href: '/', label: 'Ask NyayaBot', icon: MessageCircleMore },
@@ -14,6 +16,17 @@ const links = [
 
 export default function Navbar() {
   const pathname = usePathname();
+  const [user, setUser] = useState<NyayaUser | null>(null);
+
+  useEffect(() => {
+    setUser(getStoredUser());
+    function onAuthChange() {
+      setUser(getStoredUser());
+    }
+    window.addEventListener('nyayabot_auth_change', onAuthChange);
+    return () => window.removeEventListener('nyayabot_auth_change', onAuthChange);
+  }, []);
+
   return (
     <header className="sticky top-0 z-40 border-b border-[#dfe6e2] bg-white/95 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-[1480px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
@@ -29,6 +42,7 @@ export default function Navbar() {
         <nav className="flex min-w-0 items-center gap-1 overflow-x-auto soft-scrollbar" aria-label="Primary navigation">
           {links.map(({ href, label, icon: Icon }) => {
             const active = pathname === href || (href !== '/' && pathname.startsWith(href));
+            const displayLabel = href === '/profile' && user ? user.name.split(' ')[0] : label;
             return (
               <Link
                 key={href}
@@ -38,7 +52,7 @@ export default function Navbar() {
                 className={`flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition-colors sm:text-sm ${active ? 'bg-[#e8f2ec] text-[#174e3b]' : 'text-[#69766f] hover:bg-[#f3f6f4] hover:text-[#25342e]'}`}
               >
                 <Icon className="size-4" aria-hidden="true" />
-                <span className={href === '/' ? 'hidden sm:inline' : 'hidden lg:inline'}>{label}</span>
+                <span className={href === '/' ? 'hidden sm:inline' : 'hidden lg:inline'}>{displayLabel}</span>
               </Link>
             );
           })}

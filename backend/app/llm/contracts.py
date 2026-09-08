@@ -148,7 +148,7 @@ class ProviderStatus(BaseModel):
     provider: str
     model: str
     configured: bool
-    mode: Literal["gemini", "limited_demo"]
+    mode: Literal["gemini", "groq", "limited_demo"]
     message: str
 
 

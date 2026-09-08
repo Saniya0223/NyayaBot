@@ -15,9 +15,10 @@ class Settings(BaseModel):
     TEMPLATES_DIR: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "templates"))
     DATA_DIR: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "data"))
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "gemini").strip().lower()
-    LLM_MODEL: str = os.getenv("LLM_MODEL", "gemini-3.7-flash").strip()
+    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "groq").strip().lower()
+    LLM_MODEL: str = os.getenv("LLM_MODEL", "openai/gpt-oss-120b").strip()
     LLM_RECENT_MESSAGE_LIMIT: int = int(os.getenv("LLM_RECENT_MESSAGE_LIMIT", "8"))
     LLM_TIMEOUT_SECONDS: float = float(os.getenv("LLM_TIMEOUT_SECONDS", "30"))
 

@@ -68,7 +68,7 @@ WAITING_STAGE = {
 
 
 class GeminiConversationService:
-    """Gemini understands and writes; deterministic code owns critical case state."""
+    """Gemini/Groq understands and writes; deterministic code owns critical case state."""
 
     def __init__(
         self,
@@ -77,6 +77,18 @@ class GeminiConversationService:
     ):
         self.provider = provider or get_llm_provider()
         self.workflow_agent = workflow_agent or conversational_agent
+
+    @property
+    def _provider_title(self) -> str:
+        return self.provider.status.provider.title()
+
+    @property
+    def _provider_name(self) -> str:
+        return self.provider.status.provider.lower()
+
+    @property
+    def _provider_mode(self) -> str:
+        return self.provider.status.mode
 
     async def process_turn(
         self,
@@ -152,7 +164,7 @@ class GeminiConversationService:
                 suggested_action=suggested_action,
                 message_id=str(uuid.uuid4()),
             )
-            return self._tag_response(response, "gemini")
+            return self._tag_response(response, self._provider_mode)
         except LLMProviderError:
             logger.warning(
                 "provider=%s model=%s event=turn_fell_back_to_limited_demo",
@@ -168,7 +180,7 @@ class GeminiConversationService:
             response = ChatTurnResponse(
                 reply_text=self._temporary_failure_prefix() + self._safe_next_prompt(profile),
                 case_profile=profile,
-                quick_replies=["Try Gemini again"],
+                quick_replies=[f"Try {self._provider_title} again"],
                 suggested_action=profile.recommended_next_action,
                 message_id=str(uuid.uuid4()),
             )
@@ -209,24 +221,24 @@ class GeminiConversationService:
                     "file_name": req.file_name,
                     "facts": candidate_facts,
                     "analysis_summary": analysis.summary,
-                    "source": "gemini_document",
+                    "source": f"{self._provider_name}_document",
                 }
                 lines = "\n".join(
                     f"• {field.replace('_', ' ').title()}: {value}"
                     for field, value in candidate_facts.items()
                 )
                 metadata_response.reply_text = (
-                    f"Gemini analyzed {req.file_name} and found these candidate details:\n{lines}\n\n"
+                    f"{self._provider_title} analyzed {req.file_name} and found these candidate details:\n{lines}\n\n"
                     "Please confirm them before I add them to the case profile. Document extraction can be wrong."
                 )
                 metadata_response.quick_replies = ["Details are correct", "I need to correct them"]
             else:
                 metadata_response.reply_text = (
-                    f"Gemini analyzed {req.file_name}, but did not find facts reliable enough to add. "
+                    f"{self._provider_title} analyzed {req.file_name}, but did not find facts reliable enough to add. "
                     "The file is still attached to the evidence checklist."
                 )
             self.workflow_agent._touch(profile)
-            return self._tag_response(metadata_response, "gemini")
+            return self._tag_response(metadata_response, self._provider_mode)
         except LLMProviderError:
             fallback = self.workflow_agent.process_document_upload(req, profile)
             fallback.reply_text = self._temporary_failure_prefix() + fallback.reply_text
@@ -265,7 +277,7 @@ class GeminiConversationService:
                         "field": field,
                         "existing": existing,
                         "candidate": candidate,
-                        "source": "gemini_chat",
+                        "source": f"{self._provider_name}_chat",
                     }
                     profile.key_facts["pending_conflict"] = conflict
                 continue
@@ -276,7 +288,7 @@ class GeminiConversationService:
                 profile.key_facts[field] = candidate
             profile.fact_metadata[field] = {
                 "value": candidate,
-                "source": "gemini_chat",
+                "source": f"{self._provider_name}_chat",
                 "confidence": confidence,
                 "confirmed": False,
             }
@@ -448,13 +460,12 @@ class GeminiConversationService:
             return [profile.recommended_doc_label or "Prepare document", "Review my evidence"]
         return []
 
-    @staticmethod
-    def _safe_next_prompt(profile: StructuredCaseProfile) -> str:
+    def _safe_next_prompt(self, profile: StructuredCaseProfile) -> str:
         missing = profile.missing_required_fields or profile.missing_document_fields
         if missing:
             labels = ", ".join(field.replace("_", " ") for field in missing[:4])
             return f"I kept your case progress. You can continue by sharing: {labels}."
-        return "I kept your case progress. Please try the Gemini response again in a moment."
+        return f"I kept your case progress. Please try the {self._provider_title} response again in a moment."
 
     def _recent_history(self, messages: Iterable[ChatMessage]) -> list[dict[str, str]]:
         values = list(messages)[-settings.LLM_RECENT_MESSAGE_LIMIT :]
@@ -517,13 +528,12 @@ class GeminiConversationService:
             fields.append(("police_station_name", profile.police_station_name))
         return [name for name, value in fields if value in (None, "", 0, 0.0, [])]
 
-    @staticmethod
-    def _limited_demo_prefix() -> str:
-        return "Limited demo mode — Gemini is not configured, so this reply uses local workflow rules only.\n\n"
+    def _limited_demo_prefix(self) -> str:
+        return f"Limited demo mode — {self._provider_title} is not configured, so this reply uses local workflow rules only.\n\n"
 
-    @staticmethod
-    def _temporary_failure_prefix() -> str:
-        return "Gemini is temporarily unavailable. I have switched this turn to limited demo mode and preserved your case progress.\n\n"
+    def _temporary_failure_prefix(self) -> str:
+        return f"{self._provider_title} is temporarily unavailable. I have switched this turn to limited demo mode and preserved your case progress.\n\n"
 
 
 gemini_conversation_service = GeminiConversationService()
+llm_conversation_service = gemini_conversation_service

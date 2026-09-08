@@ -7,6 +7,7 @@ import {
   FileText,
   LoaderCircle,
   Paperclip,
+  Plus,
   ShieldCheck,
   Sparkles,
   UserRound,
@@ -20,6 +21,7 @@ interface ChatInterfaceProps {
   onProfileUpdated: (profile: StructuredCaseProfile) => void;
   onOpenUploadModal: () => void;
   onTriggerDocumentModal: (docType: string, docLabel: string) => void;
+  onNewCase?: () => void;
   injectedBotMessage?: { text: string; profile: StructuredCaseProfile; quick_replies?: string[] };
 }
 
@@ -63,6 +65,7 @@ export default function ChatInterface({
   onProfileUpdated,
   onOpenUploadModal,
   onTriggerDocumentModal,
+  onNewCase,
   injectedBotMessage,
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<ChatMessageItem[]>(initialMessages);
@@ -76,6 +79,19 @@ export default function ChatInterface({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const mountedRef = useRef(true);
   const messageSequence = useRef(0);
+
+  useEffect(() => {
+    setMessages(initialMessages);
+    setCaseId(initialCaseId);
+  }, [initialMessages, initialCaseId]);
+
+  function handleNewCaseClick() {
+    setMessages([]);
+    setCaseId(undefined);
+    setInputText('');
+    setSendError(null);
+    if (onNewCase) onNewCase();
+  }
 
   useEffect(() => {
     mountedRef.current = true;
@@ -128,10 +144,10 @@ export default function ChatInterface({
       setLLMStatus((current) => ({
         provider: response.llm_provider,
         model: response.llm_model || current?.model || 'unknown',
-        configured: response.llm_mode === 'gemini',
+        configured: response.llm_mode !== 'limited_demo',
         mode: response.llm_mode,
-        message: response.llm_mode === 'gemini'
-          ? 'This response was generated through the backend Gemini API.'
+        message: response.llm_mode !== 'limited_demo'
+          ? `This response was generated through the backend ${response.llm_provider || 'AI'} API.`
           : 'This response used limited demo workflow rules.',
       }));
       onProfileUpdated(response.case_profile);
@@ -165,24 +181,29 @@ export default function ChatInterface({
     }
   }
 
+  const isLLMActive = llmStatus?.mode === 'groq' || llmStatus?.mode === 'gemini';
+  const providerLabel = llmStatus?.provider
+    ? llmStatus.provider.charAt(0).toUpperCase() + llmStatus.provider.slice(1)
+    : 'AI';
+
   // The backend status endpoint is the only source of truth. A failed fetch means
   // the API is unreachable, which must not be reported as a missing key.
   const statusLabel = statusUnreachable
     ? 'Backend unreachable'
     : llmStatus
-      ? llmStatus.mode === 'gemini'
-        ? 'Gemini'
+      ? isLLMActive
+        ? providerLabel
         : 'Limited demo'
       : 'Checking';
 
   const statusDetail = statusUnreachable
     ? `Cannot reach ${API_BASE_URL}`
     : llmStatus
-      ? llmStatus.mode === 'gemini'
+      ? isLLMActive
         ? `${llmStatus.model} · English · Hindi · Hinglish`
         : llmStatus.configured
           ? 'Provider unavailable this turn · local workflow fallback'
-          : 'Gemini key required · local workflow fallback'
+          : `${providerLabel} key required · local workflow fallback`
       : 'Checking provider status';
 
   function submit(event: FormEvent) {
@@ -198,7 +219,7 @@ export default function ChatInterface({
   }
 
   function handleDocumentAction(action: { type: string; doc_type?: string; label: string }) {
-    if (llmStatus?.mode === 'gemini' && activeProfile?.missing_document_fields?.length) {
+    if (isLLMActive && activeProfile?.missing_document_fields?.length) {
       void handleSend(`I want to prepare the ${action.label}. Please ask me for the missing details.`);
       return;
     }
@@ -214,10 +235,10 @@ export default function ChatInterface({
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-bold text-[#1c2b25]">Ask NyayaBot</h2>
               <span
-                className={`flex items-center gap-1 text-[10px] font-semibold ${llmStatus?.mode === 'gemini' ? 'text-[#34705a]' : 'text-[#9a681c]'}`}
+                className={`flex items-center gap-1 text-[10px] font-semibold ${isLLMActive ? 'text-[#34705a]' : 'text-[#9a681c]'}`}
                 title={llmStatus?.message || 'Checking AI provider status'}
               >
-                <span className={`size-1.5 rounded-full ${llmStatus?.mode === 'gemini' ? 'bg-[#3ca276]' : 'bg-[#d89a32]'}`} />
+                <span className={`size-1.5 rounded-full ${isLLMActive ? 'bg-[#3ca276]' : 'bg-[#d89a32]'}`} />
                 {statusLabel}
               </span>
             </div>
@@ -226,16 +247,28 @@ export default function ChatInterface({
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onOpenUploadModal}
-          disabled={!caseId}
-          className="flex items-center gap-2 rounded-xl border border-[#dce5df] px-3 py-2 text-xs font-semibold text-[#4d5d55] transition hover:border-[#b9ccc0] hover:bg-[#f5f8f6] disabled:opacity-45"
-          aria-label={caseId ? 'Upload a document' : 'Start a case before uploading'}
-        >
-          <Paperclip className="size-4" aria-hidden="true" />
-          <span className="hidden sm:inline">Add evidence</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleNewCaseClick}
+            className="flex items-center gap-1.5 rounded-xl border border-[#dce5df] bg-[#f7faf8] px-3 py-2 text-xs font-semibold text-[#174e3b] transition hover:border-[#b9ccc0] hover:bg-[#ebf4ef] active:scale-[0.98]"
+            title="Start a new case conversation"
+            aria-label="Start a new case"
+          >
+            <Plus className="size-3.5" aria-hidden="true" />
+            <span className="hidden sm:inline">New case</span>
+          </button>
+          <button
+            type="button"
+            onClick={onOpenUploadModal}
+            disabled={!caseId}
+            className="flex items-center gap-2 rounded-xl border border-[#dce5df] px-3 py-2 text-xs font-semibold text-[#4d5d55] transition hover:border-[#b9ccc0] hover:bg-[#f5f8f6] disabled:opacity-45"
+            aria-label={caseId ? 'Upload a document' : 'Start a case before uploading'}
+          >
+            <Paperclip className="size-4" aria-hidden="true" />
+            <span className="hidden sm:inline">Add evidence</span>
+          </button>
+        </div>
       </header>
 
       <div className="soft-scrollbar flex-1 overflow-y-auto px-4 py-5 sm:px-6">

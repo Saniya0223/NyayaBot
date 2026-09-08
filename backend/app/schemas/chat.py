@@ -79,9 +79,9 @@ class ChatTurnResponse(BaseModel):
     quick_replies: List[str] = Field(default_factory=list)
     suggested_action: Optional[Dict[str, Any]] = None
     message_id: str
-    llm_provider: str = "gemini"
+    llm_provider: str = "groq"
     llm_model: Optional[str] = None
-    llm_mode: str = "limited_demo"  # "gemini" | "limited_demo"
+    llm_mode: str = "limited_demo"  # "groq" | "gemini" | "limited_demo"
 
 class ChatSessionResponse(BaseModel):
     case_profile: StructuredCaseProfile

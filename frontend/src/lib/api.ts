@@ -296,14 +296,14 @@ export interface ChatTurnResponse {
   message_id: string;
   llm_provider: string;
   llm_model?: string;
-  llm_mode: 'gemini' | 'limited_demo';
+  llm_mode: 'groq' | 'gemini' | 'limited_demo';
 }
 
 export interface LLMStatus {
   provider: string;
   model: string;
   configured: boolean;
-  mode: 'gemini' | 'limited_demo';
+  mode: 'groq' | 'gemini' | 'limited_demo';
   message: string;
 }
 

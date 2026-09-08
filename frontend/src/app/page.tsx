@@ -6,9 +6,13 @@ import CaseWorkspacePanel from '@/components/CaseWorkspacePanel';
 import ChatInterface from '@/components/ChatInterface';
 import DocumentIntelligenceModal from '@/components/DocumentIntelligenceModal';
 import FactualConfirmModal from '@/components/FactualConfirmModal';
+import LoginGate from '@/components/LoginGate';
 import { ChatMessageItem, fetchChatCase, StructuredCaseProfile } from '@/lib/api';
+import { getStoredUser, NyayaUser } from '@/lib/auth';
 
 export default function HomeChatPage() {
+  const [currentUser, setCurrentUser] = useState<NyayaUser | null>(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const [profile, setProfile] = useState<StructuredCaseProfile | null>(null);
   const [initialMessages, setInitialMessages] = useState<ChatMessageItem[]>([]);
   const [restoring, setRestoring] = useState(true);
@@ -16,6 +20,17 @@ export default function HomeChatPage() {
   const [documentModal, setDocumentModal] = useState({ open: false, type: '', label: '' });
   const [uploadOpen, setUploadOpen] = useState(false);
   const [injectedMessage, setInjectedMessage] = useState<{ text: string; profile: StructuredCaseProfile; quick_replies?: string[] }>();
+
+  useEffect(() => {
+    setCurrentUser(getStoredUser());
+    setCheckingAuth(false);
+
+    function onAuthChange() {
+      setCurrentUser(getStoredUser());
+    }
+    window.addEventListener('nyayabot_auth_change', onAuthChange);
+    return () => window.removeEventListener('nyayabot_auth_change', onAuthChange);
+  }, []);
 
   useEffect(() => {
     const caseId = new URLSearchParams(window.location.search).get('case');
@@ -49,12 +64,22 @@ export default function HomeChatPage() {
     setDocumentModal({ open: true, type, label });
   }
 
-  if (restoring) {
+  function handleNewCase() {
+    setProfile(null);
+    setInitialMessages([]);
+    window.history.replaceState({}, '', '/');
+  }
+
+  if (checkingAuth || restoring) {
     return (
       <div className="mx-auto grid min-h-[calc(100vh-9rem)] max-w-[1480px] place-items-center px-4 text-sm text-[#718078]">
         Reopening your case securely…
       </div>
     );
+  }
+
+  if (!currentUser) {
+    return <LoginGate onLoginSuccess={(u) => setCurrentUser(u)} />;
   }
 
   return (
@@ -73,6 +98,7 @@ export default function HomeChatPage() {
             onProfileUpdated={updateProfile}
             onOpenUploadModal={() => setUploadOpen(true)}
             onTriggerDocumentModal={openDocument}
+            onNewCase={handleNewCase}
             injectedBotMessage={injectedMessage}
           />
         </div>
