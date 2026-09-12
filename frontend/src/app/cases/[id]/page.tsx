@@ -6,6 +6,8 @@ import { useParams } from 'next/navigation';
 import { ArrowLeft, CalendarDays, Check, FileText, MessageCircle, Scale } from 'lucide-react';
 import CaseWorkspacePanel from '@/components/CaseWorkspacePanel';
 import FactualConfirmModal from '@/components/FactualConfirmModal';
+import { useAuth } from '@/components/AuthProvider';
+import LoginGate from '@/components/LoginGate';
 import { absoluteDocumentUrl, fetchChatCase, StructuredCaseProfile } from '@/lib/api';
 
 const tabs = [
@@ -15,6 +17,7 @@ const tabs = [
 ] as const;
 
 export default function CaseDetailPage() {
+  const { user, loading: authLoading, setUser } = useAuth();
   const params = useParams<{ id: string }>();
   const caseId = params.id;
   const [profile, setProfile] = useState<StructuredCaseProfile | null>(null);
@@ -24,6 +27,8 @@ export default function CaseDetailPage() {
   const [documentModal, setDocumentModal] = useState({ open: false, type: '', label: '' });
 
   useEffect(() => {
+    if (authLoading) return;
+    if (!user) return;
     let active = true;
     fetchChatCase(caseId)
       .then((session) => { if (active) setProfile(session.case_profile); })
@@ -32,7 +37,24 @@ export default function CaseDetailPage() {
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [caseId]);
+  }, [authLoading, caseId, user]);
+
+  if (authLoading) {
+    return <div className="grid min-h-[60vh] place-items-center text-sm text-[#718078]">Checking your session…</div>;
+  }
+
+  if (!user) {
+    return (
+      <LoginGate
+        onLoginSuccess={(nextUser) => {
+          setProfile(null);
+          setError(null);
+          setLoading(true);
+          setUser(nextUser);
+        }}
+      />
+    );
+  }
 
   if (loading) {
     return <div className="grid min-h-[60vh] place-items-center text-sm text-[#718078]">Loading case workspace…</div>;

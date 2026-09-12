@@ -1,15 +1,20 @@
 import mimetypes
 import os
+import re
 import uuid
 import logging
 from datetime import datetime
 from typing import List
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.auth import get_current_user
+from app.auth_routes import router as auth_router
 from app.agents.conversation_agent import conversational_agent
 from app.agents.intake_node import IntakeFactExtractor
 from app.agents.orchestrator import legal_orchestrator
@@ -24,7 +29,9 @@ from app.db.models import (
     EvidenceFileModel,
     FactGraphModel,
     GeneratedDocumentModel,
+    UserModel,
 )
+from app.db.migrations import apply_additive_migrations
 from app.db.session import Base, engine, get_db
 from app.schemas.case import CaseResponse, ClarificationAnswer, IntakeRequest
 from app.schemas.chat import (
@@ -53,21 +60,50 @@ from app.services.llm_conversation import gemini_conversation_service
 
 
 Base.metadata.create_all(bind=engine)
+apply_additive_migrations(engine)
 
 app = FastAPI(
     title="NyayaBot",
     version=settings.APP_VERSION,
     description="Conversation-first legal information, workflow, and document-assistance MVP for India",
 )
+PRIVATE_LAN_ORIGIN_REGEX = (
+    r"^http://("
+    r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+    r"|192\.168\.\d{1,3}\.\d{1,3}"
+    r"|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}"
+    r"):3000$"
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=settings.CORS_ORIGINS,
+    # Also allow the dev frontend reached over the LAN (phone/tablet on the same
+    # Wi-Fi). Private address ranges only, port 3000 only, so this stays scoped
+    # to local development rather than opening the API to arbitrary origins.
+    allow_origin_regex=PRIVATE_LAN_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(auth_router)
 
-CHAT_CASE_SESSIONS: dict[str, StructuredCaseProfile] = {}
+
+@app.middleware("http")
+async def reject_untrusted_write_origins(request: Request, call_next):
+    """Block browser cookie-authenticated writes from untrusted origins."""
+
+    origin = request.headers.get("origin")
+    if origin and request.method not in {"GET", "HEAD", "OPTIONS"}:
+        api_origin = f"{request.url.scheme}://{request.url.netloc}"
+        allowed = (
+            origin == api_origin
+            or origin in settings.CORS_ORIGINS
+            or re.fullmatch(PRIVATE_LAN_ORIGIN_REGEX, origin) is not None
+        )
+        if not allowed:
+            return JSONResponse(status_code=403, content={"detail": "Untrusted request origin"})
+    return await call_next(request)
+
 logger = logging.getLogger("uvicorn.error")
 llm_status = get_llm_provider().status
 logger.info(
@@ -83,15 +119,38 @@ def _safe_profile(record: ChatCaseSessionModel) -> StructuredCaseProfile:
     return StructuredCaseProfile.model_validate(record.profile_data)
 
 
-def _load_chat_profile(case_id: str, db: Session) -> StructuredCaseProfile | None:
-    if case_id in CHAT_CASE_SESSIONS:
-        return CHAT_CASE_SESSIONS[case_id]
-    record = db.query(ChatCaseSessionModel).filter(ChatCaseSessionModel.case_id == case_id).first()
+def _get_owned_case(db: Session, case_id: str, current_user: UserModel) -> CaseModel:
+    case = (
+        db.query(CaseModel)
+        .filter(CaseModel.id == case_id, CaseModel.user_id == current_user.id)
+        .first()
+    )
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return case
+
+
+def _get_owned_chat_record(
+    db: Session,
+    case_id: str,
+    current_user: UserModel,
+) -> ChatCaseSessionModel:
+    record = (
+        db.query(ChatCaseSessionModel)
+        .filter(
+            ChatCaseSessionModel.case_id == case_id,
+            ChatCaseSessionModel.user_id == current_user.id,
+            ChatCaseSessionModel.is_demo.is_(False),
+        )
+        .first()
+    )
     if not record:
-        return None
-    profile = _safe_profile(record)
-    CHAT_CASE_SESSIONS[case_id] = profile
-    return profile
+        raise HTTPException(status_code=404, detail="Case not found")
+    return record
+
+
+def _load_chat_profile(record: ChatCaseSessionModel) -> StructuredCaseProfile:
+    return _safe_profile(record)
 
 
 def _profile_to_fact_graph(profile: StructuredCaseProfile, narrative: str) -> FactGraphSchema:
@@ -135,17 +194,25 @@ def _profile_to_fact_graph(profile: StructuredCaseProfile, narrative: str) -> Fa
     )
 
 
-def _sync_profile_to_legacy_case(profile: StructuredCaseProfile, narrative: str, db: Session) -> None:
+def _sync_profile_to_legacy_case(
+    profile: StructuredCaseProfile,
+    narrative: str,
+    db: Session,
+    user_id: str | None,
+) -> None:
     case = db.query(CaseModel).filter(CaseModel.id == profile.case_id).first()
     if not case:
         case = CaseModel(
             id=profile.case_id,
+            user_id=user_id,
             case_number=profile.case_number,
             title=profile.title,
             category=profile.category,
         )
         db.add(case)
         db.flush()
+    elif case.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Case not found")
     case.title = profile.title
     case.category = profile.category
     case.status = profile.current_stage_label
@@ -171,24 +238,31 @@ def _save_chat_session(
     profile: StructuredCaseProfile,
     messages: List[ChatMessage],
     db: Session,
+    user_id: str | None,
+    *,
+    is_demo: bool = False,
 ) -> None:
     record = db.query(ChatCaseSessionModel).filter(ChatCaseSessionModel.case_id == profile.case_id).first()
     if not record:
-        record = ChatCaseSessionModel(case_id=profile.case_id, profile_data={}, messages_data=[])
+        record = ChatCaseSessionModel(
+            case_id=profile.case_id,
+            user_id=user_id,
+            is_demo=is_demo,
+            profile_data={},
+            messages_data=[],
+        )
         db.add(record)
+    elif record.user_id != user_id or bool(record.is_demo) != is_demo:
+        raise HTTPException(status_code=404, detail="Case not found")
     record.profile_data = profile.model_dump(mode="json")
     record.messages_data = [message.model_dump(mode="json") for message in messages]
     record.updated_at = datetime.utcnow()
     narrative = "\n".join(message.text for message in messages if message.sender == "user") or profile.title
-    _sync_profile_to_legacy_case(profile, narrative, db)
+    _sync_profile_to_legacy_case(profile, narrative, db, user_id)
     db.commit()
-    CHAT_CASE_SESSIONS[profile.case_id] = profile
 
 
-def _messages_for_session(case_id: str, db: Session) -> List[ChatMessage]:
-    record = db.query(ChatCaseSessionModel).filter(ChatCaseSessionModel.case_id == case_id).first()
-    if not record:
-        return []
+def _messages_for_session(record: ChatCaseSessionModel) -> List[ChatMessage]:
     return [ChatMessage.model_validate(message) for message in record.messages_data]
 
 
@@ -205,11 +279,6 @@ def _seed_demo_sessions(db: Session) -> None:
             "I bought a laptop on 12 August 2026 and I live in Delhi.",
             "I have the invoice and Amazon rejected the refund in writing.",
             "I sent the grievance today by email.",
-        ],
-        "demo-salary": [
-            "My company hasn't paid July and August salary totalling ₹90,000.",
-            "I work in Delhi for ABC Pvt Ltd. My monthly salary is ₹45,000.",
-            "Yes, both",
         ],
         "demo-cyber": [
             "I lost ₹35,000 in a UPI fraud.",
@@ -240,7 +309,7 @@ def _seed_demo_sessions(db: Session) -> None:
                 ]
             )
         if profile:
-            _save_chat_session(profile, messages, db)
+            _save_chat_session(profile, messages, db, None, is_demo=True)
 
 
 @app.get("/")
@@ -255,19 +324,29 @@ def root():
 
 
 @app.post("/api/v1/intake", response_model=CaseResponse)
-def handle_intake(req: IntakeRequest, db: Session = Depends(get_db)):
+def handle_intake(
+    req: IntakeRequest,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
     if not req.user_narrative or len(req.user_narrative.strip()) < 10:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Please describe the issue in at least 10 characters.",
         )
-    return legal_orchestrator.process_intake(req, db)
+    if req.case_id:
+        _get_owned_case(db, req.case_id, current_user)
+    return legal_orchestrator.process_intake(req, db, current_user.id)
 
 
 @app.post("/api/v1/clarifications", response_model=CaseResponse)
-def submit_clarifications(payload: ClarificationAnswer, db: Session = Depends(get_db)):
-    case = db.query(CaseModel).filter(CaseModel.id == payload.case_id).first()
-    if not case or not case.fact_graph:
+def submit_clarifications(
+    payload: ClarificationAnswer,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    case = _get_owned_case(db, payload.case_id, current_user)
+    if not case.fact_graph:
         raise HTTPException(status_code=404, detail="Case facts not found")
     facts = case.fact_graph
     answers_text = " ".join(f"{question}: {answer}" for question, answer in payload.answers.items())
@@ -282,13 +361,23 @@ def submit_clarifications(payload: ClarificationAnswer, db: Session = Depends(ge
             user_email=facts.complainant_data.get("email"),
         ),
         db,
+        current_user.id,
     )
 
 
 @app.get("/api/v1/cases", response_model=List[CaseResponse])
-def list_cases(db: Session = Depends(get_db)):
+def list_cases(
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
     results = []
-    for case in db.query(CaseModel).order_by(CaseModel.updated_at.desc()).all():
+    cases = (
+        db.query(CaseModel)
+        .filter(CaseModel.user_id == current_user.id)
+        .order_by(CaseModel.updated_at.desc())
+        .all()
+    )
+    for case in cases:
         facts = case.fact_graph
         request = IntakeRequest(
             user_narrative=facts.incident_narrative if facts else case.title,
@@ -297,15 +386,17 @@ def list_cases(db: Session = Depends(get_db)):
             user_city=facts.complainant_data.get("city", "") if facts else "",
             user_state=facts.complainant_data.get("state", "") if facts else "",
         )
-        results.append(legal_orchestrator.process_intake(request, db))
+        results.append(legal_orchestrator.process_intake(request, db, current_user.id))
     return results
 
 
 @app.get("/api/v1/cases/{case_id}", response_model=CaseResponse)
-def get_case(case_id: str, db: Session = Depends(get_db)):
-    case = db.query(CaseModel).filter(CaseModel.id == case_id).first()
-    if not case:
-        raise HTTPException(status_code=404, detail="Case not found")
+def get_case(
+    case_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    case = _get_owned_case(db, case_id, current_user)
     facts = case.fact_graph
     return legal_orchestrator.process_intake(
         IntakeRequest(
@@ -316,11 +407,18 @@ def get_case(case_id: str, db: Session = Depends(get_db)):
             user_state=facts.complainant_data.get("state", "") if facts else "",
         ),
         db,
+        current_user.id,
     )
 
 
 @app.post("/api/v1/cases/{case_id}/timeline/{event_id}/toggle")
-def toggle_timeline_event(case_id: str, event_id: str, db: Session = Depends(get_db)):
+def toggle_timeline_event(
+    case_id: str,
+    event_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    _get_owned_case(db, case_id, current_user)
     event = db.query(CaseTimelineEventModel).filter(
         CaseTimelineEventModel.case_id == case_id,
         CaseTimelineEventModel.id == event_id,
@@ -353,13 +451,24 @@ def _document_validation_data(facts: FactGraphSchema, overrides: dict) -> dict:
 
 
 @app.post("/api/v1/documents/generate", response_model=DocumentResponse)
-def generate_document(req: DocumentGenerateRequest, db: Session = Depends(get_db)):
-    case = db.query(CaseModel).filter(CaseModel.id == req.case_id).first()
-    if not case:
-        raise HTTPException(status_code=404, detail="Case not found")
-    profile = _load_chat_profile(req.case_id, db)
+def generate_document(
+    req: DocumentGenerateRequest,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    case = _get_owned_case(db, req.case_id, current_user)
+    chat_record = (
+        db.query(ChatCaseSessionModel)
+        .filter(
+            ChatCaseSessionModel.case_id == req.case_id,
+            ChatCaseSessionModel.user_id == current_user.id,
+            ChatCaseSessionModel.is_demo.is_(False),
+        )
+        .first()
+    )
+    profile = _load_chat_profile(chat_record) if chat_record else None
     if profile:
-        messages = _messages_for_session(req.case_id, db)
+        messages = _messages_for_session(chat_record)
         narrative = "\n".join(message.text for message in messages if message.sender == "user") or profile.title
         fact_graph = _profile_to_fact_graph(profile, narrative)
     elif case.fact_graph:
@@ -443,7 +552,12 @@ def generate_document(req: DocumentGenerateRequest, db: Session = Depends(get_db
         )
         if not any(action.get("type") == "document_prepared" for action in profile.actions_completed):
             conversational_agent._add_action(profile, "document_prepared", f"Prepared {response.title}")
-        _save_chat_session(profile, _messages_for_session(req.case_id, db), db)
+        _save_chat_session(
+            profile,
+            _messages_for_session(chat_record),
+            db,
+            current_user.id,
+        )
     else:
         db.commit()
     logger.info("case_id=%s document_type=%s event=document_generated", case.id, req.doc_type)
@@ -451,9 +565,28 @@ def generate_document(req: DocumentGenerateRequest, db: Session = Depends(get_db
 
 
 @app.get("/api/v1/documents/download/{filename}")
-def download_document(filename: str):
+def download_document(
+    filename: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
     if filename != os.path.basename(filename):
         raise HTTPException(status_code=400, detail="Invalid filename")
+    records = (
+        db.query(GeneratedDocumentModel)
+        .join(CaseModel, CaseModel.id == GeneratedDocumentModel.case_id)
+        .filter(CaseModel.user_id == current_user.id)
+        .all()
+    )
+    is_owned = False
+    for record in records:
+        pdf_name = os.path.basename(record.pdf_download_url or record.pdf_filename or "")
+        docx_name = f"{os.path.splitext(pdf_name)[0]}.docx" if pdf_name else ""
+        if filename in {pdf_name, docx_name}:
+            is_owned = True
+            break
+    if not is_owned:
+        raise HTTPException(status_code=404, detail="File not found")
     file_path = os.path.join(settings.STORAGE_DIR, "documents", filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")
@@ -462,11 +595,19 @@ def download_document(filename: str):
 
 
 @app.get("/api/v1/documents")
-def list_documents(db: Session = Depends(get_db)):
-    records = db.query(GeneratedDocumentModel).order_by(GeneratedDocumentModel.created_at.desc()).all()
+def list_documents(
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    records = (
+        db.query(GeneratedDocumentModel, CaseModel)
+        .join(CaseModel, CaseModel.id == GeneratedDocumentModel.case_id)
+        .filter(CaseModel.user_id == current_user.id)
+        .order_by(GeneratedDocumentModel.created_at.desc())
+        .all()
+    )
     result = []
-    for record in records:
-        case = db.query(CaseModel).filter(CaseModel.id == record.case_id).first()
+    for record, case in records:
         docx_url = None
         if record.pdf_download_url:
             candidate = record.pdf_download_url.rsplit(".", 1)[0] + ".docx"
@@ -495,9 +636,13 @@ def document_definitions():
 
 
 @app.get("/api/v1/cases/{case_id}/dossier", response_model=PortalFilingDossier)
-def get_filing_dossier(case_id: str, db: Session = Depends(get_db)):
-    case = db.query(CaseModel).filter(CaseModel.id == case_id).first()
-    if not case or not case.fact_graph:
+def get_filing_dossier(
+    case_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    case = _get_owned_case(db, case_id, current_user)
+    if not case.fact_graph:
         raise HTTPException(status_code=404, detail="Case facts not found")
     facts = case.fact_graph
     schema = IntakeFactExtractor.extract_facts(
@@ -531,11 +676,16 @@ def get_llm_status():
 
 
 @app.post("/api/v1/chat/message", response_model=ChatTurnResponse)
-async def handle_chat_message(req: ChatTurnRequest, db: Session = Depends(get_db)):
-    existing_profile = _load_chat_profile(req.case_id, db) if req.case_id else None
-    recent_messages = _messages_for_session(req.case_id, db) if existing_profile and req.case_id else req.history
+async def handle_chat_message(
+    req: ChatTurnRequest,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    record = _get_owned_chat_record(db, req.case_id, current_user) if req.case_id else None
+    existing_profile = _load_chat_profile(record) if record else None
+    recent_messages = _messages_for_session(record) if record else []
     response = await gemini_conversation_service.process_turn(req, existing_profile, recent_messages)
-    stored_messages = _messages_for_session(response.case_profile.case_id, db)
+    stored_messages = list(recent_messages)
     stored_messages.extend(
         [
             ChatMessage(id=str(uuid.uuid4()), sender="user", text=req.message),
@@ -548,7 +698,7 @@ async def handle_chat_message(req: ChatTurnRequest, db: Session = Depends(get_db
             ),
         ]
     )
-    _save_chat_session(response.case_profile, stored_messages, db)
+    _save_chat_session(response.case_profile, stored_messages, db, current_user.id)
     logger.info(
         "case_id=%s classification=%s workflow_stage=%s provider=%s model=%s mode=%s event=chat_processed",
         response.case_profile.case_id,
@@ -562,30 +712,48 @@ async def handle_chat_message(req: ChatTurnRequest, db: Session = Depends(get_db
 
 
 @app.get("/api/v1/chat/cases", response_model=List[StructuredCaseProfile])
-def list_chat_cases(db: Session = Depends(get_db)):
-    _seed_demo_sessions(db)
-    records = db.query(ChatCaseSessionModel).order_by(ChatCaseSessionModel.updated_at.desc()).all()
+def list_chat_cases(
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    records = (
+        db.query(ChatCaseSessionModel)
+        .filter(
+            ChatCaseSessionModel.user_id == current_user.id,
+            ChatCaseSessionModel.is_demo.is_(False),
+        )
+        .order_by(ChatCaseSessionModel.updated_at.desc())
+        .all()
+    )
     return [_safe_profile(record) for record in records]
 
 
 @app.get("/api/v1/chat/cases/{case_id}", response_model=ChatSessionResponse)
-def get_chat_case(case_id: str, db: Session = Depends(get_db)):
-    profile = _load_chat_profile(case_id, db)
-    if not profile:
-        raise HTTPException(status_code=404, detail="Conversational case not found")
-    return ChatSessionResponse(case_profile=profile, messages=_messages_for_session(case_id, db))
+def get_chat_case(
+    case_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    record = _get_owned_chat_record(db, case_id, current_user)
+    return ChatSessionResponse(
+        case_profile=_load_chat_profile(record),
+        messages=_messages_for_session(record),
+    )
 
 
 @app.post("/api/v1/chat/cases/{case_id}/resolve", response_model=StructuredCaseProfile)
-def resolve_chat_case(case_id: str, db: Session = Depends(get_db)):
-    profile = _load_chat_profile(case_id, db)
-    if not profile:
-        raise HTTPException(status_code=404, detail="Case not found")
+def resolve_chat_case(
+    case_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    record = _get_owned_chat_record(db, case_id, current_user)
+    profile = _load_chat_profile(record)
     if profile.current_stage_key != "RESOLVED":
         profile.current_stage_key = "RESOLVED"
         profile.current_stage_label = "Resolved"
         conversational_agent._add_action(profile, "case_resolved", "Case marked resolved")
-    _save_chat_session(profile, _messages_for_session(case_id, db), db)
+    _save_chat_session(profile, _messages_for_session(record), db, current_user.id)
     return profile
 
 
@@ -593,14 +761,14 @@ def resolve_chat_case(case_id: str, db: Session = Depends(get_db)):
 async def handle_document_upload_extraction(
     req: DocumentUploadExtractionRequest,
     db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
 ):
     if not req.case_id:
         raise HTTPException(status_code=400, detail="Start a case before uploading a document")
-    profile = _load_chat_profile(req.case_id, db)
-    if not profile:
-        raise HTTPException(status_code=404, detail="Case not found")
+    record = _get_owned_chat_record(db, req.case_id, current_user)
+    profile = _load_chat_profile(record)
     response = await gemini_conversation_service.process_document_upload(req, profile)
-    messages = _messages_for_session(profile.case_id, db)
+    messages = _messages_for_session(record)
     messages.append(
         ChatMessage(
             id=response.message_id,
@@ -609,7 +777,7 @@ async def handle_document_upload_extraction(
             quick_replies=response.quick_replies,
         )
     )
-    _save_chat_session(response.case_profile, messages, db)
+    _save_chat_session(response.case_profile, messages, db, current_user.id)
     logger.info("case_id=%s document_type=%s event=evidence_metadata_processed", profile.case_id, req.doc_type)
     return response
 
@@ -621,10 +789,10 @@ async def handle_evidence_file_upload(
     upload: UploadFile = File(...),
     excerpt: str = Form(""),
     db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
 ):
-    profile = _load_chat_profile(case_id, db)
-    if not profile:
-        raise HTTPException(status_code=404, detail="Case not found")
+    record = _get_owned_chat_record(db, case_id, current_user)
+    profile = _load_chat_profile(record)
 
     original_name = os.path.basename(upload.filename or "evidence")
     content = await upload.read()
@@ -676,7 +844,7 @@ async def handle_evidence_file_upload(
         ),
         profile,
     )
-    messages = _messages_for_session(case_id, db)
+    messages = _messages_for_session(record)
     messages.append(
         ChatMessage(
             id=response.message_id,
@@ -685,7 +853,7 @@ async def handle_evidence_file_upload(
             quick_replies=response.quick_replies,
         )
     )
-    _save_chat_session(response.case_profile, messages, db)
+    _save_chat_session(response.case_profile, messages, db, current_user.id)
     logger.info(
         "case_id=%s document_type=%s extraction_mode=%s event=evidence_file_processed",
         case_id,
@@ -693,3 +861,66 @@ async def handle_evidence_file_upload(
         extraction_mode,
     )
     return response
+
+
+@app.get("/api/v1/evidence/{evidence_id}/download")
+def download_evidence(
+    evidence_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    record = (
+        db.query(EvidenceFileModel)
+        .join(CaseModel, CaseModel.id == EvidenceFileModel.case_id)
+        .filter(
+            EvidenceFileModel.id == evidence_id,
+            CaseModel.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not record:
+        raise HTTPException(status_code=404, detail="Evidence file not found")
+    evidence_root = os.path.abspath(os.path.join(settings.STORAGE_DIR, "evidence"))
+    file_path = os.path.abspath(record.file_path)
+    if os.path.commonpath([evidence_root, file_path]) != evidence_root or not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="Evidence file not found")
+    media_type = mimetypes.guess_type(record.file_name)[0] or "application/octet-stream"
+    return FileResponse(file_path, media_type=media_type, filename=record.file_name)
+
+
+@app.get("/api/v1/dashboard")
+def dashboard_summary(
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    case_ids = db.query(CaseModel.id).filter(CaseModel.user_id == current_user.id)
+    total_cases = case_ids.count()
+    active_cases = (
+        db.query(func.count(CaseModel.id))
+        .filter(
+            CaseModel.user_id == current_user.id,
+            CaseModel.status.notin_(["Resolved", "RESOLVED"]),
+        )
+        .scalar()
+        or 0
+    )
+    document_count = (
+        db.query(func.count(GeneratedDocumentModel.id))
+        .join(CaseModel, CaseModel.id == GeneratedDocumentModel.case_id)
+        .filter(CaseModel.user_id == current_user.id)
+        .scalar()
+        or 0
+    )
+    evidence_count = (
+        db.query(func.count(EvidenceFileModel.id))
+        .join(CaseModel, CaseModel.id == EvidenceFileModel.case_id)
+        .filter(CaseModel.user_id == current_user.id)
+        .scalar()
+        or 0
+    )
+    return {
+        "total_cases": total_cases,
+        "active_cases": active_cases,
+        "documents": document_count,
+        "evidence_files": evidence_count,
+    }

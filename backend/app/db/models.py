@@ -13,19 +13,38 @@ class UserModel(Base):
     id = Column(String(36), primary_key=True, default=generate_uuid)
     full_name = Column(String(255), nullable=False)
     email = Column(String(255), unique=True, nullable=False)
+    # Nullable only so legacy databases can be upgraded without inventing
+    # credentials. Newly-created accounts always receive an Argon2 hash.
+    password_hash = Column(String(512), nullable=True)
     phone = Column(String(20), nullable=True)
     city = Column(String(100), nullable=True)
     state = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     cases = relationship("CaseModel", back_populates="user", cascade="all, delete-orphan")
+    chat_cases = relationship("ChatCaseSessionModel", back_populates="user")
+    auth_sessions = relationship("AuthSessionModel", back_populates="user", cascade="all, delete-orphan")
+
+
+class AuthSessionModel(Base):
+    """Revocable server-side login session; the raw token exists only in the cookie."""
+
+    __tablename__ = "auth_sessions"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = Column(String(64), unique=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+
+    user = relationship("UserModel", back_populates="auth_sessions")
 
 
 class CaseModel(Base):
     __tablename__ = "cases"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
     case_number = Column(String(50), unique=True, index=True)
     title = Column(String(255), nullable=False)
     category = Column(String(50), nullable=False)  # CONSUMER, TENANCY, RTI, CYBER, CHEQUE_BOUNCE
@@ -43,6 +62,7 @@ class CaseModel(Base):
     timeline_events = relationship("CaseTimelineEventModel", back_populates="case", cascade="all, delete-orphan")
     documents = relationship("GeneratedDocumentModel", back_populates="case", cascade="all, delete-orphan")
     evidence_files = relationship("EvidenceFileModel", back_populates="case", cascade="all, delete-orphan")
+    chat_session = relationship("ChatCaseSessionModel", back_populates="case", uselist=False)
 
 
 class FactGraphModel(Base):
@@ -117,7 +137,12 @@ class ChatCaseSessionModel(Base):
     __tablename__ = "chat_case_sessions"
 
     case_id = Column(String(36), ForeignKey("cases.id"), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
+    is_demo = Column(Boolean, default=False, nullable=False, index=True)
     profile_data = Column(JSON, default=dict, nullable=False)
     messages_data = Column(JSON, default=list, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    case = relationship("CaseModel", back_populates="chat_session")
+    user = relationship("UserModel", back_populates="chat_cases")

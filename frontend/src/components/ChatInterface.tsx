@@ -80,11 +80,6 @@ export default function ChatInterface({
   const mountedRef = useRef(true);
   const messageSequence = useRef(0);
 
-  useEffect(() => {
-    setMessages(initialMessages);
-    setCaseId(initialCaseId);
-  }, [initialMessages, initialCaseId]);
-
   function handleNewCaseClick() {
     setMessages([]);
     setCaseId(undefined);
@@ -102,7 +97,8 @@ export default function ChatInterface({
       .catch((error: unknown) => {
         // Surface the real reason during development instead of silently
         // fabricating an "unconfigured" state that blames a missing key.
-        console.error(`[NyayaBot] LLM status fetch failed against ${API_BASE_URL}:`, error);
+        const detail = error instanceof Error ? error.message : 'Unknown connection error';
+        console.warn(`[NyayaBot] LLM status fetch failed against ${API_BASE_URL}: ${detail}`);
         if (mountedRef.current) { setLLMStatus(null); setStatusUnreachable(true); }
       });
     return () => { mountedRef.current = false; };
@@ -161,12 +157,12 @@ export default function ChatInterface({
           suggested_action: response.suggested_action,
         },
       ]);
-    } catch (error) {
+    } catch (error: unknown) {
       // Log the real, non-sensitive failure so URL/schema/CORS faults are
       // diagnosable instead of hidden behind the generic bubble below.
-      console.error(`[NyayaBot] chat request failed against ${API_BASE_URL}/chat/message:`, error);
-      if (!mountedRef.current) return;
       const message = error instanceof Error ? error.message : 'Please try again.';
+      console.warn(`[NyayaBot] chat request failed against ${API_BASE_URL}/chat/message: ${message}`);
+      if (!mountedRef.current) return;
       setSendError(message);
       setMessages((current) => [
         ...current,
@@ -365,7 +361,7 @@ export default function ChatInterface({
         </div>
         <div className="mt-2 flex items-center justify-between px-1 text-[10px] text-[#87938d]">
           <span>Enter to send · Shift + Enter for a new line</span>
-          {sendError ? <span className="text-[#a14d42]">Connection recovered—retry when ready</span> : <span>Information, not representation</span>}
+          {sendError ? <span role="alert" className="text-[#a14d42]">{sendError}</span> : <span>Information, not representation</span>}
         </div>
       </form>
     </section>

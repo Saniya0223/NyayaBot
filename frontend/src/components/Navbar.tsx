@@ -1,10 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { BookOpenText, FileText, FolderOpen, MessageCircleMore, Scale, UserRound } from 'lucide-react';
-import { getStoredUser, NyayaUser } from '@/lib/auth';
+import { useAuth } from '@/components/AuthProvider';
 
 const links = [
   { href: '/', label: 'Ask NyayaBot', icon: MessageCircleMore },
@@ -16,16 +15,7 @@ const links = [
 
 export default function Navbar() {
   const pathname = usePathname();
-  const [user, setUser] = useState<NyayaUser | null>(null);
-
-  useEffect(() => {
-    setUser(getStoredUser());
-    function onAuthChange() {
-      setUser(getStoredUser());
-    }
-    window.addEventListener('nyayabot_auth_change', onAuthChange);
-    return () => window.removeEventListener('nyayabot_auth_change', onAuthChange);
-  }, []);
+  const { user } = useAuth();
 
   return (
     <header className="sticky top-0 z-40 border-b border-[#dfe6e2] bg-white/95 backdrop-blur-xl">

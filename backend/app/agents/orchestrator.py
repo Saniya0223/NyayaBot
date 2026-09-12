@@ -18,7 +18,7 @@ class LegalOrchestrator:
     """
 
     @classmethod
-    def process_intake(cls, req: IntakeRequest, db: Session) -> CaseResponse:
+    def process_intake(cls, req: IntakeRequest, db: Session, user_id: str) -> CaseResponse:
         # 1. Classify Issue & Evaluate Severity / Escalation Guardrails
         classification = IssueClassifier.classify_and_evaluate(req.user_narrative)
         category = classification["category"]
@@ -60,7 +60,16 @@ class LegalOrchestrator:
 
         # 6. Check / Create Case in Database
         case_id = req.case_id or str(uuid.uuid4())
-        existing_case = db.query(CaseModel).filter(CaseModel.id == case_id).first() if req.case_id else None
+        existing_case = (
+            db.query(CaseModel)
+            .filter(CaseModel.id == case_id, CaseModel.user_id == user_id)
+            .first()
+            if req.case_id
+            else None
+        )
+
+        if req.case_id and not existing_case:
+            raise ValueError("Owned case must be resolved before updating intake")
 
         if not existing_case:
             case_number = f"NYA-{datetime.now().year}-{str(uuid.uuid4())[:4].upper()}"
@@ -68,6 +77,7 @@ class LegalOrchestrator:
             
             case_obj = CaseModel(
                 id=case_id,
+                user_id=user_id,
                 case_number=case_number,
                 title=title,
                 category=category,

@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Eye, EyeOff, Lock, Mail, Scale, ShieldCheck, Sparkles, User, ArrowRight } from 'lucide-react';
-import { NyayaUser, setStoredUser } from '@/lib/auth';
+import { Eye, EyeOff, Lock, Mail, Scale, ShieldCheck, User, ArrowRight, LoaderCircle } from 'lucide-react';
+import { ApiError } from '@/lib/api';
+import { loginAccount, NyayaUser, signupAccount } from '@/lib/auth';
 
 interface LoginGateProps {
   onLoginSuccess: (user: NyayaUser) => void;
@@ -15,11 +16,12 @@ export default function LoginGate({ onLoginSuccess }: LoginGateProps) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!email.trim()) {
-      setError('Please enter your email or phone number.');
+      setError('Please enter your email address.');
       return;
     }
     if (!password.trim()) {
@@ -30,25 +32,29 @@ export default function LoginGate({ onLoginSuccess }: LoginGateProps) {
       setError('Please enter your full name.');
       return;
     }
+    if (tab === 'signup' && password.length < 8) {
+      setError('Choose a password with at least 8 characters.');
+      return;
+    }
 
-    const user: NyayaUser = {
-      name: tab === 'signup' ? name.trim() : email.split('@')[0] || 'Citizen',
-      email: email.trim(),
-      isGuest: false,
-    };
-    setStoredUser(user);
-    onLoginSuccess(user);
-  }
-
-  function handleQuickDemo() {
-    const demoUser: NyayaUser = {
-      name: 'Demo Citizen',
-      email: 'citizen@nyayabot.in',
-      city: 'Bengaluru',
-      isGuest: true,
-    };
-    setStoredUser(demoUser);
-    onLoginSuccess(demoUser);
+    setError('');
+    setSubmitting(true);
+    try {
+      const user = tab === 'signup'
+        ? await signupAccount(name.trim(), email.trim(), password)
+        : await loginAccount(email.trim(), password);
+      onLoginSuccess(user);
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 0) {
+        setError('The NyayaBot backend is unavailable. Check that it is running and try again.');
+      } else if (caught instanceof Error) {
+        setError(caught.message);
+      } else {
+        setError('Authentication failed. Please try again.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -121,14 +127,15 @@ export default function LoginGate({ onLoginSuccess }: LoginGateProps) {
           )}
 
           <div>
-            <label className="block text-xs font-semibold text-[#293931]">Email or Mobile Number</label>
+            <label className="block text-xs font-semibold text-[#293931]">Email Address</label>
             <div className="relative mt-1">
               <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-[#87968e]">
                 <Mail className="size-4" />
               </span>
               <input
-                type="text"
-                placeholder="name@example.com / 9876543210"
+                type="email"
+                autoComplete="email"
+                placeholder="name@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-xl border border-[#dbe4de] bg-[#fbfdfc] py-2.5 pl-9 pr-3 text-xs text-[#17231f] transition placeholder:text-[#9bb0a5] focus:border-[#174e3b] focus:bg-white focus:outline-none"
@@ -144,6 +151,7 @@ export default function LoginGate({ onLoginSuccess }: LoginGateProps) {
               </span>
               <input
                 type={showPassword ? 'text' : 'password'}
+                autoComplete={tab === 'signin' ? 'current-password' : 'new-password'}
                 placeholder="••••••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -162,34 +170,22 @@ export default function LoginGate({ onLoginSuccess }: LoginGateProps) {
 
           <button
             type="submit"
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-[#174e3b] py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#103c2d] active:scale-[0.99]"
+            disabled={submitting}
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-[#174e3b] py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#103c2d] active:scale-[0.99] disabled:cursor-wait disabled:opacity-70"
           >
-            <span>{tab === 'signin' ? 'Sign In to NyayaBot' : 'Create My Account'}</span>
-            <ArrowRight className="size-3.5" />
+            <span>{submitting ? 'Checking securely…' : tab === 'signin' ? 'Sign In to NyayaBot' : 'Create My Account'}</span>
+            {submitting ? <LoaderCircle className="size-3.5 animate-spin" /> : <ArrowRight className="size-3.5" />}
           </button>
         </form>
 
-        {/* Divider */}
-        <div className="my-5 flex items-center gap-3">
-          <div className="h-px flex-1 bg-[#e4eae6]" />
-          <span className="text-[11px] font-semibold text-[#8a9891]">or test immediately</span>
-          <div className="h-px flex-1 bg-[#e4eae6]" />
-        </div>
-
-        {/* 1-Click Demo Login */}
-        <button
-          type="button"
-          onClick={handleQuickDemo}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#cfe0d6] bg-[#f2f8f4] py-2.5 text-xs font-bold text-[#174e3b] transition hover:border-[#a8c9b5] hover:bg-[#e6f2eb] active:scale-[0.99]"
-        >
-          <Sparkles className="size-3.5 text-[#2f755b]" />
-          <span>Quick Demo Access (1-Click)</span>
-        </button>
+        <p className="mt-5 rounded-xl border border-[#dce5df] bg-[#f5f8f6] px-3.5 py-2.5 text-center text-[11px] leading-5 text-[#68766f]">
+          Guest case storage is temporarily disabled so no private cases can be shared between visitors.
+        </p>
 
         {/* Security badge */}
         <div className="mt-5 flex items-center justify-center gap-1.5 text-[11px] text-[#6b7872]">
           <ShieldCheck className="size-3.5 text-[#2f755b]" />
-          <span>Local confidential storage · No Aadhaar/PAN exposed</span>
+          <span>Secure server session · Passwords stay out of browser storage</span>
         </div>
       </div>
     </div>

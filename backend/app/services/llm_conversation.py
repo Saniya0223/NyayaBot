@@ -1,10 +1,11 @@
 import logging
+import re
 import uuid
 from datetime import datetime
 from typing import Any, Iterable, Optional
 
 from app.agents.conversation_agent import OFFICIAL_SOURCES, ConversationalLegalAgent, conversational_agent
-from app.agents.rag_node import statutory_rag
+from app.agents.rag_node import RagQueryContext, statutory_rag
 from app.config import settings
 from app.llm.contracts import (
     CaseExtraction,
@@ -51,6 +52,39 @@ EVIDENCE_FROM_FACT = {
     "employment_proof_available": "offer_letter",
     "written_complaint_available": "complaint_copy",
 }
+
+# Retrieval-relevant, non-identifying descriptors. Anything not listed here is
+# excluded from the RAG query, which is why names, addresses, transaction ids,
+# bank details and exact amounts can never reach the retrieval layer.
+RAG_FACT_ALLOWLIST = frozenset({
+    # evidence checklist ids
+    "rental_agreement", "deposit_payment_proof", "move_out_photos", "landlord_chat",
+    "invoice", "defect_photos", "support_tickets", "seller_rejection",
+    "offer_letter", "salary_slips", "hr_emails",
+    "upi_receipt", "scammer_chat", "bank_complaint_ack",
+    "incident_proof", "complaint_copy", "speed_post_receipt",
+    # completed workflow actions
+    "informal_request_made", "formal_demand_sent", "response_rejected",
+    "response_accepted", "bank_reported", "cybercrime_reported",
+    "police_complaint_submitted",
+})
+
+# Turns that answer a question without restating the grievance.
+LOW_CONTEXT_PHRASES = frozenset({
+    "yes", "no", "yeah", "yep", "nope", "both", "ok", "okay", "sure", "done",
+    "correct", "right", "yes both", "no not yet", "not yet", "i did", "i have",
+    "i do", "yes i did", "yes i have", "yesterday", "today", "last week",
+    "this week", "last month", "continue my case", "yes please",
+})
+
+DATE_WORDS = frozenset({
+    "january", "february", "march", "april", "may", "june", "july", "august",
+    "september", "october", "november", "december", "yesterday", "today",
+    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+})
+
+# At or below this word count a turn is treated as confirmation, not substance.
+LOW_CONTEXT_MAX_WORDS = 3
 
 ESCALATION_STAGE = {
     "HOUSING_TENANT": "RENT_AUTHORITY_ESCALATION",
@@ -137,7 +171,8 @@ class GeminiConversationService:
             self.workflow_agent._assess_risk(req.message, profile)
             self._refresh_workflow(profile)
 
-            legal_sources = self._verified_sources(profile, req.message)
+            workflow_state = self._workflow_summary(profile)
+            legal_sources = self._verified_sources(profile, req.message, workflow_state)
             missing_for_response = list(profile.missing_required_fields)
             if profile.key_facts.get("document_intake_active"):
                 missing_for_response.extend(
@@ -148,7 +183,7 @@ class GeminiConversationService:
                     user_message=req.message,
                     recent_messages=history,
                     case_summary=self._compact_case(profile),
-                    workflow=self._workflow_summary(profile),
+                    workflow=workflow_state,
                     missing_information=missing_for_response,
                     legal_sources=legal_sources,
                     language_style=extraction.language_style,
@@ -373,16 +408,89 @@ class GeminiConversationService:
         else:
             profile.recommended_next_action = None
 
-    def _verified_sources(self, profile: StructuredCaseProfile, narrative: str) -> list[dict[str, Any]]:
-        rag_category = "TENANCY" if profile.category == "HOUSING_TENANT" else profile.category
+    @staticmethod
+    def _is_low_context_message(message: str) -> bool:
+        """True when a turn carries confirmation rather than legal substance.
+
+        Such turns ("Yes, both", "July and August.") are meaningful to the case
+        because of the question they answer, not because of their own words, so
+        they must not drive statute retrieval.
+        """
+        normalized = re.sub(r"[^a-z0-9\s]", " ", (message or "").lower()).strip()
+        if not normalized:
+            return True
+        if normalized in LOW_CONTEXT_PHRASES:
+            return True
+        tokens = normalized.split()
+        # Dates and bare quantities answer a question without naming the issue.
+        if all(re.fullmatch(r"\d{1,4}", token) or token in DATE_WORDS for token in tokens):
+            return True
+        return len(tokens) <= LOW_CONTEXT_MAX_WORDS
+
+    def _build_rag_query(
+        self,
+        profile: StructuredCaseProfile,
+        latest_message: str,
+        workflow_state: Optional[dict[str, Any]] = None,
+    ) -> RagQueryContext:
+        """Assemble PII-free retrieval context from the persisted case.
+
+        Only RAG_FACT_ALLOWLIST-derived descriptors are included. Names,
+        addresses, account and transaction identifiers, exact amounts and
+        uploaded document text are deliberately excluded: they never improve
+        statute matching and would leak personal data into retrieval.
+        """
+        stage = (workflow_state or {}).get("current_stage_key") or profile.current_stage_key
+
+        facts: list[str] = []
+        for item in profile.evidence_checklist:
+            if item.is_available and item.id in RAG_FACT_ALLOWLIST:
+                facts.append(item.id)
+        for action in profile.actions_completed:
+            if action in RAG_FACT_ALLOWLIST:
+                facts.append(action)
+
+        return RagQueryContext(
+            category=profile.category,
+            issue_type=profile.issue_type,
+            state=profile.user_state,
+            city=profile.user_city,
+            workflow_stage=stage,
+            facts=tuple(dict.fromkeys(facts)),  # de-duplicated, order preserved
+            latest_message=latest_message or "",
+            low_context=self._is_low_context_message(latest_message),
+        )
+
+    def _verified_sources(
+        self,
+        profile: StructuredCaseProfile,
+        narrative: str,
+        workflow_state: Optional[dict[str, Any]] = None,
+    ) -> list[dict[str, Any]]:
+        query = self._build_rag_query(profile, narrative, workflow_state)
         citations = [
             citation.model_dump(mode="json")
-            for citation in statutory_rag.retrieve_applicable_sections(rag_category, narrative)[:4]
+            for citation in statutory_rag.retrieve_for_context(query, limit=4)
         ]
         seen_urls = {item.get("source_url") for item in citations}
         for source in OFFICIAL_SOURCES.get(profile.category, []):
             if source.get("url") not in seen_urls:
                 citations.append(source)
+
+        # Debug-only trace: controlled-vocabulary fields plus the derived query.
+        # Never the message body, party names, addresses, amounts or documents.
+        logger.debug(
+            "event=rag_retrieval case_id=%s category=%s issue_type=%s state=%s "
+            "workflow_stage=%s low_context=%s query=%r sources=%d",
+            profile.case_id,
+            profile.category,
+            profile.issue_type,
+            profile.user_state,
+            query.workflow_stage,
+            query.low_context,
+            query.to_query_text(),
+            len(citations),
+        )
         return citations
 
     def _compact_case(self, profile: Optional[StructuredCaseProfile]) -> Optional[dict[str, Any]]:

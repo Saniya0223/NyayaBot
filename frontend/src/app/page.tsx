@@ -7,12 +7,11 @@ import ChatInterface from '@/components/ChatInterface';
 import DocumentIntelligenceModal from '@/components/DocumentIntelligenceModal';
 import FactualConfirmModal from '@/components/FactualConfirmModal';
 import LoginGate from '@/components/LoginGate';
+import { useAuth } from '@/components/AuthProvider';
 import { ChatMessageItem, fetchChatCase, StructuredCaseProfile } from '@/lib/api';
-import { getStoredUser, NyayaUser } from '@/lib/auth';
 
 export default function HomeChatPage() {
-  const [currentUser, setCurrentUser] = useState<NyayaUser | null>(null);
-  const [checkingAuth, setCheckingAuth] = useState(true);
+  const { user: currentUser, loading: checkingAuth, setUser } = useAuth();
   const [profile, setProfile] = useState<StructuredCaseProfile | null>(null);
   const [initialMessages, setInitialMessages] = useState<ChatMessageItem[]>([]);
   const [restoring, setRestoring] = useState(true);
@@ -22,17 +21,8 @@ export default function HomeChatPage() {
   const [injectedMessage, setInjectedMessage] = useState<{ text: string; profile: StructuredCaseProfile; quick_replies?: string[] }>();
 
   useEffect(() => {
-    setCurrentUser(getStoredUser());
-    setCheckingAuth(false);
-
-    function onAuthChange() {
-      setCurrentUser(getStoredUser());
-    }
-    window.addEventListener('nyayabot_auth_change', onAuthChange);
-    return () => window.removeEventListener('nyayabot_auth_change', onAuthChange);
-  }, []);
-
-  useEffect(() => {
+    if (checkingAuth) return;
+    if (!currentUser) return;
     const caseId = new URLSearchParams(window.location.search).get('case');
     if (!caseId) {
       const timer = window.setTimeout(() => setRestoring(false), 0);
@@ -46,13 +36,17 @@ export default function HomeChatPage() {
         setInitialMessages(session.messages);
       })
       .catch(() => {
-        if (active) window.history.replaceState({}, '', '/');
+        if (active) {
+          setProfile(null);
+          setInitialMessages([]);
+          window.history.replaceState({}, '', '/');
+        }
       })
       .finally(() => {
         if (active) setRestoring(false);
       });
     return () => { active = false; };
-  }, []);
+  }, [checkingAuth, currentUser]);
 
   function updateProfile(next: StructuredCaseProfile) {
     const isNew = !profile;
@@ -70,7 +64,7 @@ export default function HomeChatPage() {
     window.history.replaceState({}, '', '/');
   }
 
-  if (checkingAuth || restoring) {
+  if (checkingAuth) {
     return (
       <div className="mx-auto grid min-h-[calc(100vh-9rem)] max-w-[1480px] place-items-center px-4 text-sm text-[#718078]">
         Reopening your case securely…
@@ -79,7 +73,26 @@ export default function HomeChatPage() {
   }
 
   if (!currentUser) {
-    return <LoginGate onLoginSuccess={(u) => setCurrentUser(u)} />;
+    return (
+      <LoginGate
+        onLoginSuccess={(nextUser) => {
+          setProfile(null);
+          setInitialMessages([]);
+          setInjectedMessage(undefined);
+          setDocumentModal({ open: false, type: '', label: '' });
+          setUploadOpen(false);
+          setUser(nextUser);
+        }}
+      />
+    );
+  }
+
+  if (restoring) {
+    return (
+      <div className="mx-auto grid min-h-[calc(100vh-9rem)] max-w-[1480px] place-items-center px-4 text-sm text-[#718078]">
+        Reopening your case securely…
+      </div>
+    );
   }
 
   return (

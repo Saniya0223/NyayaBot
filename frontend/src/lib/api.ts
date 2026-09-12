@@ -1,4 +1,40 @@
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+// Resolve the API origin at runtime so one build works both on localhost and
+// over the LAN (a phone on the same Wi-Fi), whose IP changes with DHCP. Baking
+// a fixed host into the bundle strands the app whenever that address moves.
+// An explicit NEXT_PUBLIC_API_URL always wins, for deployed environments.
+function resolveApiBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  if (typeof window !== 'undefined') return `http://${window.location.hostname}:8000/api/v1`;
+  return 'http://localhost:8000/api/v1';
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
+
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+export async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  let response: Response;
+  try {
+    response = await fetch(input, { ...init, credentials: 'include' });
+  } catch {
+    throw new ApiError(`Cannot reach the NyayaBot backend at ${API_BASE_URL}.`, 0);
+  }
+  if (response.status === 401 && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('nyayabot_auth_expired'));
+  }
+  return response;
+}
+
+export async function apiErrorMessage(response: Response, fallback: string): Promise<string> {
+  const payload = await response.json().catch(() => null);
+  const detail = payload?.detail;
+  return typeof detail === 'string' ? detail : fallback;
+}
 
 export interface PartyInfo {
   name: string;
@@ -137,7 +173,7 @@ export async function submitIntake(payload: {
   user_phone?: string;
   user_email?: string;
 }): Promise<CaseData> {
-  const res = await fetch(`${API_BASE_URL}/intake`, {
+  const res = await apiFetch(`${API_BASE_URL}/intake`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -150,7 +186,7 @@ export async function submitIntake(payload: {
 }
 
 export async function submitClarifications(case_id: string, answers: Record<string, string>): Promise<CaseData> {
-  const res = await fetch(`${API_BASE_URL}/clarifications`, {
+  const res = await apiFetch(`${API_BASE_URL}/clarifications`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ case_id, answers })
@@ -160,19 +196,19 @@ export async function submitClarifications(case_id: string, answers: Record<stri
 }
 
 export async function fetchCases(): Promise<CaseData[]> {
-  const res = await fetch(`${API_BASE_URL}/cases`);
+  const res = await apiFetch(`${API_BASE_URL}/cases`);
   if (!res.ok) throw new Error('Failed to fetch cases');
   return res.json();
 }
 
 export async function fetchCaseById(case_id: string): Promise<CaseData> {
-  const res = await fetch(`${API_BASE_URL}/cases/${case_id}`);
+  const res = await apiFetch(`${API_BASE_URL}/cases/${case_id}`);
   if (!res.ok) throw new Error('Failed to fetch case details');
   return res.json();
 }
 
 export async function toggleTimelineEvent(case_id: string, event_id: string): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/cases/${case_id}/timeline/${event_id}/toggle`, {
+  const res = await apiFetch(`${API_BASE_URL}/cases/${case_id}/timeline/${event_id}/toggle`, {
     method: 'POST'
   });
   if (!res.ok) throw new Error('Failed to update timeline milestone');
@@ -183,7 +219,7 @@ export async function generateDocument(
   doc_type: string,
   override_data?: Record<string, unknown>
 ): Promise<DocumentResponse> {
-  const res = await fetch(`${API_BASE_URL}/documents/generate`, {
+  const res = await apiFetch(`${API_BASE_URL}/documents/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ case_id, doc_type, override_data })
@@ -199,7 +235,7 @@ export async function generateDocument(
 }
 
 export async function fetchPortalDossier(case_id: string): Promise<PortalFilingDossier> {
-  const res = await fetch(`${API_BASE_URL}/cases/${case_id}/dossier`);
+  const res = await apiFetch(`${API_BASE_URL}/cases/${case_id}/dossier`);
   if (!res.ok) throw new Error('Failed to load portal filing dossier');
   return res.json();
 }
@@ -308,7 +344,7 @@ export interface LLMStatus {
 }
 
 export async function fetchLLMStatus(): Promise<LLMStatus> {
-  const res = await fetch(`${API_BASE_URL}/llm/status`);
+  const res = await apiFetch(`${API_BASE_URL}/llm/status`);
   if (!res.ok) throw new Error('Failed to load AI provider status');
   return res.json();
 }
@@ -318,7 +354,7 @@ export async function sendChatMessage(payload: {
   case_id?: string;
   history?: ChatMessageItem[];
 }): Promise<ChatTurnResponse> {
-  const res = await fetch(`${API_BASE_URL}/chat/message`, {
+  const res = await apiFetch(`${API_BASE_URL}/chat/message`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -339,7 +375,7 @@ export async function uploadDocumentForExtraction(payload: {
   file_name: string;
   simulated_content?: string;
 }): Promise<ChatTurnResponse> {
-  const res = await fetch(`${API_BASE_URL}/chat/upload-document`, {
+  const res = await apiFetch(`${API_BASE_URL}/chat/upload-document`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -362,7 +398,7 @@ export async function uploadEvidenceFile(payload: {
   form.append('doc_type', payload.doc_type);
   form.append('upload', payload.file);
   if (payload.excerpt) form.append('excerpt', payload.excerpt);
-  const res = await fetch(`${API_BASE_URL}/chat/upload-file`, { method: 'POST', body: form });
+  const res = await apiFetch(`${API_BASE_URL}/chat/upload-file`, { method: 'POST', body: form });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new Error(typeof body?.detail === 'string' ? body.detail : 'Failed to upload and inspect the document');
@@ -371,7 +407,7 @@ export async function uploadEvidenceFile(payload: {
 }
 
 export async function fetchStatutes(): Promise<Record<string, StatutoryCitation[]>> {
-  const res = await fetch(`${API_BASE_URL}/statutes`);
+  const res = await apiFetch(`${API_BASE_URL}/statutes`);
   if (!res.ok) throw new Error('Failed to load statutes');
   return res.json();
 }
@@ -382,19 +418,19 @@ export interface ChatSessionResponse {
 }
 
 export async function fetchChatCases(): Promise<StructuredCaseProfile[]> {
-  const res = await fetch(`${API_BASE_URL}/chat/cases`);
+  const res = await apiFetch(`${API_BASE_URL}/chat/cases`);
   if (!res.ok) throw new Error('Failed to fetch conversational cases');
   return res.json();
 }
 
 export async function fetchChatCase(caseId: string): Promise<ChatSessionResponse> {
-  const res = await fetch(`${API_BASE_URL}/chat/cases/${caseId}`);
+  const res = await apiFetch(`${API_BASE_URL}/chat/cases/${caseId}`);
   if (!res.ok) throw new Error('Failed to reopen this case');
   return res.json();
 }
 
 export async function resolveChatCase(caseId: string): Promise<StructuredCaseProfile> {
-  const res = await fetch(`${API_BASE_URL}/chat/cases/${caseId}/resolve`, { method: 'POST' });
+  const res = await apiFetch(`${API_BASE_URL}/chat/cases/${caseId}/resolve`, { method: 'POST' });
   if (!res.ok) throw new Error('Failed to mark case resolved');
   return res.json();
 }
@@ -412,7 +448,7 @@ export interface DocumentListItem {
 }
 
 export async function fetchDocuments(): Promise<DocumentListItem[]> {
-  const res = await fetch(`${API_BASE_URL}/documents`);
+  const res = await apiFetch(`${API_BASE_URL}/documents`);
   if (!res.ok) throw new Error('Failed to fetch documents');
   return res.json();
 }

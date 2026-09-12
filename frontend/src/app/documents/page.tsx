@@ -3,20 +3,42 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Download, FileText, FolderOpen, Plus } from 'lucide-react';
+import { useAuth } from '@/components/AuthProvider';
+import LoginGate from '@/components/LoginGate';
 import { absoluteDocumentUrl, DocumentListItem, fetchDocuments } from '@/lib/api';
 
 export default function DocumentsPage() {
+  const { user, loading: authLoading, setUser } = useAuth();
   const [documents, setDocuments] = useState<DocumentListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (authLoading) return;
+    if (!user) return;
     let active = true;
     fetchDocuments().then((items) => { if (active) setDocuments(items); }).catch((caught) => { if (active) setError(caught instanceof Error ? caught.message : 'Documents could not be loaded.'); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [authLoading, user]);
 
   const grouped = useMemo(() => documents.reduce<Record<string, DocumentListItem[]>>((result, item) => { (result[item.case_title] ||= []).push(item); return result; }, {}), [documents]);
+
+  if (authLoading) {
+    return <div className="grid min-h-[60vh] place-items-center text-sm text-[#718078]">Checking your session…</div>;
+  }
+
+  if (!user) {
+    return (
+      <LoginGate
+        onLoginSuccess={(nextUser) => {
+          setDocuments([]);
+          setError(null);
+          setLoading(true);
+          setUser(nextUser);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">

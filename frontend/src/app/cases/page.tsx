@@ -3,19 +3,24 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, CheckCircle2, Clock3, FolderOpen, Plus, Scale, ShieldAlert } from 'lucide-react';
+import { useAuth } from '@/components/AuthProvider';
+import LoginGate from '@/components/LoginGate';
 import { fetchChatCases, resolveChatCase, StructuredCaseProfile } from '@/lib/api';
 
 export default function CasesPage() {
+  const { user, loading: authLoading, setUser } = useAuth();
   const [cases, setCases] = useState<StructuredCaseProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (authLoading) return;
+    if (!user) return;
     let active = true;
     fetchChatCases().then((data) => { if (active) setCases(data); }).catch((caught) => { if (active) setError(caught instanceof Error ? caught.message : 'Cases could not be loaded.'); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [authLoading, user]);
 
   async function markResolved(caseId: string) {
     setResolvingId(caseId);
@@ -28,6 +33,23 @@ export default function CasesPage() {
     } finally {
       setResolvingId(null);
     }
+  }
+
+  if (authLoading) {
+    return <div className="grid min-h-[60vh] place-items-center text-sm text-[#718078]">Checking your session…</div>;
+  }
+
+  if (!user) {
+    return (
+      <LoginGate
+        onLoginSuccess={(nextUser) => {
+          setCases([]);
+          setError(null);
+          setLoading(true);
+          setUser(nextUser);
+        }}
+      />
+    );
   }
 
   return (
