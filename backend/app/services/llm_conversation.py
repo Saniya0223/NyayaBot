@@ -6,6 +6,13 @@ from typing import Any, Iterable, Optional
 
 from app.agents.conversation_agent import OFFICIAL_SOURCES, ConversationalLegalAgent, conversational_agent
 from app.agents.rag_node import RagQueryContext, statutory_rag
+from app.services.case_readiness import (
+    READY_FOR_DOCUMENT,
+    compute_intake_missing_facts,
+    compute_readiness,
+    document_routing_allowed,
+)
+from app.services.safety_triage import SafetyAssessment, assess_safety
 from app.config import settings
 from app.llm.contracts import (
     CaseExtraction,
@@ -130,12 +137,25 @@ class GeminiConversationService:
         existing_profile: Optional[StructuredCaseProfile],
         recent_messages: Iterable[ChatMessage],
     ) -> ChatTurnResponse:
+        history = self._recent_history(recent_messages)
+
+        # Safety triage runs before provider availability is even considered, so
+        # a threat is never left waiting on an API that may be down or rate
+        # limited. It is deterministic and cannot regress with model behaviour.
+        prior_text = " ".join(item.get("content", "") for item in history if item.get("role") == "user")
+        safety = assess_safety(req.message, prior_text)
+
         if not self.provider.status.configured:
             fallback = self.workflow_agent.process_turn(req, existing_profile)
-            fallback.reply_text = self._limited_demo_prefix() + fallback.reply_text
+            self._refresh_workflow(fallback.case_profile, safety, req.message)
+            prefix = self._limited_demo_prefix()
+            if safety.is_safety_case:
+                fallback.reply_text = self._safety_first_reply(safety)
+                fallback.quick_replies = self._safety_quick_replies(safety)
+            else:
+                fallback.reply_text = prefix + fallback.reply_text
             return self._tag_response(fallback, "limited_demo")
 
-        history = self._recent_history(recent_messages)
         profile = existing_profile
 
         try:
@@ -169,12 +189,15 @@ class GeminiConversationService:
             self._apply_actions(profile, extraction.actions_detected)
             self.workflow_agent._mark_evidence(profile, extraction.evidence_detected)
             self.workflow_agent._assess_risk(req.message, profile)
-            self._refresh_workflow(profile)
+            self._refresh_workflow(profile, safety, req.message)
 
             workflow_state = self._workflow_summary(profile)
             legal_sources = self._verified_sources(profile, req.message, workflow_state)
-            missing_for_response = list(profile.missing_required_fields)
-            if profile.key_facts.get("document_intake_active"):
+            # While understanding the case the model is told what we still need to
+            # understand - never a template's fields, which would push it to ask
+            # for a name and city before the problem is even clear.
+            missing_for_response = list(profile.intake_missing_facts)
+            if profile.missing_document_fields and profile.key_facts.get("document_intake_active"):
                 missing_for_response.extend(
                     f"document:{field}" for field in profile.missing_document_fields
                 )
@@ -188,6 +211,8 @@ class GeminiConversationService:
                     legal_sources=legal_sources,
                     language_style=extraction.language_style,
                     conflict=conflict,
+                    safety=safety.to_dict() if safety.is_safety_case else None,
+                    readiness=profile.readiness,
                 )
             )
             self.workflow_agent._touch(profile)
@@ -387,26 +412,76 @@ class GeminiConversationService:
         if profile.key_facts.get("pending_document_extraction"):
             self.workflow_agent._check_conversation_actions(text, profile)
 
-    def _refresh_workflow(self, profile: StructuredCaseProfile) -> None:
+    def _refresh_workflow(
+        self,
+        profile: StructuredCaseProfile,
+        safety: Optional[SafetyAssessment] = None,
+        message: str = "",
+    ) -> None:
+        """Recompute intake, readiness and - only if earned - document routing.
+
+        Order matters: understand the issue, place the case on the readiness
+        ladder, and consider a document last. Previously this method assigned a
+        recommended document on every turn and computed the template's fields
+        alongside intake, which is why a barely-understood case immediately
+        asked for the name and city a template needed.
+        """
+        safety = safety or SafetyAssessment()
         workflow = self.workflow_agent.workflows.get(profile.category, {})
-        profile.missing_required_fields = self.workflow_agent._compute_missing_fields(profile)
+
+        profile.safety_status = safety.to_dict() if safety.is_safety_case else None
+        profile.intake_missing_facts = compute_intake_missing_facts(profile, safety)
+        profile.readiness = compute_readiness(profile, safety, profile.intake_missing_facts, message)
+
+        # Kept for existing callers and persisted cases; it now mirrors intake
+        # only, and no longer carries document-template requirements.
+        profile.missing_required_fields = list(profile.intake_missing_facts)
+
+        if not document_routing_allowed(profile, safety, profile.readiness):
+            # No document, no template fields, and no "prepare a record" default.
+            profile.recommended_doc_type = None
+            profile.recommended_doc_label = None
+            profile.missing_document_fields = []
+            profile.is_ready_for_document = False
+            profile.recommended_next_action = None
+            return
+
         profile.recommended_doc_type = select_document_for_workflow(
             profile.category, profile.current_stage_key
         )
-        profile.recommended_doc_label = workflow.get("default_doc_label", "Prepare a factual written record")
+        profile.recommended_doc_label = workflow.get("default_doc_label")
+        # Template fields are computed only now, once a document is warranted.
         profile.missing_document_fields = self._missing_document_fields(profile)
-        core_ready = not profile.missing_required_fields and profile.risk_level != "RED"
-        profile.is_ready_for_document = core_ready and not profile.missing_document_fields
+        profile.is_ready_for_document = not profile.missing_document_fields
         if profile.is_ready_for_document:
+            profile.readiness = READY_FOR_DOCUMENT
             profile.key_facts.pop("document_intake_active", None)
-        if core_ready:
-            profile.recommended_next_action = {
-                "type": "PREPARE_DOC",
-                "doc_type": profile.recommended_doc_type,
-                "label": profile.recommended_doc_label,
-            }
-        else:
-            profile.recommended_next_action = None
+        profile.recommended_next_action = {
+            "type": "PREPARE_DOC",
+            "doc_type": profile.recommended_doc_type,
+            "label": profile.recommended_doc_label,
+        }
+
+    @staticmethod
+    def _safety_first_reply(safety: SafetyAssessment) -> str:
+        """Deterministic safety reply used when no provider is available.
+
+        Leads with the triage question rather than case paperwork, so the safety
+        path behaves identically whether or not the model is reachable.
+        """
+        parts = [safety.triage_question or "Are you safe right now?"]
+        if safety.guidance:
+            parts.append(safety.guidance)
+        parts.append(
+            "Once you tell me that, I can explain your options and help you record what happened."
+        )
+        return "\n\n".join(parts)
+
+    @staticmethod
+    def _safety_quick_replies(safety: SafetyAssessment) -> list[str]:
+        if safety.severity == "IMMEDIATE":
+            return ["I am safe right now", "I am in danger", "The person has left"]
+        return ["No immediate danger", "Yes, I feel threatened", "It is still happening"]
 
     @staticmethod
     def _is_low_context_message(message: str) -> bool:

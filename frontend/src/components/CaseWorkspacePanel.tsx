@@ -39,14 +39,37 @@ export default function CaseWorkspacePanel({ profile, onTriggerDocumentModal }: 
   }
 
   const knownEvidence = profile.evidence_checklist.filter((item) => item.is_available).length;
-  const documentType = profile.recommended_doc_type || 'GENERAL_COMPLAINT_LETTER';
-  const documentLabel = profile.recommended_doc_label || 'Prepare complaint letter';
-  // Intake facts and document fields are gated separately, so counting only the
-  // intake list showed "0 details still needed" while the case was not yet ready.
-  const outstandingDetailCount = new Set([
-    ...profile.missing_required_fields,
-    ...(profile.missing_document_fields ?? []),
-  ]).size;
+  // The backend gates document routing on case readiness. The workspace must
+  // follow that gate: showing a document CTA while the issue is still being
+  // understood tells the user the case is further along than it is.
+  const readiness = profile.readiness ?? 'UNDERSTANDING_CASE';
+  const preIntake = readiness === 'PRE_INTAKE';
+  const understandingCase = preIntake || readiness === 'UNDERSTANDING_CASE';
+  const documentReady = Boolean(
+    profile.is_ready_for_document && profile.recommended_doc_type && profile.recommended_doc_label
+  );
+  const documentType = profile.recommended_doc_type || '';
+  const documentLabel = profile.recommended_doc_label || '';
+  const safety = profile.safety_status;
+
+  const understandingHeading = preIntake
+    ? 'Tell NyayaBot what happened'
+    : safety?.is_safety_case
+      ? 'Checking your safety first'
+      : 'Understanding your situation';
+  // Count only what is actually being asked at this stage. Document fields are
+  // not part of intake progress and must not inflate the count while the case
+  // is still being understood.
+  const intakeFacts = profile.intake_missing_facts ?? profile.missing_required_fields ?? [];
+  const outstandingDetailCount = documentReady
+    ? (profile.missing_document_fields ?? []).length
+    : intakeFacts.length;
+
+  const understandingDetail = preIntake
+    ? 'Describe your problem in your own words. NyayaBot will work out what matters legally.'
+    : safety?.is_safety_case && safety?.guidance
+      ? safety.guidance
+      : `${outstandingDetailCount} detail${outstandingDetailCount === 1 ? '' : 's'} still needed to understand your case. NyayaBot will ask conversationally.`;
   const nextStep = profile.legal_journey.find((step) => step.status === 'FUTURE');
   const displayAmount = profile.disputed_amount > 0 ? `₹${profile.disputed_amount.toLocaleString('en-IN')}` : 'Not provided';
 
@@ -122,10 +145,10 @@ export default function CaseWorkspacePanel({ profile, onTriggerDocumentModal }: 
       </section>
 
       <section className="mt-4 rounded-2xl border border-[#bdd2c6] bg-[#edf5f0] p-4">
-        <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.1em] text-[#2d6d53]"><Sparkles className="size-3.5" />Next recommended action</div>
-        <h3 className="mt-2 text-sm font-bold text-[#20332b]">{profile.is_ready_for_document ? documentLabel : 'Continue the short intake'}</h3>
-        <p className="mt-1 text-[11px] leading-5 text-[#617168]">{profile.is_ready_for_document ? 'Review the facts NyayaBot already knows, add only missing document details, and generate a draft.' : `${outstandingDetailCount} detail${outstandingDetailCount === 1 ? '' : 's'} still needed. NyayaBot will ask conversationally.`}</p>
-        {profile.is_ready_for_document ? (
+        <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.1em] text-[#2d6d53]"><Sparkles className="size-3.5" />{understandingCase ? 'Understanding your situation' : 'Next recommended action'}</div>
+        <h3 className="mt-2 text-sm font-bold text-[#20332b]">{documentReady ? documentLabel : understandingHeading}</h3>
+        <p className="mt-1 text-[11px] leading-5 text-[#617168]">{documentReady ? 'Review the facts NyayaBot already knows, add only missing document details, and generate a draft.' : understandingDetail}</p>
+        {documentReady ? (
           <button type="button" onClick={() => onTriggerDocumentModal(documentType, documentLabel)} className="mt-3 flex w-full items-center justify-between rounded-xl bg-[#174e3b] px-3.5 py-2.5 text-xs font-bold text-white transition hover:bg-[#103c2d]">
             <span className="flex items-center gap-2"><FileText className="size-4" />{documentLabel}</span><ArrowRight className="size-4" />
           </button>

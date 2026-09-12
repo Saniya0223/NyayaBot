@@ -62,6 +62,13 @@ class StructuredCaseProfile(BaseModel):
     is_ready_for_document: bool = False
     recommended_doc_type: Optional[str] = None
     recommended_doc_label: Optional[str] = None
+    # Readiness ladder: PRE_INTAKE -> UNDERSTANDING_CASE -> READY_FOR_LEGAL_GUIDANCE
+    # -> READY_FOR_ACTION -> READY_FOR_DOCUMENT. Document routing is gated on it.
+    readiness: str = "PRE_INTAKE"
+    # Facts needed to understand the legal issue. Distinct from the template
+    # fields below, which are only computed once a document is appropriate.
+    intake_missing_facts: List[str] = Field(default_factory=list)
+    safety_status: Optional[Dict[str, Any]] = None
     missing_required_fields: List[str] = Field(default_factory=list)
     missing_document_fields: List[str] = Field(default_factory=list)
     created_at: Optional[str] = None

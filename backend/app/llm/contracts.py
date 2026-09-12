@@ -142,6 +142,10 @@ class LLMResponseContext(BaseModel):
     legal_sources: List[Dict[str, Any]] = Field(default_factory=list)
     language_style: str = "english"
     conflict: Optional[Dict[str, Any]] = None
+    # Safety triage result and readiness stage. The model is told when a case is
+    # still being understood so it does not push a document prematurely.
+    safety: Optional[Dict[str, Any]] = None
+    readiness: str = "UNDERSTANDING_CASE"
 
 
 class ProviderStatus(BaseModel):

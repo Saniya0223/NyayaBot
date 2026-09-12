@@ -198,9 +198,25 @@ class ConversationalLegalAgent:
             return "EMPLOYMENT"
         if any(word in value for word in ["upi", "cyber", "phishing", "otp", "bank fraud", "online fraud", "scam", "hacked"]):
             return "CYBER_FRAUD"
-        if any(word in value for word in ["police", "fir", "thana", "sho", "complaint refusal", "चौकी", "पुलिस", "थाना"]):
+        if any(word in value for word in [
+            "police", "fir", "thana", "sho", "complaint refusal", "चौकी", "पुलिस", "थाना",
+            # Threat, violence and intimidation are criminal-complaint matters.
+            # Without these they fell through to the CONSUMER default, which is
+            # why a threatened user was asked for a product name and invoice.
+            "threat", "threaten", "intimidat", "harass", "stalk", "abuse",
+            "violence", "violent", "assault", "beaten", "weapon", "knife",
+            "blackmail", "extort", "धमकी", "मारपीट", "हिंसा",
+        ]):
             return "POLICE_COMPLAINT"
-        return "CONSUMER"
+        if any(word in value for word in [
+            "refund", "seller", "product", "defective", "warranty", "purchase",
+            "bought", "order", "delivery", "amazon", "flipkart", "service",
+            "shop", "merchant", "consumer", "सामान", "रिफंड",
+        ]):
+            return "CONSUMER"
+        # An unrecognised message is not a consumer dispute. GENERAL keeps the
+        # case in intake instead of inheriting an unrelated category's questions.
+        return "GENERAL"
 
     def _assess_risk(self, text: str, profile: StructuredCaseProfile) -> None:
         value = text.lower()

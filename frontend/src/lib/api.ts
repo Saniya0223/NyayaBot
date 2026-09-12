@@ -308,6 +308,11 @@ export interface StructuredCaseProfile {
   is_ready_for_document: boolean;
   recommended_doc_type?: string;
   recommended_doc_label?: string;
+  // Readiness ladder mirrored from the backend; the workspace gates the
+  // document CTA on it so the UI never claims a case is further along.
+  readiness?: 'PRE_INTAKE' | 'UNDERSTANDING_CASE' | 'READY_FOR_LEGAL_GUIDANCE' | 'READY_FOR_ACTION' | 'READY_FOR_DOCUMENT';
+  intake_missing_facts?: string[];
+  safety_status?: { is_safety_case: boolean; severity: string; triage_question?: string; guidance?: string } | null;
   missing_required_fields: string[];
   missing_document_fields: string[];
   created_at?: string;
