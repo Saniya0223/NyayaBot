@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.config import settings
+from app.domains import domain_registry
 from app.schemas.chat import (
     ChatTurnRequest,
     ChatTurnResponse,
@@ -14,7 +15,7 @@ from app.schemas.chat import (
     LegalStageMilestone,
     StructuredCaseProfile,
 )
-from app.services.document_registry import select_document_for_workflow
+from app.services.document_registry import DOCUMENT_DEFINITIONS, select_document_for_workflow
 from app.services.pii_masker import PIIMasker
 
 
@@ -22,50 +23,6 @@ MONTHS = (
     "january|february|march|april|may|june|july|august|september|october|november|december|"
     "jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec"
 )
-
-OFFICIAL_SOURCES = {
-    "CONSUMER": [
-        {
-            "title": "Consumer Protection Act, 2019",
-            "authority": "India Code",
-            "url": "https://www.indiacode.nic.in/handle/123456789/21423",
-        }
-    ],
-    "CYBER_FRAUD": [
-        {
-            "title": "National Cyber Crime Reporting Portal",
-            "authority": "Indian Cyber Crime Coordination Centre",
-            "url": "https://www.cybercrime.gov.in/",
-        },
-        {
-            "title": "Customer protection for unauthorised electronic transactions",
-            "authority": "Reserve Bank of India",
-            "url": "https://www.rbi.org.in/commonman/Upload/English/Notification/PDFs/NOTI1506072017.PDF",
-        },
-    ],
-    "POLICE_COMPLAINT": [
-        {
-            "title": "Bharatiya Nagarik Suraksha Sanhita, 2023",
-            "authority": "India Code",
-            "url": "https://www.indiacode.nic.in/handle/123456789/21419",
-        }
-    ],
-    "EMPLOYMENT": [
-        {
-            "title": "Code on Wages, 2019",
-            "authority": "Ministry of Labour & Employment",
-            "url": "https://labour.gov.in/sites/default/files/the_code_on_wages_2019_no._29_of_2019.pdf",
-        }
-    ],
-    "HOUSING_TENANT": [
-        {
-            "title": "Model Tenancy Act, 2021 (state adoption must be checked)",
-            "authority": "Ministry of Housing and Urban Affairs",
-            "url": "https://mohua.gov.in/upload/uploadfiles/files/Model-Tenancy-Act-English-02_06_2021.pdf",
-        }
-    ],
-}
-
 
 class ConversationalLegalAgent:
     """Deterministic conversational intake and legal-journey engine."""
@@ -76,6 +33,14 @@ class ConversationalLegalAgent:
         if os.path.exists(workflow_path):
             with open(workflow_path, "r", encoding="utf-8") as handle:
                 self.workflows = json.load(handle)
+        domain_registry.validate_integrations(
+            workflows=self.workflows,
+            document_ids=set(DOCUMENT_DEFINITIONS),
+        )
+
+    def _workflow_for_category(self, category: str) -> Dict[str, Any]:
+        domain = domain_registry.resolve(category)
+        return self.workflows.get(domain.workflow_binding, {})
 
     def process_turn(
         self,
@@ -99,7 +64,7 @@ class ConversationalLegalAgent:
         self._extract_entities_into_profile(sanitized_text, profile)
         self._assess_risk(sanitized_text, profile)
 
-        workflow = self.workflows.get(profile.category, self.workflows.get("CONSUMER", {}))
+        workflow = self._workflow_for_category(profile.category)
         missing_fields = self._compute_missing_fields(profile)
         profile.missing_required_fields = missing_fields
         profile.recommended_doc_type = select_document_for_workflow(profile.category, profile.current_stage_key)
@@ -126,10 +91,9 @@ class ConversationalLegalAgent:
         category_override: Optional[str] = None,
     ) -> StructuredCaseProfile:
         case_identifier = case_id if case_id and case_id not in {"new", "default-new"} else str(uuid.uuid4())
-        category = category_override or self._classify_category(text)
-        if category not in self.workflows and category != "GENERAL":
-            category = "GENERAL"
-        workflow = self.workflows.get(category, {})
+        category = domain_registry.normalize_id(category_override or self._classify_category(text))
+        domain = domain_registry.resolve(category)
+        workflow = self._workflow_for_category(category)
         stages = [
             LegalStageMilestone(
                 id=stage["id"],
@@ -151,23 +115,15 @@ class ConversationalLegalAgent:
         ]
         now = datetime.now().isoformat()
         case_token = re.sub(r"[^A-Za-z0-9]", "", case_identifier).upper()[:8]
-        title_map = {
-            "HOUSING_TENANT": "Tenant Security Deposit Dispute",
-            "EMPLOYMENT": "Unpaid Salary Dispute",
-            "CONSUMER": "Consumer Refund Dispute",
-            "CYBER_FRAUD": "Cyber Financial Fraud",
-            "POLICE_COMPLAINT": "Police Complaint Assistance",
-            "GENERAL": "Legal Information Request",
-        }
         rights_summary = dict(workflow.get("rights_summary") or {})
-        rights_summary["sources"] = OFFICIAL_SOURCES.get(category, [])
+        rights_summary["sources"] = [source.model_dump() for source in domain.rag.official_sources]
         profile = StructuredCaseProfile(
             case_id=case_identifier,
             case_number=f"NYA-{datetime.now().year}-{case_token}",
-            title=title_map.get(category, "Legal Issue"),
+            title=domain.case_title,
             category=category,
-            category_display_name=workflow.get("category_display_name", "General Legal Information"),
-            issue_type=workflow.get("issue_type", "Grievance"),
+            category_display_name=domain.display_name,
+            issue_type=domain.default_issue_type_id,
             current_stage_key=stages[0].id if stages else "INTAKE",
             current_stage_label=stages[0].title if stages else "Understanding your situation",
             evidence_checklist=evidence,
@@ -191,32 +147,9 @@ class ConversationalLegalAgent:
         return profile
 
     def _classify_category(self, text: str) -> str:
-        value = text.lower()
-        if any(word in value for word in ["landlord", "tenant", "deposit", "rent", "flat", "kiraya", "makan malik", "security deposit", "मकान", "किराया"]):
-            return "HOUSING_TENANT"
-        if any(word in value for word in ["salary", "employer", "wages", "boss", "vetan", "unpaid salary", "तनख्वाह", "वेतन"]):
-            return "EMPLOYMENT"
-        if any(word in value for word in ["upi", "cyber", "phishing", "otp", "bank fraud", "online fraud", "scam", "hacked"]):
-            return "CYBER_FRAUD"
-        if any(word in value for word in [
-            "police", "fir", "thana", "sho", "complaint refusal", "चौकी", "पुलिस", "थाना",
-            # Threat, violence and intimidation are criminal-complaint matters.
-            # Without these they fell through to the CONSUMER default, which is
-            # why a threatened user was asked for a product name and invoice.
-            "threat", "threaten", "intimidat", "harass", "stalk", "abuse",
-            "violence", "violent", "assault", "beaten", "weapon", "knife",
-            "blackmail", "extort", "धमकी", "मारपीट", "हिंसा",
-        ]):
-            return "POLICE_COMPLAINT"
-        if any(word in value for word in [
-            "refund", "seller", "product", "defective", "warranty", "purchase",
-            "bought", "order", "delivery", "amazon", "flipkart", "service",
-            "shop", "merchant", "consumer", "सामान", "रिफंड",
-        ]):
-            return "CONSUMER"
-        # An unrecognised message is not a consumer dispute. GENERAL keeps the
-        # case in intake instead of inheriting an unrelated category's questions.
-        return "GENERAL"
+        # The LLM is the primary classifier. This deterministic path exists for
+        # demo/provider-failure behavior and consumes the same domain registry.
+        return domain_registry.fallback_classify(text)
 
     def _assess_risk(self, text: str, profile: StructuredCaseProfile) -> None:
         value = text.lower()
@@ -442,34 +375,7 @@ class ConversationalLegalAgent:
                 item.is_available = True
 
     def _compute_missing_fields(self, profile: StructuredCaseProfile) -> List[str]:
-        facts = profile.key_facts
-        values = {
-            "user_city": profile.user_city,
-            "disputed_amount": profile.disputed_amount or None,
-            "opposite_party_name": profile.opposite_party_name,
-            "vacating_date": profile.vacating_date,
-            "incident_date": profile.incident_date,
-            "unpaid_months": profile.unpaid_months or None,
-            "transaction_id": profile.transaction_id,
-            "bank_name": profile.bank_name,
-            "police_station_name": profile.police_station_name,
-            **facts,
-        }
-        requirements = {
-            "HOUSING_TENANT": ["user_city", "vacating_date", "rental_agreement_available", "deposit_payment_proof_available", "landlord_reason"],
-            "CONSUMER": ["user_city", "incident_date", "product_name", "invoice_available", "seller_contacted", "seller_response"],
-            "EMPLOYMENT": ["user_city", "opposite_party_name", "unpaid_months", "monthly_salary", "hr_contacted", "employment_proof_available"],
-            "CYBER_FRAUD": ["incident_date", "transaction_id", "bank_name", "bank_reported", "cyber_reported"],
-            "POLICE_COMPLAINT": ["user_city", "incident_date", "police_station_name", "written_complaint_available"],
-        }
-        def is_missing(field: str, value: Any) -> bool:
-            if value is False and field in facts:
-                return False
-            if value is None or value == "":
-                return True
-            return isinstance(value, (list, tuple, set, dict)) and len(value) == 0
-
-        return [field for field in requirements.get(profile.category, []) if is_missing(field, values.get(field))]
+        return [fact.key for fact in domain_registry.unresolved_facts(profile)]
 
     def _detect_conflicts(self, text: str, profile: StructuredCaseProfile) -> Optional[ChatTurnResponse]:
         lowered = text.lower()
@@ -521,14 +427,8 @@ class ConversationalLegalAgent:
                 else:
                     profile.key_facts[field] = value
             if pending_upload.get("facts", {}).get("response_outcome") == "REJECTED":
-                escalation_ids = {
-                    "HOUSING_TENANT": "RENT_AUTHORITY_ESCALATION",
-                    "EMPLOYMENT": "LABOUR_COMMISSIONER_COMPLAINT",
-                    "CONSUMER": "EDAAKHIL_COMPLAINT",
-                    "CYBER_FRAUD": "POLICE_FIR_ESCALATION",
-                    "POLICE_COMPLAINT": "SP_ESCALATION",
-                }
-                self._set_journey_current(profile, escalation_ids.get(profile.category, "ESCALATION"), complete_through=True)
+                action = domain_registry.resolve(profile.category).action("response_rejected")
+                self._set_journey_current(profile, action.target_workflow_stage if action and action.target_workflow_stage else "ESCALATION", complete_through=True)
                 self._add_action(profile, "response_rejected", "Uploaded response confirmed as a rejection")
             confirmed_deadline = pending_upload.get("facts", {}).get("response_deadline_text")
             if confirmed_deadline and not any(item.get("date") == confirmed_deadline for item in profile.deadlines):
@@ -564,12 +464,8 @@ class ConversationalLegalAgent:
 
         sent_terms = ["i sent", "sent today", "sent yesterday", "notice bhej diya", "bhej diya", "i dispatched", "speed post"]
         if any(term in lower for term in sent_terms):
-            waiting_ids = {
-                "HOUSING_TENANT": "AWAITING_LANDLORD_RESPONSE",
-                "EMPLOYMENT": "AWAITING_EMPLOYER_RESPONSE",
-                "CONSUMER": "AWAITING_SELLER_RESPONSE",
-            }
-            self._set_journey_current(profile, waiting_ids.get(profile.category, "AWAITING_RESPONSE"), complete_through=True)
+            action = domain_registry.resolve(profile.category).action("formal_demand_sent")
+            self._set_journey_current(profile, action.target_workflow_stage if action and action.target_workflow_stage else "AWAITING_RESPONSE", complete_through=True)
             self._add_action(profile, "formal_demand_sent", "Formal letter recorded as sent")
             return ChatTurnResponse(
                 reply_text=(
@@ -583,14 +479,8 @@ class ConversationalLegalAgent:
 
         rejection_terms = ["they rejected", "landlord refused", "company refused", "seller refused", "mana kar diya", "rejected my refund", "no response received"]
         if any(term in lower for term in rejection_terms):
-            escalation_ids = {
-                "HOUSING_TENANT": "RENT_AUTHORITY_ESCALATION",
-                "EMPLOYMENT": "LABOUR_COMMISSIONER_COMPLAINT",
-                "CONSUMER": "EDAAKHIL_COMPLAINT",
-                "CYBER_FRAUD": "POLICE_FIR_ESCALATION",
-                "POLICE_COMPLAINT": "SP_ESCALATION",
-            }
-            self._set_journey_current(profile, escalation_ids.get(profile.category, "ESCALATION"), complete_through=True)
+            action_definition = domain_registry.resolve(profile.category).action("response_rejected")
+            self._set_journey_current(profile, action_definition.target_workflow_stage if action_definition and action_definition.target_workflow_stage else "ESCALATION", complete_through=True)
             self._add_action(profile, "response_rejected", "Response rejected or no response recorded")
             document_type = select_document_for_workflow(profile.category, profile.current_stage_key)
             action = {"type": "PREPARE_DOC", "doc_type": document_type, "label": "Prepare next complaint draft"}

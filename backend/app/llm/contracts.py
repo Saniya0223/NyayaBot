@@ -3,15 +3,10 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domains.contracts import ActionId, DomainId, EvidenceId
 
-CaseCategory = Literal[
-    "CONSUMER",
-    "EMPLOYMENT",
-    "HOUSING_TENANT",
-    "CYBER_FRAUD",
-    "POLICE_COMPLAINT",
-    "GENERAL",
-]
+
+CaseCategory = DomainId
 
 
 class IssueClassification(BaseModel):
@@ -39,6 +34,9 @@ class ExtractedCaseFacts(BaseModel):
     unpaid_months: Optional[List[str]] = None
     monthly_salary: Optional[float] = Field(default=None, ge=0)
     transaction_id: Optional[str] = None
+    order_reference_id: Optional[str] = None
+    payment_transaction_id: Optional[str] = None
+    shipment_tracking_id: Optional[str] = None
     bank_name: Optional[str] = None
     police_station_name: Optional[str] = None
     product_name: Optional[str] = None
@@ -61,16 +59,7 @@ class ExtractedCaseFacts(BaseModel):
 class DetectedAction(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    type: Literal[
-        "informal_request_made",
-        "formal_demand_sent",
-        "response_rejected",
-        "response_accepted",
-        "case_resolved",
-        "bank_reported",
-        "cybercrime_reported",
-        "police_complaint_submitted",
-    ]
+    type: ActionId
     completed: bool = True
     date_reference: Optional[str] = None
     confidence: float = Field(ge=0, le=1)
@@ -92,25 +81,7 @@ class CaseExtraction(BaseModel):
     facts: ExtractedCaseFacts = Field(default_factory=ExtractedCaseFacts)
     confidence_by_field: List[FieldConfidence] = Field(default_factory=list)
     actions_detected: List[DetectedAction] = Field(default_factory=list)
-    evidence_detected: List[Literal[
-        "rental_agreement",
-        "deposit_payment_proof",
-        "move_out_photos",
-        "landlord_chat",
-        "invoice",
-        "defect_photos",
-        "support_tickets",
-        "seller_rejection",
-        "offer_letter",
-        "salary_slips",
-        "hr_emails",
-        "upi_receipt",
-        "scammer_chat",
-        "bank_complaint_ack",
-        "incident_proof",
-        "complaint_copy",
-        "speed_post_receipt",
-    ]] = Field(default_factory=list)
+    evidence_detected: List[EvidenceId] = Field(default_factory=list)
     clarification_needed: bool = False
     ambiguity_note: Optional[str] = None
 
@@ -133,6 +104,7 @@ class LLMExtractionContext(BaseModel):
     case_summary: Optional[Dict[str, Any]] = None
     language_style: str = "english"
     script_style: str = "roman"
+    domain_catalog: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class LLMResponseContext(BaseModel):
@@ -149,6 +121,7 @@ class LLMResponseContext(BaseModel):
     # still being understood so it does not push a document prematurely.
     safety: Optional[Dict[str, Any]] = None
     readiness: str = "UNDERSTANDING_CASE"
+    domain_context: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ProviderStatus(BaseModel):

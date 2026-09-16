@@ -42,7 +42,8 @@ DISTINCTIVE_ROMAN_HINDI_TERMS = frozenset(
 STYLE_NEUTRAL_REPLIES = frozenset(
     {
         "yes", "no", "ok", "okay", "safe", "correct", "right", "continue",
-        "not yet", "yes please", "today", "yesterday",
+        "not yet", "yes please", "today", "yesterday", "haan", "han", "ji",
+        "nahi", "nahin", "nhi",
     }
 )
 

@@ -1,14 +1,5 @@
 {
   "HOUSING_TENANT": {
-    "category_display_name": "Housing & Tenancy Dispute",
-    "issue_type": "Security Deposit Withholding",
-    "required_fields": [
-      "user_city",
-      "disputed_amount",
-      "opposite_party_name",
-      "vacating_date",
-      "rental_agreement_exists"
-    ],
     "evidence_items": [
       {
         "id": "rental_agreement",
@@ -71,18 +62,9 @@
       ],
       "legal_source": "Tenancy agreement, applicable State tenancy/rent law, and potentially Section 73 of the Indian Contract Act, 1872. The Model Tenancy Act is not automatically the governing law in every State."
     },
-    "default_doc_type": "TENANT_DEMAND_NOTICE",
     "default_doc_label": "Prepare Security Deposit Demand Letter"
   },
   "EMPLOYMENT": {
-    "category_display_name": "Employment & Labour Dispute",
-    "issue_type": "Unpaid Salary / Delayed Wages",
-    "required_fields": [
-      "user_city",
-      "disputed_amount",
-      "opposite_party_name",
-      "unpaid_months"
-    ],
     "evidence_items": [
       {
         "id": "offer_letter",
@@ -145,18 +127,9 @@
       ],
       "legal_source": "Employment terms and applicable Central/State wage and labour law. Coverage and the competent authority must be verified for the employee and establishment."
     },
-    "default_doc_type": "SALARY_DEMAND_NOTICE",
     "default_doc_label": "Prepare Salary Demand Notice"
   },
   "CONSUMER": {
-    "category_display_name": "Consumer Rights & Defective Goods",
-    "issue_type": "Defective Product / Refund Refusal",
-    "required_fields": [
-      "user_city",
-      "disputed_amount",
-      "opposite_party_name",
-      "incident_date"
-    ],
     "evidence_items": [
       {
         "id": "invoice",
@@ -219,18 +192,9 @@
       ],
       "legal_source": "Consumer Protection Act, 2019 (Sections 2(11), 2(47), and 35)."
     },
-    "default_doc_type": "FORMAL_LEGAL_NOTICE",
     "default_doc_label": "Prepare Consumer Grievance Letter"
   },
   "CYBER_FRAUD": {
-    "category_display_name": "Cybercrime & Online Fraud",
-    "issue_type": "UPI / Banking Scam / Financial Fraud",
-    "required_fields": [
-      "user_city",
-      "disputed_amount",
-      "incident_date",
-      "transaction_ref"
-    ],
     "evidence_items": [
       {
         "id": "upi_receipt",
@@ -287,18 +251,9 @@
       ],
       "legal_source": "RBI framework for unauthorised electronic banking transactions, the National Cyber Crime Reporting Portal, and offence provisions applicable to the facts."
     },
-    "default_doc_type": "CYBERCRIME_BANK_FREEZE",
     "default_doc_label": "Prepare Cybercrime Complaint & Bank Fraud Report"
   },
   "POLICE_COMPLAINT": {
-    "category_display_name": "Police Complaint & FIR Assistance",
-    "issue_type": "Police Refusal to Register FIR / Formal Written Complaint",
-    "required_fields": [
-      "user_city",
-      "opposite_party_name",
-      "incident_date",
-      "police_station_name"
-    ],
     "evidence_items": [
       {
         "id": "incident_proof",
@@ -355,7 +310,6 @@
       ],
       "legal_source": "Bharatiya Nagarik Suraksha Sanhita, 2023 (Section 173) & Lalita Kumari v. Govt of UP (2014 SC)."
     },
-    "default_doc_type": "POLICE_COMPLAINT_BNSS",
     "default_doc_label": "Prepare Written Police Complaint Draft"
   }
 }

@@ -4,8 +4,10 @@ import uuid
 from datetime import datetime
 from typing import Any, Iterable, Optional
 
-from app.agents.conversation_agent import OFFICIAL_SOURCES, ConversationalLegalAgent, conversational_agent
+from app.agents.conversation_agent import ConversationalLegalAgent, conversational_agent
 from app.agents.rag_node import RagQueryContext, statutory_rag
+from app.domains import domain_registry
+from app.domains.compatibility import PROFILE_FACT_FIELDS, read_profile_fact
 from app.services.language_style import LanguageScript
 from app.services.pii_masker import PIIMasker
 from app.services.case_readiness import (
@@ -39,51 +41,25 @@ from app.schemas.chat import (
     DocumentUploadExtractionRequest,
     StructuredCaseProfile,
 )
-from app.services.document_registry import select_document_for_workflow
+from app.services.document_registry import DOCUMENT_DEFINITIONS, select_document_for_workflow
 
 
 logger = logging.getLogger("uvicorn.error")
 
 
-DIRECT_PROFILE_FIELDS = {
-    "user_name",
-    "user_city",
-    "user_state",
-    "opposite_party_name",
-    "opposite_party_address",
-    "property_address",
-    "disputed_amount",
-    "incident_date",
-    "vacating_date",
-    "unpaid_months",
-    "transaction_id",
-    "bank_name",
-    "police_station_name",
-}
-
-EVIDENCE_FROM_FACT = {
-    "rental_agreement_available": "rental_agreement",
-    "deposit_payment_proof_available": "deposit_payment_proof",
-    "invoice_available": "invoice",
-    "employment_proof_available": "offer_letter",
-    "written_complaint_available": "complaint_copy",
-}
+DIRECT_PROFILE_FIELDS = PROFILE_FACT_FIELDS
 
 # Retrieval-relevant, non-identifying descriptors. Anything not listed here is
 # excluded from the RAG query, which is why names, addresses, transaction ids,
 # bank details and exact amounts can never reach the retrieval layer.
-RAG_FACT_ALLOWLIST = frozenset({
-    # evidence checklist ids
-    "rental_agreement", "deposit_payment_proof", "move_out_photos", "landlord_chat",
-    "invoice", "defect_photos", "support_tickets", "seller_rejection",
-    "offer_letter", "salary_slips", "hr_emails",
-    "upi_receipt", "scammer_chat", "bank_complaint_ack",
-    "incident_proof", "complaint_copy", "speed_post_receipt",
-    # completed workflow actions
-    "informal_request_made", "formal_demand_sent", "response_rejected",
-    "response_accepted", "bank_reported", "cybercrime_reported",
-    "police_complaint_submitted",
-})
+RAG_FACT_ALLOWLIST = frozenset(
+    {
+        item.id
+        for domain in domain_registry.all()
+        for item in (*domain.evidence, *domain.actions)
+    }
+    | {"informal_request_made", "response_accepted"}
+)
 
 # Turns that answer a question without restating the grievance.
 LOW_CONTEXT_PHRASES = frozenset({
@@ -101,21 +77,6 @@ DATE_WORDS = frozenset({
 
 # At or below this word count a turn is treated as confirmation, not substance.
 LOW_CONTEXT_MAX_WORDS = 3
-
-ESCALATION_STAGE = {
-    "HOUSING_TENANT": "RENT_AUTHORITY_ESCALATION",
-    "EMPLOYMENT": "LABOUR_COMMISSIONER_COMPLAINT",
-    "CONSUMER": "EDAAKHIL_COMPLAINT",
-    "CYBER_FRAUD": "POLICE_FIR_ESCALATION",
-    "POLICE_COMPLAINT": "SP_ESCALATION",
-}
-
-WAITING_STAGE = {
-    "HOUSING_TENANT": "AWAITING_LANDLORD_RESPONSE",
-    "EMPLOYMENT": "AWAITING_EMPLOYER_RESPONSE",
-    "CONSUMER": "AWAITING_SELLER_RESPONSE",
-}
-
 
 class GeminiConversationService:
     """Gemini/Groq understands and writes; deterministic code owns critical case state."""
@@ -211,6 +172,7 @@ class GeminiConversationService:
                     case_summary=self._compact_case(profile) if profile else None,
                     language_style=style.language,
                     script_style=style.script,
+                    domain_catalog=domain_registry.extraction_catalog(),
                 )
             )
 
@@ -220,7 +182,8 @@ class GeminiConversationService:
                     req.case_id,
                     category_override=extraction.classification.category,
                 )
-                profile.issue_type = extraction.classification.issue_type
+                domain = domain_registry.resolve(extraction.classification.category)
+                profile.issue_type = domain.normalize_issue_type(extraction.classification.issue_type)
 
             profile.language_style = style.language
             profile.script_style = style.script
@@ -254,6 +217,7 @@ class GeminiConversationService:
                     conflict=conflict,
                     safety=safety.to_dict() if safety.is_safety_case else None,
                     readiness=profile.readiness,
+                    domain_context=domain_registry.compact_context(profile),
                 )
             )
             self.workflow_agent._touch(profile)
@@ -604,40 +568,37 @@ class GeminiConversationService:
                 "confidence": confidence,
                 "confirmed": False,
             }
-            evidence_id = EVIDENCE_FROM_FACT.get(field)
+            domain = domain_registry.resolve(profile.category)
+            fact_definition = next((item for item in domain.facts if item.key == field), None)
+            evidence_id = fact_definition.evidence_type_id if fact_definition else None
             if candidate is True and evidence_id:
                 self.workflow_agent._mark_evidence(profile, [evidence_id])
         return conflict
 
     def _apply_actions(self, profile: StructuredCaseProfile, actions: list[DetectedAction]) -> None:
+        domain = domain_registry.resolve(profile.category)
         for action in actions:
             if not action.completed or action.confidence < 0.75:
                 continue
             action_type = action.type
             label = action_type.replace("_", " ").title()
-            if action_type == "formal_demand_sent":
-                stage = WAITING_STAGE.get(profile.category)
-                if stage:
-                    self.workflow_agent._set_journey_current(profile, stage, complete_through=True)
-            elif action_type == "response_rejected":
-                stage = ESCALATION_STAGE.get(profile.category)
-                if stage:
-                    self.workflow_agent._set_journey_current(profile, stage, complete_through=True)
-            elif action_type == "case_resolved":
+            if action_type == "case_resolved":
                 profile.current_stage_key = "RESOLVED"
                 profile.current_stage_label = "Resolved"
                 for stage in profile.legal_journey:
                     stage.status = "COMPLETED"
                     stage.is_current = False
-            elif action_type == "bank_reported" and profile.category == "CYBER_FRAUD":
-                self.workflow_agent._set_journey_current(profile, "BANK_REPORTED", complete_through=True)
-                profile.key_facts["bank_reported"] = True
-            elif action_type == "cybercrime_reported" and profile.category == "CYBER_FRAUD":
-                self.workflow_agent._set_journey_current(profile, "CYBERCRIME_PORTAL_FILED", complete_through=True)
-                profile.key_facts["cyber_reported"] = True
-            elif action_type == "police_complaint_submitted" and profile.category == "POLICE_COMPLAINT":
-                self.workflow_agent._set_journey_current(profile, "FORMAL_WRITTEN_COMPLAINT", complete_through=True)
-                profile.key_facts["written_complaint_available"] = True
+            else:
+                action_definition = domain.action(action_type)
+                if action_definition and action_definition.target_workflow_stage:
+                    self.workflow_agent._set_journey_current(
+                        profile,
+                        action_definition.target_workflow_stage,
+                        complete_through=True,
+                    )
+                if action_definition:
+                    for field, value in action_definition.fact_updates:
+                        profile.key_facts[field] = value
             self.workflow_agent._add_action(profile, action_type, label)
 
     def _apply_pending_confirmation(self, text: str, profile: StructuredCaseProfile) -> None:
@@ -679,7 +640,7 @@ class GeminiConversationService:
         asked for the name and city a template needed.
         """
         safety = safety or SafetyAssessment()
-        workflow = self.workflow_agent.workflows.get(profile.category, {})
+        workflow = self.workflow_agent._workflow_for_category(profile.category)
 
         if safety.has_safety_relevance:
             safety_state = safety.to_dict()
@@ -785,8 +746,9 @@ class GeminiConversationService:
             if action in RAG_FACT_ALLOWLIST:
                 facts.append(action)
 
+        domain = domain_registry.resolve(profile.category)
         return RagQueryContext(
-            category=profile.category,
+            category=domain.id,
             issue_type=profile.issue_type,
             state=profile.user_state,
             city=profile.user_city,
@@ -808,7 +770,9 @@ class GeminiConversationService:
             for citation in statutory_rag.retrieve_for_context(query, limit=4)
         ]
         seen_urls = {item.get("source_url") for item in citations}
-        for source in OFFICIAL_SOURCES.get(profile.category, []):
+        domain = domain_registry.resolve(profile.category)
+        for source_model in domain.rag.official_sources:
+            source = source_model.model_dump()
             if source.get("url") not in seen_urls:
                 citations.append(source)
 
@@ -935,45 +899,27 @@ class GeminiConversationService:
 
     @staticmethod
     def _missing_document_fields(profile: StructuredCaseProfile) -> list[str]:
-        fields: list[tuple[str, Any]] = [
-            ("user_name", profile.user_name),
-            ("user_city", profile.user_city),
-        ]
-        if profile.category == "HOUSING_TENANT":
-            fields.extend(
-                [
-                    ("opposite_party_name", profile.opposite_party_name),
-                    ("property_address", profile.property_address),
-                    ("disputed_amount", profile.disputed_amount),
-                    ("vacating_date", profile.vacating_date),
-                ]
-            )
-        elif profile.category == "EMPLOYMENT":
-            fields.extend(
-                [
-                    ("opposite_party_name", profile.opposite_party_name),
-                    ("disputed_amount", profile.disputed_amount),
-                ]
-            )
-        elif profile.category == "CONSUMER":
-            fields.extend(
-                [
-                    ("opposite_party_name", profile.opposite_party_name),
-                    ("disputed_amount", profile.disputed_amount),
-                ]
-            )
-        elif profile.category == "CYBER_FRAUD":
-            fields.extend(
-                [
-                    ("bank_name", profile.bank_name),
-                    ("disputed_amount", profile.disputed_amount),
-                    ("incident_date", profile.incident_date),
-                    ("transaction_id", profile.transaction_id),
-                ]
-            )
-        elif profile.category == "POLICE_COMPLAINT":
-            fields.append(("police_station_name", profile.police_station_name))
-        return [name for name, value in fields if value in (None, "", 0, 0.0, [])]
+        document_type = select_document_for_workflow(profile.category, profile.current_stage_key)
+        definition = DOCUMENT_DEFINITIONS.get(document_type)
+        if not definition:
+            return []
+        profile_keys = {
+            "complainant_name": "user_name",
+            "complainant_city": "user_city",
+            "recipient_name": "opposite_party_name",
+            "opposite_party_name": "opposite_party_name",
+        }
+        missing: list[str] = []
+        for document_field in definition.required_fields:
+            # The narrative is assembled from persisted chat messages by the
+            # document endpoint; it is not an intake field on the profile.
+            if document_field == "incident_narrative":
+                continue
+            fact_key = profile_keys.get(document_field, document_field)
+            present, value = read_profile_fact(profile, fact_key)
+            if not present or value in (None, "", 0, 0.0, []):
+                missing.append(fact_key)
+        return list(dict.fromkeys(missing))
 
     def _limited_demo_prefix(self, style: Optional[LanguageScript] = None) -> str:
         if style and style.language == "hindi" and style.script == "devanagari":

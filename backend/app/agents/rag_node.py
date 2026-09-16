@@ -4,17 +4,13 @@ import re
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
 from app.config import settings
+from app.domains import domain_registry
 from app.schemas.case import StatutoryCitation
 
 
 # Case categories are product-level; corpus keys are retrieval-level. Mapping
 # lives here so callers never have to know how the corpus is filed.
-CATEGORY_TO_CORPUS = {
-    "HOUSING_TENANT": "TENANCY",
-    "TENANCY": "TENANCY",
-    "CONSUMER": "CONSUMER",
-    "RTI": "RTI",
-}
+CATEGORY_TO_CORPUS = {**domain_registry.corpus_mapping(), "RTI": "RTI"}
 
 # Words that carry no retrieval signal. Without this filter a single "the" or
 # "of" in a provision matches every query and collapses ranking to file order.
@@ -96,6 +92,7 @@ class StatutoryRAG:
     def __init__(self):
         self.corpus: Dict[str, List[Dict[str, Any]]] = {}
         self._load_corpus()
+        domain_registry.validate_corpora(set(self.corpus))
 
     def _load_corpus(self):
         corpus_files = {

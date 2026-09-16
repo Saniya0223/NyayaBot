@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from typing import Any, List
 
+from app.domains import domain_registry
+
 from app.services.safety_triage import (
     SAFETY_INTAKE_FACTS,
     SafetyAssessment,
@@ -45,37 +47,6 @@ def readiness_at_least(readiness: str, minimum: str) -> bool:
     except ValueError:
         return False
 
-
-# Facts needed to UNDERSTAND each issue. Deliberately excludes user_name and
-# address-type fields: those identify the person for a document, they do not
-# help establish what happened or which law applies.
-INTAKE_REQUIREMENTS: dict[str, List[str]] = {
-    "HOUSING_TENANT": [
-        "vacating_date", "rental_agreement_available",
-        "deposit_payment_proof_available", "landlord_reason",
-    ],
-    "CONSUMER": [
-        "incident_date", "product_name", "invoice_available",
-        "seller_contacted", "seller_response",
-    ],
-    "EMPLOYMENT": [
-        "unpaid_months", "monthly_salary", "hr_contacted",
-        "employment_proof_available",
-    ],
-    "CYBER_FRAUD": [
-        "incident_date", "transaction_id", "bank_reported", "cyber_reported",
-    ],
-    "POLICE_COMPLAINT": [
-        "incident_date", "threat_details", "police_contacted",
-        "evidence_available",
-    ],
-    # A case we cannot yet classify needs the issue itself described, not a form.
-    "GENERAL": ["issue_description"],
-}
-
-# Jurisdiction is asked once the issue is understood, because it changes the
-# applicable law and forum - not because a template has a city field.
-JURISDICTION_FACT = "user_state"
 
 # Phrases that carry no legal content. A case stays in PRE_INTAKE until the user
 # has actually described a problem.
@@ -119,7 +90,9 @@ def compute_intake_missing_facts(
     if safety.is_safety_case and not safety_triage_resolved(profile.key_facts or {}):
         return [fact for fact in SAFETY_INTAKE_FACTS if not _has_value(profile, fact)]
 
-    required = list(INTAKE_REQUIREMENTS.get(profile.category, INTAKE_REQUIREMENTS["GENERAL"]))
+    # The registry returns semantically ordered, issue-applicable facts and
+    # treats explicit False as known rather than missing.
+    required = [fact.key for fact in domain_registry.unresolved_facts(profile)]
     if safety.is_safety_case:
         # Keep safety facts in the intake set once triage is answered, so the
         # case is still understood on its own terms.
@@ -127,12 +100,12 @@ def compute_intake_missing_facts(
             if fact not in required:
                 required.append(fact)
 
-    missing = [field for field in required if not _has_value(profile, field)]
-
-    # Jurisdiction matters once we know the issue, so it is asked late, not first.
-    if not missing and not _has_value(profile, JURISDICTION_FACT):
-        missing.append(JURISDICTION_FACT)
-    return missing
+    # Domain facts above are already unresolved. Safety facts still use the
+    # global safety contract, which intentionally remains outside domains.
+    return [
+        field for field in required
+        if field not in SAFETY_INTAKE_FACTS or not _has_value(profile, field)
+    ]
 
 
 def compute_readiness(

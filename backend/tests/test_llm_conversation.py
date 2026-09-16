@@ -109,10 +109,12 @@ def test_gemini_turn_uses_recent_history_and_updated_workflow_context():
     assert provider.extraction_context.recent_messages[0]["content"] == "turn 4"
     assert provider.extraction_context.language_style == "hinglish"
     assert provider.extraction_context.script_style == "roman"
+    assert any(item["domain_id"] == "HOUSING_TENANT" for item in provider.extraction_context.domain_catalog)
     assert provider.response_context.case_summary["facts"]["disputed_amount"] == 50000
     assert provider.response_context.workflow["current_stage_key"] == "INFORMAL_REQUEST"
     assert provider.response_context.language_style == "hinglish"
     assert provider.response_context.script_style == "roman"
+    assert provider.response_context.domain_context["domain_id"] == "HOUSING_TENANT"
     assert provider.response_context.legal_sources
     assert "document:user_name" not in provider.response_context.missing_information
     assert "user_name" in response.case_profile.missing_document_fields

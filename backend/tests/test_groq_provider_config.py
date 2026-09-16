@@ -9,7 +9,19 @@ from app.llm.contracts import (
     LLMProviderError,
     LLMResponseContext,
 )
-from app.llm.groq_provider import GroqProvider
+from app.llm.gemini_provider import CHAT_SYSTEM_PROMPT as GEMINI_CHAT_SYSTEM_PROMPT
+from app.llm.groq_provider import CHAT_SYSTEM_PROMPT as GROQ_CHAT_SYSTEM_PROMPT, GroqProvider
+
+
+def test_chat_prompt_has_consistent_professional_emoji_rules():
+    expected_rule = """Use a clean, professional, natural conversational tone in every supported language.
+Do not use emojis by default or add decorative emojis to ordinary responses.
+If the user is actively using emojis, you may mirror them very lightly only when natural.
+Never use emojis as substitutes for headings, bullets, warnings, evidence status, workflow state, or legal seriousness.
+In urgent or safety situations, use clear plain language rather than decorative warning emojis."""
+
+    assert GROQ_CHAT_SYSTEM_PROMPT == GEMINI_CHAT_SYSTEM_PROMPT
+    assert expected_rule in GROQ_CHAT_SYSTEM_PROMPT
 
 
 def test_groq_status_unconfigured():

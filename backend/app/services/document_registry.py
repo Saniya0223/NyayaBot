@@ -1,5 +1,6 @@
 from typing import Any, Dict, List
 
+from app.domains import domain_registry
 from app.schemas.document import DocumentDefinitionSchema
 
 
@@ -112,14 +113,12 @@ def validate_document_fields(doc_type: str, data: Dict[str, Any]) -> List[str]:
 
 
 def select_document_for_workflow(category: str, stage_key: str = "") -> str:
-    if category == "CONSUMER" and "EDAAKHIL" in stage_key:
-        return "EDAAKHIL_COMPLAINT"
-    defaults = {
-        "CONSUMER": "FORMAL_LEGAL_NOTICE",
-        "EMPLOYMENT": "SALARY_DEMAND_NOTICE",
-        "HOUSING_TENANT": "TENANT_DEMAND_NOTICE",
-        "CYBER_FRAUD": "CYBERCRIME_BANK_FREEZE",
-        "POLICE_COMPLAINT": "POLICE_COMPLAINT_BNSS",
-        "RTI": "RTI_SEC6",
-    }
-    return defaults.get(category, "GENERAL_COMPLAINT_LETTER")
+    domain = domain_registry.get(category)
+    if domain:
+        binding = domain.document_for_stage(stage_key)
+        if binding:
+            return binding.document_type
+    # RTI remains a legacy non-chat workflow in Phase 1.
+    if category == "RTI":
+        return "RTI_SEC6"
+    return "GENERAL_COMPLAINT_LETTER"
