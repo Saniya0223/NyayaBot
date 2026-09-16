@@ -131,6 +131,8 @@ class LLMExtractionContext(BaseModel):
     user_message: str
     recent_messages: List[Dict[str, str]] = Field(default_factory=list)
     case_summary: Optional[Dict[str, Any]] = None
+    language_style: str = "english"
+    script_style: str = "roman"
 
 
 class LLMResponseContext(BaseModel):
@@ -141,6 +143,7 @@ class LLMResponseContext(BaseModel):
     missing_information: List[str] = Field(default_factory=list)
     legal_sources: List[Dict[str, Any]] = Field(default_factory=list)
     language_style: str = "english"
+    script_style: str = "roman"
     conflict: Optional[Dict[str, Any]] = None
     # Safety triage result and readiness stage. The model is told when a case is
     # still being understood so it does not push a document prematurely.

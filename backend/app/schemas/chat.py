@@ -59,6 +59,11 @@ class StructuredCaseProfile(BaseModel):
     rights_summary: Optional[Dict[str, Any]] = None  # {what_this_means, possible_rights: [], useful_evidence: [], legal_source}
     risk_level: str = "GREEN"  # GREEN | AMBER | RED
     safety_notice: Optional[str] = None
+    # Language and script are persisted independently so short follow-up turns
+    # keep the conversation's established voice. Roman Hinglish must never be
+    # silently converted to Devanagari.
+    language_style: str = "english"
+    script_style: str = "roman"
     is_ready_for_document: bool = False
     recommended_doc_type: Optional[str] = None
     recommended_doc_label: Optional[str] = None

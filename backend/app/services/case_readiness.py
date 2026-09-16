@@ -181,6 +181,11 @@ def document_routing_allowed(
         return False
     if safety.blocks_document_routing and not safety_triage_resolved(profile.key_facts or {}):
         return False
+    if safety.is_safety_case and not (profile.key_facts or {}).get("safety_triage_complete"):
+        # Answering "safe right now" resolves the emergency question, but it
+        # does not mean the threat has been understood well enough for a legal
+        # document. The paced safety intake must finish first.
+        return False
     if profile.category == "GENERAL":
         # No curated workflow exists, so no template is demonstrably appropriate.
         return False

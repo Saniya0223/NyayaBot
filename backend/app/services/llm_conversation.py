@@ -6,13 +6,22 @@ from typing import Any, Iterable, Optional
 
 from app.agents.conversation_agent import OFFICIAL_SOURCES, ConversationalLegalAgent, conversational_agent
 from app.agents.rag_node import RagQueryContext, statutory_rag
+from app.services.language_style import LanguageScript
+from app.services.pii_masker import PIIMasker
 from app.services.case_readiness import (
     READY_FOR_DOCUMENT,
     compute_intake_missing_facts,
     compute_readiness,
     document_routing_allowed,
 )
-from app.services.safety_triage import SafetyAssessment, assess_safety
+from app.services.safety_triage import (
+    AMBER,
+    RED,
+    SafetyAssessment,
+    assess_safety,
+    extract_safety_facts,
+    simple_yes_no,
+)
 from app.config import settings
 from app.llm.contracts import (
     CaseExtraction,
@@ -139,21 +148,47 @@ class GeminiConversationService:
     ) -> ChatTurnResponse:
         history = self._recent_history(recent_messages)
 
-        # Safety triage runs before provider availability is even considered, so
-        # a threat is never left waiting on an API that may be down or rate
-        # limited. It is deterministic and cannot regress with model behaviour.
+        # Deterministic language/script and safety routing run before provider
+        # availability, extraction/classification, workflow, RAG, or documents.
+        # An unresolved safety case returns from this branch without an LLM call.
+        prior_language = existing_profile.language_style if existing_profile else None
+        prior_script = existing_profile.script_style if existing_profile else None
+        prior_safety = existing_profile.safety_status if existing_profile else None
         prior_text = " ".join(item.get("content", "") for item in history if item.get("role") == "user")
-        safety = assess_safety(req.message, prior_text)
+        safety = assess_safety(
+            req.message,
+            prior_text,
+            prior_safety=prior_safety,
+            prior_language=prior_language,
+            prior_script=prior_script,
+            prior_question_group=(
+                existing_profile.key_facts.get("last_safety_question_group")
+                if existing_profile
+                else None
+            ),
+        )
+        style = LanguageScript(safety.language_style, safety.script_style)
+
+        if self._safety_route_required(safety, existing_profile):
+            return self._process_safety_turn(req, existing_profile, safety, style)
 
         if not self.provider.status.configured:
             fallback = self.workflow_agent.process_turn(req, existing_profile)
+            fallback.case_profile.language_style = style.language
+            fallback.case_profile.script_style = style.script
             self._refresh_workflow(fallback.case_profile, safety, req.message)
-            prefix = self._limited_demo_prefix()
-            if safety.is_safety_case:
-                fallback.reply_text = self._safety_first_reply(safety)
-                fallback.quick_replies = self._safety_quick_replies(safety)
-            else:
-                fallback.reply_text = prefix + fallback.reply_text
+            # The legacy workflow response is composed before readiness is
+            # recomputed. Keep the response envelope in sync when the refresh
+            # correctly removes a premature document action.
+            fallback.suggested_action = fallback.case_profile.recommended_next_action
+            if fallback.suggested_action is None:
+                fallback.quick_replies = []
+            prefix = self._limited_demo_prefix(style)
+            fallback.reply_text = prefix + self._localized_fallback_reply(
+                fallback.case_profile,
+                fallback.reply_text,
+                style,
+            )
             return self._tag_response(fallback, "limited_demo")
 
         profile = existing_profile
@@ -174,6 +209,8 @@ class GeminiConversationService:
                     user_message=req.message,
                     recent_messages=history,
                     case_summary=self._compact_case(profile) if profile else None,
+                    language_style=style.language,
+                    script_style=style.script,
                 )
             )
 
@@ -184,6 +221,9 @@ class GeminiConversationService:
                     category_override=extraction.classification.category,
                 )
                 profile.issue_type = extraction.classification.issue_type
+
+            profile.language_style = style.language
+            profile.script_style = style.script
 
             conflict = self._apply_extraction(profile, extraction)
             self._apply_actions(profile, extraction.actions_detected)
@@ -209,7 +249,8 @@ class GeminiConversationService:
                     workflow=workflow_state,
                     missing_information=missing_for_response,
                     legal_sources=legal_sources,
-                    language_style=extraction.language_style,
+                    language_style=style.language,
+                    script_style=style.script,
                     conflict=conflict,
                     safety=safety.to_dict() if safety.is_safety_case else None,
                     readiness=profile.readiness,
@@ -303,6 +344,217 @@ class GeminiConversationService:
             fallback = self.workflow_agent.process_document_upload(req, profile)
             fallback.reply_text = self._temporary_failure_prefix() + fallback.reply_text
             return self._tag_response(fallback, "limited_demo")
+
+    @staticmethod
+    def _safety_route_required(
+        safety: SafetyAssessment,
+        profile: Optional[StructuredCaseProfile],
+    ) -> bool:
+        """Keep unresolved or newly urgent safety turns out of the legal flow."""
+        if not safety.is_safety_case:
+            return False
+        complete = bool(profile and profile.key_facts.get("safety_triage_complete"))
+        return not complete or safety.immediate_danger is not False
+
+    def _process_safety_turn(
+        self,
+        req: ChatTurnRequest,
+        existing_profile: Optional[StructuredCaseProfile],
+        safety: SafetyAssessment,
+        style: LanguageScript,
+    ) -> ChatTurnResponse:
+        """Handle safety deterministically before any provider or RAG call."""
+        sanitized_text, _ = PIIMasker.mask_text(req.message.strip())
+        profile = existing_profile or self.workflow_agent._init_case_profile(
+            sanitized_text,
+            req.case_id,
+            category_override="POLICE_COMPLAINT",
+        )
+        profile.language_style = style.language
+        profile.script_style = style.script
+        profile.risk_level = RED if safety.safety_level == RED else AMBER
+        profile.safety_notice = safety.guidance
+        profile.key_facts["safety_context"] = safety.safety_context
+        profile.key_facts["safety_contexts"] = list(safety.contexts)
+
+        extracted = extract_safety_facts(sanitized_text, safety)
+        extracted.update(self._contextual_safety_facts(sanitized_text, profile))
+        for field, value in extracted.items():
+            if field == "incident_date":
+                profile.incident_date = str(value)
+            else:
+                profile.key_facts[field] = value
+            profile.fact_metadata[field] = {
+                "value": value,
+                "source": "deterministic_safety_triage",
+                "confidence": 1.0,
+                "confirmed": True,
+            }
+
+        self._refresh_workflow(profile, safety, req.message)
+        reply, quick_replies = self._paced_safety_reply(profile, safety, style)
+        safety_state = safety.to_dict()
+        safety_state["triage_complete"] = bool(profile.key_facts.get("safety_triage_complete"))
+        profile.safety_status = safety_state
+        profile.recommended_doc_type = None
+        profile.recommended_doc_label = None
+        profile.recommended_next_action = None
+        profile.missing_document_fields = []
+        profile.is_ready_for_document = False
+        self.workflow_agent._touch(profile)
+        return self._tag_response(
+            ChatTurnResponse(
+                reply_text=reply,
+                case_profile=profile,
+                quick_replies=quick_replies,
+                suggested_action=None,
+                message_id=str(uuid.uuid4()),
+            ),
+            "limited_demo",
+        )
+
+    @staticmethod
+    def _contextual_safety_facts(
+        message: str,
+        profile: StructuredCaseProfile,
+    ) -> dict[str, bool]:
+        """Map short yes/no replies to the single safety fact just asked."""
+        answer = simple_yes_no(message)
+        if answer is None:
+            return {}
+        group = profile.key_facts.get("last_safety_question_group")
+        if group == "repeated":
+            return {"repeated_incidents": answer}
+        if group == "violence_weapon":
+            return {"physical_violence_or_weapon": answer}
+        if group == "evidence":
+            return {"evidence_available": answer}
+        if group == "police":
+            return {"police_contacted": answer}
+        if group == "dependants":
+            # The question asks whether the children are safe, whereas the
+            # stored fact describes whether they are at risk.
+            return {"dependants_at_risk": not answer}
+        return {}
+
+    def _paced_safety_reply(
+        self,
+        profile: StructuredCaseProfile,
+        safety: SafetyAssessment,
+        style: LanguageScript,
+    ) -> tuple[str, list[str]]:
+        """Return safety guidance plus at most one two-part follow-up."""
+        if safety.immediate_danger is None:
+            profile.key_facts["last_safety_question_group"] = "immediate_danger"
+            parts = [safety.triage_question, safety.guidance]
+            return "\n\n".join(part for part in parts if part), self._safety_quick_replies(safety)
+
+        if safety.immediate_danger is True:
+            profile.key_facts["last_safety_question_group"] = "urgent_safety"
+            # Urgent instructions precede the follow-up question.
+            parts = [safety.guidance, safety.triage_question]
+            return "\n\n".join(part for part in parts if part), self._safety_quick_replies(safety)
+
+        missing = set(profile.intake_missing_facts)
+        prefix = safety.guidance or ""
+        if "threat_details" in missing or "incident_date" in missing:
+            profile.key_facts["last_safety_question_group"] = "incident"
+            question = self._safety_text(style, "incident")
+        elif "repeated_incidents" in missing:
+            profile.key_facts["last_safety_question_group"] = "repeated"
+            question = self._safety_text(style, "repeated")
+        elif "physical_violence_or_weapon" in missing:
+            profile.key_facts["last_safety_question_group"] = "violence_weapon"
+            question = self._safety_text(style, "violence_weapon")
+        elif safety.dependants_present and profile.key_facts.get("dependants_at_risk") is None:
+            profile.key_facts["last_safety_question_group"] = "dependants"
+            question = self._safety_text(style, "dependants")
+        elif "evidence_available" in missing:
+            profile.key_facts["last_safety_question_group"] = "evidence"
+            question = self._safety_text(style, "evidence")
+        elif "police_contacted" in missing:
+            profile.key_facts["last_safety_question_group"] = "police"
+            question = self._safety_text(style, "police")
+        else:
+            profile.key_facts["safety_triage_complete"] = True
+            profile.key_facts.pop("last_safety_question_group", None)
+            question = self._safety_text(style, "complete")
+        return "\n\n".join(part for part in (prefix, question) if part), []
+
+    @staticmethod
+    def _safety_text(style: LanguageScript, key: str) -> str:
+        values = {
+            "english": {
+                "incident": "What exactly happened, and when did it happen?",
+                "repeated": "Has this happened before?",
+                "violence_weapon": "Was any physical violence or weapon involved?",
+                "dependants": "Are the children safe right now and with you or another trusted person?",
+                "evidence": "Do you still have messages, recordings, CCTV, or witnesses?",
+                "police": "Have you already contacted the police?",
+                "complete": "Thank you. The immediate-safety check is complete. What legal option would you like help understanding next?",
+            },
+            "hinglish": {
+                "incident": "Exactly kya hua tha, aur yeh kab hua?",
+                "repeated": "Kya yeh pehle bhi hua hai?",
+                "violence_weapon": "Kya physical violence hui thi ya koi weapon involved tha?",
+                "dependants": "Kya bachche abhi safe hain aur aapke ya kisi bharosemand vyakti ke saath hain?",
+                "evidence": "Kya aapke paas messages, recording, CCTV ya witness hain?",
+                "police": "Kya aapne police se contact kiya hai?",
+                "complete": "Thank you. Immediate-safety check complete hai. Ab aap kis legal option ko samajhna chahenge?",
+            },
+            "hindi": {
+                "incident": "ठीक-ठीक क्या हुआ था, और यह कब हुआ?",
+                "repeated": "क्या यह पहले भी हुआ है?",
+                "violence_weapon": "क्या कोई शारीरिक हिंसा हुई थी या हथियार शामिल था?",
+                "dependants": "क्या बच्चे अभी सुरक्षित हैं और आपके या किसी भरोसेमंद व्यक्ति के साथ हैं?",
+                "evidence": "क्या आपके पास संदेश, रिकॉर्डिंग, सीसीटीवी या गवाह हैं?",
+                "police": "क्या आपने पुलिस से संपर्क किया है?",
+                "complete": "धन्यवाद। तत्काल सुरक्षा जाँच पूरी है। अब आप किस कानूनी विकल्प को समझना चाहेंगे?",
+            },
+        }
+        language = "hindi" if style.script == "devanagari" else style.language
+        return values.get(language, values["english"])[key]
+
+    def _localized_fallback_reply(
+        self,
+        profile: StructuredCaseProfile,
+        original: str,
+        style: LanguageScript,
+    ) -> str:
+        """Mirror language/script in deterministic non-provider intake replies."""
+        if profile.readiness == "PRE_INTAKE":
+            if style.language == "english":
+                return "Hello. Please briefly describe your legal problem and what happened."
+            return (
+                "Namaste. Apni legal problem simple words mein batayein—kya hua?"
+                if style.script == "roman"
+                else "नमस्ते। अपनी कानूनी समस्या सरल शब्दों में बताइए—क्या हुआ?"
+            )
+        if style.language == "english":
+            return original
+        if profile.category == "HOUSING_TENANT":
+            return (
+                "Main deposit issue samajhne mein madad karunga. Property kis state mein hai, aur aap kab wahan se nikle?"
+                if style.script == "roman"
+                else "मैं जमा राशि का मामला समझने में मदद करूँगा। संपत्ति किस राज्य में है, और आप वहाँ से कब निकले?"
+            )
+        if profile.category == "EMPLOYMENT":
+            return (
+                "Kaun se mahine ki salary pending hai, aur employer ne kya jawab diya?"
+                if style.script == "roman"
+                else "किन महीनों का वेतन बाकी है, और नियोक्ता ने क्या जवाब दिया?"
+            )
+        if profile.category == "CYBER_FRAUD":
+            return (
+                "Transaction kab hua, aur kya aapne bank ya 1930 par report kiya?"
+                if style.script == "roman"
+                else "लेन-देन कब हुआ, और क्या आपने बैंक या 1930 पर रिपोर्ट की?"
+            )
+        return (
+            "Jo hua use thoda aur batayein, aur yeh kab hua?"
+            if style.script == "roman"
+            else "जो हुआ उसे थोड़ा और बताइए, और यह कब हुआ?"
+        )
 
     def _apply_extraction(
         self,
@@ -429,7 +681,13 @@ class GeminiConversationService:
         safety = safety or SafetyAssessment()
         workflow = self.workflow_agent.workflows.get(profile.category, {})
 
-        profile.safety_status = safety.to_dict() if safety.is_safety_case else None
+        if safety.has_safety_relevance:
+            safety_state = safety.to_dict()
+            if profile.key_facts.get("safety_triage_complete"):
+                safety_state["triage_complete"] = True
+            profile.safety_status = safety_state
+        elif not profile.key_facts.get("safety_triage_complete"):
+            profile.safety_status = None
         profile.intake_missing_facts = compute_intake_missing_facts(profile, safety)
         profile.readiness = compute_readiness(profile, safety, profile.intake_missing_facts, message)
 
@@ -479,9 +737,11 @@ class GeminiConversationService:
 
     @staticmethod
     def _safety_quick_replies(safety: SafetyAssessment) -> list[str]:
-        if safety.severity == "IMMEDIATE":
-            return ["I am safe right now", "I am in danger", "The person has left"]
-        return ["No immediate danger", "Yes, I feel threatened", "It is still happening"]
+        if safety.language_style == "hindi" and safety.script_style == "devanagari":
+            return ["मैं अभी सुरक्षित हूँ", "मुझे अभी खतरा है", "वह व्यक्ति चला गया"]
+        if safety.language_style == "hinglish" and safety.script_style == "roman":
+            return ["Abhi main safe hun", "Mujhe abhi khatra hai", "Woh vyakti chala gaya"]
+        return ["I am safe right now", "I am in danger", "The person has left"]
 
     @staticmethod
     def _is_low_context_message(message: str) -> bool:
@@ -603,6 +863,10 @@ class GeminiConversationService:
             "actions_completed": profile.actions_completed,
             "risk_level": profile.risk_level,
             "safety_notice": profile.safety_notice,
+            "safety_status": profile.safety_status,
+            "language_style": profile.language_style,
+            "script_style": profile.script_style,
+            "readiness": profile.readiness,
             "missing_document_fields": profile.missing_document_fields,
             "document_intake_active": bool(profile.key_facts.get("document_intake_active")),
         }
@@ -646,7 +910,7 @@ class GeminiConversationService:
     def _safe_next_prompt(self, profile: StructuredCaseProfile) -> str:
         missing = profile.missing_required_fields or profile.missing_document_fields
         if missing:
-            labels = ", ".join(field.replace("_", " ") for field in missing[:4])
+            labels = ", ".join(field.replace("_", " ") for field in missing[:2])
             return f"I kept your case progress. You can continue by sharing: {labels}."
         return f"I kept your case progress. Please try the {self._provider_title} response again in a moment."
 
@@ -711,7 +975,11 @@ class GeminiConversationService:
             fields.append(("police_station_name", profile.police_station_name))
         return [name for name, value in fields if value in (None, "", 0, 0.0, [])]
 
-    def _limited_demo_prefix(self) -> str:
+    def _limited_demo_prefix(self, style: Optional[LanguageScript] = None) -> str:
+        if style and style.language == "hindi" and style.script == "devanagari":
+            return f"सीमित डेमो मोड — {self._provider_title} कॉन्फ़िगर नहीं है, इसलिए यह उत्तर स्थानीय नियमों पर आधारित है।\n\n"
+        if style and style.language == "hinglish" and style.script == "roman":
+            return f"Limited demo mode — {self._provider_title} configured nahi hai, isliye yeh reply local rules use karta hai.\n\n"
         return f"Limited demo mode — {self._provider_title} is not configured, so this reply uses local workflow rules only.\n\n"
 
     def _temporary_failure_prefix(self) -> str:
