@@ -93,7 +93,7 @@
     <td style="width: 75%;">
       <strong>{{ complainant.name }}</strong><br>
       Residing at: {{ complainant.address or complainant.city }}<br>
-      City: {{ complainant.city }}, State: {{ complainant.state }}<br>
+      City: {{ complainant.city }}{% if complainant.state %}, State: {{ complainant.state }}{% endif %}<br>
       Contact: {{ complainant.phone or 'N/A' }} | Email: {{ complainant.email or 'N/A' }}
     </td>
     <td style="width: 25%; text-align: right; font-weight: bold;">
@@ -109,7 +109,7 @@
     <td style="width: 75%;">
       <strong>{{ opposite_party.name }}</strong><br>
       Having office at: {{ opposite_party.address or 'Principal Office' }}<br>
-      City: {{ opposite_party.city }}, State: {{ opposite_party.state }}<br>
+      City: {{ opposite_party.city }}{% if opposite_party.state %}, State: {{ opposite_party.state }}{% endif %}<br>
       Email: {{ opposite_party.email or 'N/A' }}
     </td>
     <td style="width: 25%; text-align: right; font-weight: bold;">
@@ -119,11 +119,13 @@
 </table>
 
 <div class="complaint-heading">
-  COMPLAINT UNDER SECTION 35 OF THE CONSUMER PROTECTION ACT, 2019 FOR DEFICIENCY OF SERVICE AND UNFAIR TRADE PRACTICE
+  COMPLAINT UNDER SECTION 35 OF THE CONSUMER PROTECTION ACT, 2019 FOR {{ legal_grounds or subject_matter or 'REDRESSAL OF CONSUMER GRIEVANCE' | upper }}
 </div>
 
 <div class="numbered-para">
-  1. <strong>JURISDICTION OF THIS HON'BLE FORUM:</strong> That the Complainant resides and works for gain in {{ complainant.city }}, within the territorial jurisdiction of this Hon'ble Commission under Section 34(2)(d) of the Consumer Protection Act, 2019. Further, the total value of consideration and claim does not exceed ₹50,00,000, thereby conferring pecuniary jurisdiction upon this Hon'ble District Commission.
+  1. <strong>JURISDICTION:</strong><br>
+  (a) <em>Territorial Jurisdiction:</em> The Complainant resides and/or works for gain in {{ complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}, conferring territorial jurisdiction upon this Hon'ble Commission under Section 34(2)(d) of the Consumer Protection Act, 2019.<br>
+  (b) <em>Pecuniary Jurisdiction:</em> The total value of the goods/services paid as consideration and the compensation claimed does not exceed ₹50,00,000 (Fifty Lakh Rupees), thereby placing the matter within the pecuniary jurisdiction of this Hon'ble District Commission under applicable rules.
 </div>
 
 <div class="numbered-para">
@@ -131,24 +133,39 @@
 </div>
 
 <div class="numbered-para">
-  3. <strong>TRANSACTION DETAILS:</strong> That on or about {{ incident_date or 'the transaction date' }}, the Complainant purchased goods / engaged services from the Opposite Party for a consideration of <strong>₹{{ "{:,.2f}".format(financials.amount_paid) }}</strong>.
+  3. <strong>TRANSACTION DETAILS:</strong> That on or about {{ incident_date or 'the transaction date' }}, {% if financials and financials.amount_paid and financials.amount_paid > 0 %}the Complainant purchased goods / engaged services from the Opposite Party for a consideration of <strong>₹{{ "{:,.2f}".format(financials.amount_paid) }}</strong>.{% else %}the Complainant entered into the subject transaction with the Opposite Party for goods/services.{% endif %}
 </div>
 
 <div class="numbered-para">
-  4. <strong>FACTS & DEFICIENCY OF SERVICE:</strong> {{ incident_narrative }}
+  4. <strong>FACTS OF THE CASE:</strong> {{ incident_narrative }}
 </div>
 
 <div class="numbered-para">
-  5. <strong>DEFICIENCY IN SERVICE & UNFAIR TRADE PRACTICE:</strong> That despite repeated demands and issuance of notice, the Opposite Party has failed and refused to redress the legitimate grievance. The conduct of the Opposite Party amounts to gross Deficiency in Service under Section 2(11) and Unfair Trade Practice under Section 2(47) of the Consumer Protection Act, 2019.
+  5. <strong>LEGAL GROUNDS:</strong> {{ legal_grounds or 'That despite communication and opportunity to resolve the issue, the Opposite Party has failed and neglected to redress the grievance, thereby giving rise to actionable claims under the Consumer Protection Act, 2019.' }}
 </div>
 
 <div class="prayer-box">
   <div class="prayer-title">PRAYER</div>
   In the premises aforesaid, the Complainant most respectfully prays that this Hon'ble Commission may graciously be pleased to:
   <ol style="margin: 8px 0 0 20px; padding: 0;">
-    <li>Direct the Opposite Party to refund the sum of <strong>₹{{ "{:,.2f}".format(financials.refund_claimed) }}</strong> along with interest @ 12% per annum from {{ incident_date or 'the date of payment' }} until realization;</li>
-    <li>Direct the Opposite Party to pay a sum of <strong>₹{{ "{:,.2f}".format(financials.compensation_claimed) }}</strong> towards damages for mental harassment, financial agony, and loss of time;</li>
-    <li>Direct the Opposite Party to pay litigation expenses quantified at <strong>₹{{ "{:,.2f}".format(financials.litigation_costs_claimed) }}</strong>;</li>
+    {% if financials and financials.refund_claimed and financials.refund_claimed > 0 %}
+      <li>Direct the Opposite Party to refund the sum of <strong>₹{{ "{:,.2f}".format(financials.refund_claimed) }}</strong>{% if interest_rate %} along with interest @ {{ interest_rate }}% per annum{% elif interest_sought %} along with applicable interest{% endif %} from {{ incident_date or 'the date of payment' }} until realization;</li>
+    {% endif %}
+    {% if replacement_sought %}
+      <li>Direct the Opposite Party to provide replacement of the defective goods with a new, defect-free unit;</li>
+    {% endif %}
+    {% if repair_sought or defect_removal_sought %}
+      <li>Direct the Opposite Party to rectify/remove the defects in the subject goods/services without charge;</li>
+    {% endif %}
+    {% if financials and financials.compensation_claimed and financials.compensation_claimed > 0 %}
+      <li>Direct the Opposite Party to pay a sum of <strong>₹{{ "{:,.2f}".format(financials.compensation_claimed) }}</strong> towards compensation for loss, mental agony, and harassment caused;</li>
+    {% endif %}
+    {% if financials and financials.litigation_costs_claimed and financials.litigation_costs_claimed > 0 %}
+      <li>Direct the Opposite Party to pay litigation expenses quantified at <strong>₹{{ "{:,.2f}".format(financials.litigation_costs_claimed) }}</strong>;</li>
+    {% endif %}
+    {% if not (financials and (financials.refund_claimed or financials.compensation_claimed or financials.litigation_costs_claimed)) and not (replacement_sought or repair_sought or defect_removal_sought) %}
+      <li>Direct the Opposite Party to redress the grievance and provide appropriate relief to the Complainant;</li>
+    {% endif %}
     <li>Pass such other and further order(s) as this Hon'ble Commission may deem fit in the interest of justice.</li>
   </ol>
 </div>
@@ -161,7 +178,7 @@
 <div class="affidavit-box">
   <div class="affidavit-title">VERIFICATION AFFIDAVIT</div>
   <p style="text-align: justify; text-indent: 30px;">
-    I, <strong>{{ complainant.name }}</strong>, residing at {{ complainant.city }}, {{ complainant.state }}, do hereby solemnly declare and verify that the contents of paragraphs 1 to 5 of the accompanying complaint are true and correct to the best of my personal knowledge and belief, and nothing material has been concealed therefrom.
+    I, <strong>{{ complainant.name }}</strong>, residing at {{ complainant.address or complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}, do hereby solemnly declare and verify that the contents of paragraphs 1 to 5 of the accompanying complaint are true and correct to the best of my knowledge, information, and belief, and nothing material has been concealed therefrom.
   </p>
   <p style="margin-top: 30px;">
     Verified at <strong>{{ complainant.city }}</strong> on this <strong>{{ date_today }}</strong>.

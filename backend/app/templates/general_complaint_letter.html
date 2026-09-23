@@ -14,13 +14,30 @@
   <div class="header"><strong>GENERAL COMPLAINT LETTER</strong></div>
   <p><strong>Date:</strong> {{ date_today }}</p>
   <div class="box"><strong>To:</strong><br>{{ opposite_party.name }}<br>{{ opposite_party.address or '' }}</div>
-  <div class="box"><strong>From:</strong><br>{{ complainant.name }}<br>{{ complainant.address or '' }}<br>{{ complainant.city or '' }}, {{ complainant.state or '' }}</div>
-  <p><strong>Subject: Written complaint and request for appropriate action</strong></p>
+  <div class="box"><strong>From:</strong><br>{{ complainant.name }}<br>{{ complainant.address or '' }}<br>{{ complainant.city or '' }}{% if complainant.state %}, {{ complainant.state }}{% endif %}</div>
+  <p><strong>Subject: {{ complaint_subject or subject or doc_title or 'Written complaint and request for appropriate action' }}</strong></p>
   <p>Sir / Madam,</p>
   <p>I am submitting this written complaint concerning the following facts:</p>
   <p>{{ incident_narrative }}</p>
   {% if incident_date %}<p><strong>Relevant date:</strong> {{ incident_date }}</p>{% endif %}
+  
+  {% if relief_requested or action_requested or relief_sought %}
+  <p><strong>Action requested:</strong> {{ relief_requested or action_requested or relief_sought }}</p>
+  {% else %}
   <p>I request that the matter be acknowledged, examined under the law and procedure applicable to your authority, and that I be informed of the action taken.</p>
-  <p>Yours faithfully,</p><br><p>_______________________<br><strong>{{ complainant.name }}</strong></p>
+  {% endif %}
+
+  {% if evidence_inventory %}
+  <div style="margin-top: 20px; border-top: 1px dashed #666; padding-top: 8px;">
+    <strong>Supporting Documents / Annexures:</strong>
+    <ul style="margin: 5px 0 0 20px; padding: 0;">
+      {% for ev in evidence_inventory %}
+        <li><strong>{{ ev.annexure_label or 'Annexure' }}:</strong> {{ ev.doc_name }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <p style="margin-top: 30px;">Yours faithfully,</p><br><p>_______________________<br><strong>{{ complainant.name }}</strong></p>
 </body>
 </html>

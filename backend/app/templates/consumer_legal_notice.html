@@ -94,7 +94,7 @@
 
 <div class="header-box">
   <div class="header-title">LEGAL DEMAND NOTICE</div>
-  <div class="header-sub">ISSUED UNDER SECTION 2(11), 2(47) & 35 OF THE CONSUMER PROTECTION ACT, 2019</div>
+  <div class="header-sub">ISSUED UNDER THE PROVISIONS OF THE CONSUMER PROTECTION ACT, 2019</div>
   <div class="header-sub">BY REGISTERED POST A.D. / SPEED POST / LEGAL EMAIL TRANSMISSION</div>
 </div>
 
@@ -109,7 +109,7 @@
   <strong>TO,</strong><br>
   <strong>{{ opposite_party.name }}</strong><br>
   {% if opposite_party.address %}{{ opposite_party.address }}<br>{% endif %}
-  {% if opposite_party.city %}{{ opposite_party.city }}, {{ opposite_party.state }}<br>{% endif %}
+  {% if opposite_party.city %}{{ opposite_party.city }}{% if opposite_party.state %}, {{ opposite_party.state }}{% endif %}<br>{% endif %}
   {% if opposite_party.email %}Email: {{ opposite_party.email }}<br>{% endif %}
 </div>
 
@@ -117,25 +117,25 @@
   <strong>FROM / COMPLAINANT:</strong><br>
   <strong>{{ complainant.name }}</strong><br>
   {% if complainant.address %}{{ complainant.address }}<br>{% endif %}
-  {{ complainant.city }}, {{ complainant.state }}<br>
+  {{ complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}<br>
   {% if complainant.phone %}Phone: {{ complainant.phone }}<br>{% endif %}
   {% if complainant.email %}Email: {{ complainant.email }}{% endif %}
 </div>
 
 <div class="subject-line">
-  SUBJECT: FORMAL DEMAND NOTICE FOR DEFICIENCY IN SERVICE AND UNFAIR TRADE PRACTICE CONCERNING PURCHASE / SERVICE ON {{ incident_date or 'RECENT DATE' }} WITH CLAIM OF ₹{{ "{:,.2f}".format(financials.total_claim_amount) }}
+  SUBJECT: FORMAL LEGAL DEMAND NOTICE CONCERNING {{ legal_grounds or subject_matter or 'CONSUMER GRIEVANCE AND DISPUTE' | upper }} IN RESPECT OF TRANSACTION DATED {{ incident_date or 'THE RELEVANT DATE' }}{% if financials and financials.total_claim_amount and financials.total_claim_amount > 0 %} WITH CLAIM OF ₹{{ "{:,.2f}".format(financials.total_claim_amount) }}{% endif %}
 </div>
 
 <p class="para">Sir / Madam,</p>
 
-<p class="para">Under instructions and on behalf of my own legal rights as a bona fide Consumer under the Consumer Protection Act, 2019, I hereby serve upon you this formal Legal Notice:</p>
+<p class="para">In exercise of my legal rights as a consumer within the meaning of Section 2(7) of the Consumer Protection Act, 2019, I hereby serve upon you this formal Legal Notice:</p>
 
 <div class="numbered-para">
-  1. That the Complainant is an individual residing at {{ complainant.city }}, {{ complainant.state }}, and is a bona fide Consumer who engaged your services / purchased goods from your entity.
+  1. That the Complainant is an individual residing at {{ complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}, and is a consumer within the meaning of Section 2(7) of the Consumer Protection Act, 2019 who availed services / purchased goods from your entity.
 </div>
 
 <div class="numbered-para">
-  2. That on or around <strong>{{ incident_date or 'the stated transaction date' }}</strong>, the Complainant paid a total sum of <strong>₹{{ "{:,.2f}".format(financials.amount_paid) }}</strong> towards the consideration of the product/service.
+  2. That on or around <strong>{{ incident_date or 'the stated transaction date' }}</strong>, {% if financials and financials.amount_paid and financials.amount_paid > 0 %}the Complainant paid a sum of <strong>₹{{ "{:,.2f}".format(financials.amount_paid) }}</strong> towards the consideration of the product/service.{% else %}the Complainant engaged in the subject transaction with your entity.{% endif %}
 </div>
 
 <div class="numbered-para">
@@ -143,21 +143,33 @@
 </div>
 
 <div class="numbered-para">
-  4. <strong>STATUTORY VIOLATIONS:</strong> Your aforesaid act and failure to redress the grievance constitutes an explicit <span class="statute-tag">Deficiency in Service under Section 2(11)</span> and an <span class="statute-tag">Unfair Trade Practice under Section 2(47)</span> of the Consumer Protection Act, 2019. You have unlawfully retained the consideration amount while failing to fulfill your contractual and statutory obligations.
+  4. <strong>LEGAL GROUNDS:</strong> {{ legal_grounds or 'The aforesaid failure to redress the grievance gives rise to actionable claims under the Consumer Protection Act, 2019 in accordance with the stated facts.' }}
 </div>
 
 <div class="demand-box">
-  <div class="demand-title">FINAL DEMAND & REQUISITION:</div>
+  <div class="demand-title">DEMAND & REQUISITION:</div>
   I hereby call upon you to comply with the following demands within <strong>fifteen (15) days</strong> from the receipt of this Notice:
   <ol style="margin: 5px 0 0 20px; padding: 0;">
-    <li>Immediately refund the entire principal sum of <strong>₹{{ "{:,.2f}".format(financials.refund_claimed) }}</strong> to the Complainant's bank account;</li>
-    <li>Pay a sum of <strong>₹{{ "{:,.2f}".format(financials.compensation_claimed) }}</strong> towards compensation for severe mental harassment, financial agony, and loss of valuable time;</li>
-    <li>Pay a sum of <strong>₹{{ "{:,.2f}".format(financials.litigation_costs_claimed) }}</strong> towards legal notice and drafting expenses.</li>
+    {% if financials and financials.refund_claimed and financials.refund_claimed > 0 %}
+      <li>Refund the sum of <strong>₹{{ "{:,.2f}".format(financials.refund_claimed) }}</strong> to the Complainant;</li>
+    {% endif %}
+    {% if replacement_sought or relief_sought %}
+      <li>Provide {{ replacement_sought or relief_sought }};</li>
+    {% endif %}
+    {% if financials and financials.compensation_claimed and financials.compensation_claimed > 0 %}
+      <li>Pay a sum of <strong>₹{{ "{:,.2f}".format(financials.compensation_claimed) }}</strong> towards compensation for losses, harassment, and inconvenience caused;</li>
+    {% endif %}
+    {% if financials and financials.litigation_costs_claimed and financials.litigation_costs_claimed > 0 %}
+      <li>Pay a sum of <strong>₹{{ "{:,.2f}".format(financials.litigation_costs_claimed) }}</strong> towards legal notice and drafting expenses;</li>
+    {% endif %}
+    {% if not (financials and (financials.refund_claimed or financials.compensation_claimed or financials.litigation_costs_claimed)) and not (relief_sought or replacement_sought) %}
+      <li>Redress the stated grievance and fulfill the outstanding obligations in full satisfaction of the Complainant.</li>
+    {% endif %}
   </ol>
 </div>
 
 <div class="numbered-para">
-  5. <strong>WARNING OF STATUTORY LITIGATION:</strong> Take notice that should you fail or neglect to comply with the requisitions made herein within the stipulated 15 days, the Complainant shall institute formal legal proceedings before the competent <strong>{{ appropriate_forum }}</strong> under Section 35 of the Consumer Protection Act, 2019, at your sole risk, peril, and cost.
+  5. <strong>RECOURSE TO STATUTORY LITIGATION:</strong> Take notice that should you fail or neglect to comply with the requisitions made herein within fifteen (15) days of receipt of this notice, the Complainant reserves the right to institute formal legal proceedings before the competent <strong>{{ appropriate_forum }}</strong> under Section 35 of the Consumer Protection Act, 2019, at your sole risk, peril, and cost.
 </div>
 
 <table class="signature-table">

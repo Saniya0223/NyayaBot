@@ -17,47 +17,58 @@
 
 <div class="header-box">
   <div class="header-title">FORMAL LEGAL NOTICE FOR REFUND OF SECURITY DEPOSIT</div>
-  <div style="font-size: 10pt; font-style: italic;">UNDER THE TENANCY AGREEMENT AND APPLICABLE STATE / CONTRACT LAW</div>
+  <div style="font-size: 10pt; font-style: italic; margin-top: 4px;">UNDER THE TENANCY AGREEMENT AND APPLICABLE STATE / CONTRACT LAW</div>
 </div>
 
 <div style="margin-bottom: 15px;"><strong>DATE:</strong> {{ date_today }}</div>
 
 <div class="to-box">
   <strong>TO:</strong><br>
-  <strong>{{ opposite_party.name }} (Landlord / Property Owner)</strong><br>
+  <strong>{{ opposite_party.name }}{% if opposite_party_role %} ({{ opposite_party_role }}){% else %} (Landlord / Property Owner){% endif %}</strong><br>
   {% if opposite_party.address %}{{ opposite_party.address }}<br>{% endif %}
-  {{ opposite_party.city }}, {{ opposite_party.state }}
+  {{ opposite_party.city }}{% if opposite_party.state %}, {{ opposite_party.state }}{% endif %}
 </div>
 
 <div class="to-box">
   <strong>FROM:</strong><br>
-  <strong>{{ complainant.name }} (Former Tenant)</strong><br>
-  {{ complainant.city }}, {{ complainant.state }}<br>
-  Phone: {{ complainant.phone or 'N/A' }}
+  <strong>{{ complainant.name }}{% if tenant_status %} ({{ tenant_status }}){% elif is_former_tenant %} (Former Tenant){% else %} (Tenant){% endif %}</strong><br>
+  {{ complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}<br>
+  Phone: {{ complainant.phone or 'N/A' }}{% if complainant.email %} | Email: {{ complainant.email }}{% endif %}
 </div>
 
 <div style="font-weight: bold; text-decoration: underline; margin: 15px 0;">
-  SUBJECT: FINAL DEMAND FOR IMMEDIATE REFUND OF UNLAWFULLY WITHHELD SECURITY DEPOSIT AMOUNTING TO ₹{{ "{:,.2f}".format(financials.amount_paid) }}
+  SUBJECT: {{ (is_final_notice and 'FINAL DEMAND NOTICE') or notice_subject_type or 'LEGAL NOTICE' }} FOR REFUND OF TENANCY SECURITY DEPOSIT{% if (deposit_refund_claimed or (financials and financials.refund_claimed) or (financials and financials.amount_paid) or disputed_amount) %} AMOUNTING TO ₹{{ "{:,.2f}".format(deposit_refund_claimed or (financials and financials.refund_claimed) or (financials and financials.amount_paid) or disputed_amount) }}{% endif %}
 </div>
 
 <p>Sir / Madam,</p>
 
 <div class="numbered-para">
-  1. That the undersigned was a tenant at the premises situated at <strong>{{ property_address or opposite_party.address or complainant.city }}</strong> and paid a security deposit of <strong>₹{{ "{:,.2f}".format(financials.amount_paid) }}</strong>.
+  1. That the undersigned was/is a tenant at the premises situated at <strong>{{ property_address or premises_address or opposite_party.address or complainant.city }}</strong>{% if security_deposit_paid or (financials and financials.amount_paid) or deposit_amount %} and paid a security deposit of <strong>₹{{ "{:,.2f}".format(security_deposit_paid or (financials and financials.amount_paid) or deposit_amount) }}</strong>{% endif %}.
 </div>
 
 <div class="numbered-para">
-  2. That the undersigned peacefully handed over vacant possession of the premises on or around <strong>{{ incident_date or 'the stated date' }}</strong> with all utilities and maintenance settled.
+  2. That {% if vacating_date or incident_date %}on or around <strong>{{ vacating_date or incident_date }}</strong>, {% endif %}{% if possession_handed_over or vacant_possession %}vacant possession of the subject premises was handed over to you{% if utilities_settled %} with all applicable utilities and maintenance settled{% endif %}.{% else %}the tenancy ended / the request for refund of the security deposit arose as set out below.{% endif %}
 </div>
 
 <div class="numbered-para">
-  3. <strong>UNLAWFUL RETENTION:</strong> {{ incident_narrative }}
+  3. <strong>STATEMENT OF GRIEVANCE:</strong> {{ incident_narrative }}{% if legal_grounds %}<br><strong>LEGAL GROUNDS:</strong> {{ legal_grounds }}{% endif %}
 </div>
 
 <div class="demand-box">
-  <strong>MANDATORY DEMAND:</strong><br>
-  You are requested to refund the security deposit of <strong>₹{{ "{:,.2f}".format(financials.refund_claimed) }}</strong>, after providing an itemised explanation and supporting proof for any lawful deduction, within <strong>{{ response_period or 'fifteen (15) days' }}</strong> of receipt. If the matter remains unresolved, the undersigned reserves the right to approach the forum competent under the applicable state law and the tenancy agreement.
+  <strong>DEMAND FOR REFUND:</strong><br>
+  You are requested to refund the claimed security deposit amount{% if (deposit_refund_claimed or (financials and financials.refund_claimed) or (financials and financials.amount_paid) or disputed_amount) %} of <strong>₹{{ "{:,.2f}".format(deposit_refund_claimed or (financials and financials.refund_claimed) or (financials and financials.amount_paid) or disputed_amount) }}</strong>{% endif %}, after providing an itemised explanation and supporting proof for any lawful deductions claimed, within a requested period of <strong>{{ response_period or 'fifteen (15) days' }}</strong> of receipt of this notice. If the matter remains unresolved, the undersigned reserves the right to approach the forum competent under the applicable state law and the tenancy agreement.
 </div>
+
+{% if evidence_inventory %}
+<div style="margin-top: 20px; border-top: 1px dashed #666; padding-top: 8px; font-size: 10.5pt;">
+  <strong>SUPPORTING DOCUMENTS & EVIDENCE:</strong>
+  <ul style="margin: 5px 0 0 20px; padding: 0;">
+    {% for ev in evidence_inventory %}
+      <li><strong>{{ ev.annexure_label or 'Annexure' }}:</strong> {{ ev.doc_name }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
 
 <div style="margin-top: 40px; text-align: right;">
   Yours sincerely,<br><br>

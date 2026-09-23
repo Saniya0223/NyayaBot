@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>FORMAL WRITTEN POLICE COMPLAINT UNDER SECTION 173(1) BNSS 2023</title>
+<title>FORMAL WRITTEN POLICE COMPLAINT UNDER SECTION 173 BNSS 2023</title>
 <style>
   @page { size: a4; margin: 2cm; }
   body { font-family: Helvetica, Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #111; padding: 10px; }
@@ -18,7 +18,7 @@
 <div class="header-box">
   <div class="header-title">FORMAL WRITTEN POLICE COMPLAINT</div>
   <div style="font-size: 9.5pt; font-style: italic; margin-top: 4px;">
-    SUBMITTED UNDER SECTION 173(1) OF THE BHARATIYA NAGARIK SURAKSHA SANHITA, 2023 (BNSS)
+    SUBMITTED PURSUANT TO SECTION 173 OF THE BHARATIYA NAGARIK SURAKSHA SANHITA, 2023 (BNSS)
   </div>
 </div>
 
@@ -28,47 +28,62 @@
   <strong>TO:</strong><br>
   <strong>The Station House Officer (SHO)</strong><br>
   Police Station: {{ opposite_party.address or 'Jurisdictional Police Station' }}<br>
-  {{ complainant.city }}, {{ complainant.state }}
+  {{ complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}
 </div>
 
 <div class="to-box">
   <strong>FROM / COMPLAINANT:</strong><br>
   <strong>{{ complainant.name }}</strong><br>
-  {{ complainant.city }}, {{ complainant.state }}<br>
+  {{ complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}<br>
   Phone: {{ complainant.phone or 'N/A' }} | Email: {{ complainant.email or 'N/A' }}
 </div>
 
 <div style="font-weight: bold; text-decoration: underline; margin: 15px 0;">
-  SUBJECT: COMPLAINT REGARDING COGNIZABLE OFFENCE OF CHEATING / CRIMINAL BREACH OF TRUST / WRONGFUL ACT ON {{ incident_date or 'RECENT DATE' }} WITH REQUEST FOR REGISTRATION OF FIR
+  SUBJECT: {{ complaint_subject or subject or (legal_grounds and 'COMPLAINT REGARDING ' ~ legal_grounds | upper ~ ' AND REQUEST FOR APPROPRIATE ACTION') or 'Complaint regarding the facts stated below and request for appropriate action' }}
 </div>
 
 <p>Respected Sir / Madam,</p>
 
 <div class="numbered-para">
-  1. That the Complainant is a law-abiding citizen residing at {{ complainant.city }}, {{ complainant.state }}.
+  1. That the Complainant is an individual residing at {{ complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}.
 </div>
 
 <div class="numbered-para">
-  2. <strong>STATEMENT OF FACTS & OFFENCE:</strong> {{ incident_narrative }}
+  2. <strong>STATEMENT OF FACTS:</strong> {{ incident_narrative }}{% if incident_date %} (Date of incident/transaction: {{ incident_date }}){% endif %}
 </div>
 
 <div class="numbered-para">
-  3. That the aforesaid actions disclose the commission of cognizable offences under the Bharatiya Nyaya Sanhita, 2023 (BNS) including Section 318 (Cheating) and Section 316 (Criminal Breach of Trust).
+  3. <strong>LEGAL GROUNDS:</strong> {{ legal_grounds or 'That the aforesaid facts and circumstances are submitted for examination and necessary action under the applicable provisions of law.' }}
 </div>
 
 <div class="numbered-para">
-  4. That under the binding mandate of the Hon'ble Supreme Court of India in <em>Lalita Kumari v. Govt of UP (2014)</em> and Section 173(1) of BNSS 2023, registration of an FIR is mandatory upon receipt of information disclosing a cognizable offence.
+  4. <strong>PROCEDURAL SUBMISSION:</strong> That this written information is submitted pursuant to Section 173 of the Bharatiya Nagarik Suraksha Sanhita, 2023 (BNSS) with a request that the matter be examined in accordance with the statutory procedure and appropriate action, including registration of an FIR where warranted under law, be initiated.
 </div>
 
 <div class="prayer-box">
   <strong>PRAYER / REQUEST:</strong><br>
   It is therefore respectfully requested that:
   <ol style="margin: 5px 0 0 20px; padding: 0;">
-    <li>A First Information Report (FIR) be registered forthwith against the accused persons;</li>
-    <li>Appropriate investigation be initiated and strict action be taken in accordance with law;</li>
-    <li>A certified free copy of the registered FIR be supplied to the Complainant as mandated by law.</li>
+    {% if fir_requested or relief_sought %}
+      <li>{{ fir_requested or relief_sought }};</li>
+    {% else %}
+      <li>The information be examined and an FIR / appropriate proceeding be registered where warranted under applicable law against {{ accused_name or opposite_party.name or 'the person(s) concerned' }};</li>
+    {% endif %}
+    <li>An inquiry / investigation be initiated and appropriate action be taken in accordance with law;</li>
+    <li>A copy of the registered complaint / FIR (if registered) be provided to the Complainant in accordance with statutory procedure.</li>
   </ol>
 </div>
+
+{% if evidence_inventory %}
+<div style="margin-top: 20px; border-top: 1px dashed #666; padding-top: 8px; font-size: 10.5pt;">
+  <strong>SUPPORTING DOCUMENTS & EVIDENCE:</strong>
+  <ul style="margin: 5px 0 0 20px; padding: 0;">
+    {% for ev in evidence_inventory %}
+      <li><strong>{{ ev.annexure_label or 'Annexure' }}:</strong> {{ ev.doc_name }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
 
 <div style="margin-top: 40px; text-align: right;">
   Yours faithfully,<br><br><br>

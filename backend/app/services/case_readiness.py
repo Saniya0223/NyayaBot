@@ -183,10 +183,7 @@ def compute_readiness(
         # Without a known category there is no workflow to act within.
         return READY_FOR_LEGAL_GUIDANCE
 
-    if getattr(profile, "actions_completed", None) or profile.current_stage_key:
-        return READY_FOR_ACTION
-
-    return READY_FOR_LEGAL_GUIDANCE
+    return READY_FOR_ACTION
 
 
 def document_routing_allowed(

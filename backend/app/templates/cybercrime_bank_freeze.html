@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>CYBER FINANCIAL FRAUD COMPLAINT & BANK FREEZE REQUISITION</title>
+<title>CYBER FINANCIAL DISPUTE INTIMATION & BANK LIEN REQUISITION</title>
 <style>
   @page { size: a4; margin: 2cm; }
   body { font-family: Helvetica, Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #111; padding: 10px; }
@@ -16,9 +16,9 @@
 <body>
 
 <div class="header-box">
-  <div class="header-title">URGENT CYBER FRAUD INTIMATION & BENEFICIARY LIEN REQUISITION</div>
+  <div class="header-title">URGENT INTIMATION OF DISPUTED TRANSACTION & BENEFICIARY LIEN REQUISITION</div>
   <div style="font-size: 9pt; font-style: italic; margin-top: 4px;">
-    SUBMITTED UNDER SECTION 66D INFORMATION TECHNOLOGY ACT, 2000 & RBI CUSTOMER PROTECTION CIRCULARS
+    SUBMITTED IN RESPECT OF DISPUTED ELECTRONIC TRANSACTIONS {% if legal_grounds %}& {{ legal_grounds | upper }}{% elif it_act_applicable %}& PROVISIONS OF THE INFORMATION TECHNOLOGY ACT, 2000{% endif %}
   </div>
 </div>
 
@@ -26,43 +26,49 @@
 
 <div class="to-box">
   <strong>TO:</strong><br>
-  <strong>The Nodal Cyber Crime Officer / Fraud Risk Management Cell</strong><br>
+  <strong>The Nodal Officer / Fraud Risk Management Cell</strong><br>
   {{ opposite_party.name }} (Bank / Financial Entity)<br>
-  {{ complainant.city }}, {{ complainant.state }}
+  {{ complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}
 </div>
 
 <div class="to-box">
-  <strong>FROM / VICTIM:</strong><br>
+  <strong>FROM / APPLICANT:</strong><br>
   <strong>{{ complainant.name }}</strong><br>
-  {{ complainant.city }}, {{ complainant.state }}<br>
+  {{ complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}<br>
   Phone: {{ complainant.phone or 'N/A' }} | Email: {{ complainant.email or 'N/A' }}
 </div>
 
 <div style="font-weight: bold; text-decoration: underline; margin: 15px 0;">
-  SUBJECT: URGENT REPORTING OF FRAUDULENT ELECTRONIC TRANSACTION OF ₹{{ "{:,.2f}".format(financials.amount_paid) }} & REQUEST TO MARK LIEN / FREEZE DESTINATION ACCOUNT
+  SUBJECT: URGENT REPORTING OF DISPUTED/UNAUTHORIZED ELECTRONIC TRANSACTION {% if financials and financials.amount_paid and financials.amount_paid > 0 %}OF ₹{{ "{:,.2f}".format(financials.amount_paid) }} {% endif %}& REQUEST TO MARK LIEN / RESTRICT BENEFICIARY ACCOUNT
 </div>
 
 <p>Respected Nodal Officer,</p>
 
 <div class="numbered-para">
-  1. That the Complainant is an account holder who suffered an unauthorized / fraudulent digital financial debit on <strong>{{ incident_date or 'recent date' }}</strong>.
+  1. That the Complainant is an account holder reporting an unauthorized / disputed digital financial debit on <strong>{{ incident_date or 'the stated transaction date' }}</strong>.
 </div>
 
 <div class="numbered-para">
-  2. <strong>FRAUD DETAILS & MODUS OPERANDI:</strong> {{ incident_narrative }}
+  2. <strong>TRANSACTION / INCIDENT DETAILS:</strong> {{ incident_narrative }}
 </div>
 
 <div class="numbered-para">
-  3. That a disputed sum of <strong>₹{{ "{:,.2f}".format(financials.amount_paid) }}</strong> was fraudulently debited and channeled to the beneficiary account.
+  3. That a disputed sum of {% if financials and financials.amount_paid and financials.amount_paid > 0 %}<strong>₹{{ "{:,.2f}".format(financials.amount_paid) }}</strong>{% else %}funds{% endif %} was debited from the Complainant's account and transferred to the recipient/beneficiary account associated with the disputed/unauthorized transaction.
 </div>
+
+{% if cybercrime_acknowledgement or acknowledgement_number %}
+<div class="numbered-para">
+  4. <strong>CYBERCRIME ACKNOWLEDGEMENT / REFERENCE:</strong> {{ cybercrime_acknowledgement or acknowledgement_number }}
+</div>
+{% endif %}
 
 <div class="freeze-box">
-  <strong>URGENT ACTION SOUGHT:</strong><br>
-  Under the RBI framework on <em>Limiting Liability of Customers in Unauthorised Electronic Banking Transactions</em> (where applicable to the facts) and the National Cyber Crime Reporting process:
+  <strong>REQUESTED ACTIONS FOR EVALUATION:</strong><br>
+  Under applicable regulatory guidelines, including the RBI framework on <em>Limiting Liability of Customers in Unauthorised Electronic Banking Transactions</em> (where applicable to the facts):
   <ol style="margin: 5px 0 0 20px; padding: 0;">
-    <li>Urgently examine whether a <strong>debit freeze / lien</strong> can be placed on the recipient beneficiary wallet/bank account;</li>
-    <li>Take available steps to trace, hold, recall, or reverse the transaction in coordination with the beneficiary institution;</li>
-    <li>Provide complete audit logs and IP addresses to the investigating Cyber Crime Cell (Helpline 1930).</li>
+    <li>Request to examine whether an administrative lien / debit restriction can be placed on the recipient/beneficiary account associated with the disputed transaction;</li>
+    <li>Take available steps to trace, recall, or reverse the transaction in coordination with the beneficiary institution;</li>
+    <li>Preserve relevant transaction and audit records and make them available to the competent investigating authority as required.</li>
   </ol>
 </div>
 

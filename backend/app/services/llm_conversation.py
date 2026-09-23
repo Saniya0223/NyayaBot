@@ -658,19 +658,27 @@ class GeminiConversationService:
         # only, and no longer carries document-template requirements.
         profile.missing_required_fields = list(profile.intake_missing_facts)
 
+        candidate_doc_type = select_document_for_workflow(
+            profile.category, profile.current_stage_key
+        )
+        candidate_doc_label = workflow.get("default_doc_label") or (
+            DOCUMENT_DEFINITIONS.get(candidate_doc_type).name if candidate_doc_type and candidate_doc_type in DOCUMENT_DEFINITIONS else None
+        )
+
         if not document_routing_allowed(profile, safety, profile.readiness):
-            # No document, no template fields, and no "prepare a record" default.
-            profile.recommended_doc_type = None
-            profile.recommended_doc_label = None
-            profile.missing_document_fields = []
+            # Still understanding case or in guidance stage: store candidate
+            # document metadata for the conversational roadmap but do NOT expose
+            # a recommended_next_action – that would render a premature document
+            # button in the UI even before we understand the case.
+            profile.recommended_doc_type = candidate_doc_type
+            profile.recommended_doc_label = candidate_doc_label
+            profile.missing_document_fields = self._missing_document_fields(profile)
             profile.is_ready_for_document = False
             profile.recommended_next_action = None
             return
 
-        profile.recommended_doc_type = select_document_for_workflow(
-            profile.category, profile.current_stage_key
-        )
-        profile.recommended_doc_label = workflow.get("default_doc_label")
+        profile.recommended_doc_type = candidate_doc_type
+        profile.recommended_doc_label = candidate_doc_label
         # Template fields are computed only now, once a document is warranted.
         profile.missing_document_fields = self._missing_document_fields(profile)
         profile.is_ready_for_document = not profile.missing_document_fields
@@ -854,6 +862,7 @@ class GeminiConversationService:
             "ready_for_document": profile.is_ready_for_document,
             "missing_document_fields": profile.missing_document_fields,
             "recommended_document": profile.recommended_doc_type,
+            "recommended_document_label": profile.recommended_doc_label,
             "recommended_next_action": profile.recommended_next_action,
         }
 
@@ -885,8 +894,9 @@ class GeminiConversationService:
             if field not in stated_unknown
         ]
         if missing:
-            labels = ", ".join(field.replace("_", " ") for field in missing[:2])
-            return f"I kept your case progress. You can continue by sharing: {labels}."
+            labels = ", ".join(field.replace("_", " ") for field in missing)
+            doc_label = profile.recommended_doc_label or "your legal document"
+            return f"To prepare {doc_label}, you can continue by sharing: {labels}."
         return f"I kept your case progress. Please try the {self._provider_title} response again in a moment."
 
     def _recent_history(self, messages: Iterable[ChatMessage]) -> list[dict[str, str]]:

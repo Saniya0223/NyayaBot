@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>FORMAL LEGAL DEMAND NOTICE FOR PAYMENT OF ARREARS OF SALARY</title>
+<title>LEGAL DEMAND NOTICE FOR PAYMENT OF ARREARS OF SALARY</title>
 <style>
   @page { size: a4; margin: 2cm; }
   body { font-family: Helvetica, Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #111; padding: 10px; }
@@ -26,44 +26,55 @@
 
 <div class="to-box">
   <strong>TO:</strong><br>
-  <strong>{{ opposite_party.name }} (Management / Board of Directors)</strong><br>
+  <strong>{{ opposite_party.name }}{% if opposite_party_designation %} ({{ opposite_party_designation }}){% else %} (Management / Concerned Authority){% endif %}</strong><br>
   {% if opposite_party.address %}{{ opposite_party.address }}<br>{% endif %}
-  {{ opposite_party.city }}, {{ opposite_party.state }}
+  {{ opposite_party.city }}{% if opposite_party.state %}, {{ opposite_party.state }}{% endif %}
 </div>
 
 <div class="to-box">
   <strong>FROM:</strong><br>
-  <strong>{{ complainant.name }} (Aggrieved Employee)</strong><br>
-  {{ complainant.city }}, {{ complainant.state }}<br>
+  <strong>{{ complainant.name }}{% if employee_role %} ({{ employee_role }}){% endif %}</strong><br>
+  {{ complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}<br>
   Phone: {{ complainant.phone or 'N/A' }} | Email: {{ complainant.email or 'N/A' }}
 </div>
 
 <div style="font-weight: bold; text-decoration: underline; margin: 15px 0;">
-  SUBJECT: FINAL DEMAND FOR IMMEDIATE RELEASE OF OUTSTANDING SALARY ARREARS AMOUNTING TO ₹{{ "{:,.2f}".format(financials.amount_paid) }}
+  SUBJECT: {{ (is_final_notice and 'FINAL DEMAND NOTICE') or notice_subject_type or 'LEGAL DEMAND NOTICE' }} FOR RELEASE OF OUTSTANDING SALARY ARREARS{% if financials and (financials.salary_arrears or financials.unpaid_salary or financials.amount_paid or disputed_amount) %} AMOUNTING TO ₹{{ "{:,.2f}".format(financials.salary_arrears or financials.unpaid_salary or financials.amount_paid or disputed_amount) }}{% endif %}
 </div>
 
 <p>Sir / Madam,</p>
 
 <div class="numbered-para">
-  1. That the undersigned was/is an employee in your organization <strong>{{ opposite_party.name }}</strong>, having diligently discharged all professional duties and responsibilities assigned.
+  1. That the undersigned was/is engaged as {{ employee_role or 'an employee' }} with <strong>{{ opposite_party.name }}</strong>, having discharged professional duties and responsibilities assigned.
 </div>
 
 <div class="numbered-para">
-  2. That despite rendering satisfactory services, you have unlawfully withheld the lawful earned wages/salary amounting to a total sum of <strong>₹{{ "{:,.2f}".format(financials.amount_paid) }}</strong>.
+  2. That in respect of the services rendered, a total sum of {% if financials and (financials.salary_arrears or financials.unpaid_salary or financials.amount_paid or disputed_amount) %}<strong>₹{{ "{:,.2f}".format(financials.salary_arrears or financials.unpaid_salary or financials.amount_paid or disputed_amount) }}</strong>{% else %}earned wages/salary{% endif %} is claimed to be outstanding and remains unpaid{% if unpaid_months %} for the period of {{ unpaid_months }}{% endif %}{% if legal_grounds %}, giving rise to {{ legal_grounds }}{% endif %}.
 </div>
 
 <div class="numbered-para">
-  3. <strong>STATEMENT OF GRIEVANCE:</strong> {{ incident_narrative }}
+  3. <strong>STATEMENT OF GRIEVANCE:</strong> {{ incident_narrative }}{% if incident_date %} (Relevant date: {{ incident_date }}){% endif %}
 </div>
 
 <div class="numbered-para">
-  4. <strong>BASIS OF DEMAND:</strong> Earned wages are payable in accordance with the employment terms and the wage and labour law applicable to the employee, establishment, and State. The appropriate statutory route should be verified for the employee's role and facts.
+  4. <strong>BASIS OF DEMAND:</strong> Earned wages and dues are payable in accordance with the terms of employment and the wage and labour law applicable to the employee's role, establishment, and State. The appropriate statutory or legal recourse shall be determined subject to the applicable enactments.
 </div>
 
 <div class="demand-box">
-  <strong>MANDATORY DEMAND:</strong><br>
-  You are requested to disburse the outstanding salary arrears of <strong>₹{{ "{:,.2f}".format(financials.refund_claimed) }}</strong> and provide a written response within <strong>{{ response_period or 'fifteen (15) days' }}</strong> of receipt. If unresolved, the undersigned may approach the labour authority or other forum competent for the employee's role, establishment, and State.
+  <strong>DEMAND FOR PAYMENT:</strong><br>
+  You are requested to disburse the outstanding salary arrears{% if financials and (financials.salary_arrears or financials.unpaid_salary or financials.amount_paid or disputed_amount) %} of <strong>₹{{ "{:,.2f}".format(financials.salary_arrears or financials.unpaid_salary or financials.amount_paid or disputed_amount) }}</strong>{% endif %} and provide a written response within a requested period of <strong>{{ response_period or 'fifteen (15) days' }}</strong> of receipt of this notice. In the event the matter remains unresolved, the undersigned reserves the right to approach the competent labour authority, forum, or court of competent jurisdiction applicable to the employee's role, establishment, and State.
 </div>
+
+{% if evidence_inventory %}
+<div style="margin-top: 20px; border-top: 1px dashed #666; padding-top: 8px; font-size: 10.5pt;">
+  <strong>SUPPORTING DOCUMENTS & EVIDENCE:</strong>
+  <ul style="margin: 5px 0 0 20px; padding: 0;">
+    {% for ev in evidence_inventory %}
+      <li><strong>{{ ev.annexure_label or 'Annexure' }}:</strong> {{ ev.doc_name }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
 
 <div style="margin-top: 40px; text-align: right;">
   Yours faithfully,<br><br><br>

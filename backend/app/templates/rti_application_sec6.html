@@ -26,7 +26,8 @@
   <strong>TO:</strong><br>
   <strong>The Central / State Public Information Officer (CPIO / SPIO)</strong><br>
   <strong>{{ opposite_party.name }}</strong><br>
-  {{ opposite_party.city }}, {{ opposite_party.state }}
+  {% if opposite_party.address %}{{ opposite_party.address }}<br>{% endif %}
+  {{ opposite_party.city }}{% if opposite_party.state %}, {{ opposite_party.state }}{% endif %}
 </div>
 
 <table class="info-table">
@@ -36,7 +37,7 @@
   </tr>
   <tr>
     <td style="font-weight: bold;">2. Complete Postal Address:</td>
-    <td>{{ complainant.address or complainant.city }}, {{ complainant.state }}</td>
+    <td>{{ complainant.address or complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}</td>
   </tr>
   <tr>
     <td style="font-weight: bold;">3. Contact Details:</td>
@@ -44,29 +45,63 @@
   </tr>
   <tr>
     <td style="font-weight: bold;">4. Citizenship Status:</td>
-    <td>Citizen of India (Eligible under Section 3 of RTI Act, 2005)</td>
+    <td>{{ citizenship_status or 'Citizen of India' }}</td>
   </tr>
   <tr>
     <td style="font-weight: bold;">5. Subject Matter / Particulars of Information Sought:</td>
     <td>
-      <strong>Context:</strong> {{ incident_narrative }}<br><br>
-      <strong>Specific Queries Requested:</strong>
-      <ol style="margin: 5px 0 0 15px; padding: 0;">
-        <li>Please provide certified copies of all file notings, orders, and action-taken reports regarding the aforesaid subject matter.</li>
-        <li>Please furnish the designation, name, and official responsibilities of the officer(s) responsible for the delayed resolution or pending action.</li>
-        <li>Please provide the citizen charter timeline prescribed for disposal of this category of grievance.</li>
-      </ol>
+      {% if incident_narrative and (information_sought or specific_queries) %}
+        <strong>Context / Background:</strong> {{ incident_narrative }}<br><br>
+      {% endif %}
+      <strong>Information Requested:</strong><br>
+      {% if information_sought is iterable and information_sought is not string %}
+        <ol style="margin: 5px 0 0 15px; padding: 0;">
+          {% for item in information_sought %}
+            <li>{{ item }}</li>
+          {% endfor %}
+        </ol>
+      {% elif information_sought %}
+        {{ information_sought }}
+      {% elif specific_queries %}
+        <ol style="margin: 5px 0 0 15px; padding: 0;">
+          {% for q in specific_queries %}
+            <li>{{ q }}</li>
+          {% endfor %}
+        </ol>
+      {% else %}
+        {{ incident_narrative or 'Information concerning the subject matter and current status as per official records.' }}
+      {% endif %}
+      {% if period_of_information %}
+        <br><br><strong>Period for which information is sought:</strong> {{ period_of_information }}
+      {% endif %}
     </td>
   </tr>
   <tr>
     <td style="font-weight: bold;">6. Application Fee Details:</td>
-    <td>Statutory fee of ₹10 attached via Postal Order / Court Fee Stamp / Online Payment receipt.</td>
+    <td>{{ fee_details or payment_details or 'Prescribed statutory application fee paid / attached in accordance with applicable RTI Rules.' }}</td>
   </tr>
   <tr>
     <td style="font-weight: bold;">7. Statutory Response Period:</td>
-    <td>Within thirty (30) days from date of receipt as mandated under Section 7(1) of the RTI Act, 2005.</td>
+    <td>
+      {% if life_or_liberty_claim or life_or_liberty %}
+        Within forty-eight (48) hours under the proviso to Section 7(1) of the RTI Act, 2005 (concerning life or liberty of a person).
+      {% else %}
+        Within thirty (30) days from the date of receipt as prescribed under Section 7(1) of the RTI Act, 2005.
+      {% endif %}
+    </td>
   </tr>
 </table>
+
+{% if evidence_inventory %}
+<div style="margin-top: 20px; border-top: 1px dashed #666; padding-top: 8px; font-size: 10.5pt;">
+  <strong>ENCLOSURES & SUPPORTING DOCUMENTS:</strong>
+  <ul style="margin: 5px 0 0 20px; padding: 0;">
+    {% for ev in evidence_inventory %}
+      <li><strong>{{ ev.annexure_label or 'Annexure' }}:</strong> {{ ev.doc_name }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
 
 <div style="margin-top: 40px; text-align: right;">
   Yours faithfully,<br><br>
