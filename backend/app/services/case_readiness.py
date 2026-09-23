@@ -108,13 +108,63 @@ def compute_intake_missing_facts(
     ]
 
 
-def compute_readiness(
+def compute_blocking_missing_facts(
     profile: Any,
     safety: SafetyAssessment,
     intake_missing: List[str],
+) -> List[str]:
+    """Identify which missing intake facts actually block taking the next executable action.
+    
+    A fact is missing when it is not yet known. A fact is blocking only when the
+    next practical action cannot be executed without it. If the user has stated
+    they do not know a detail, or if that detail can instead be demanded from another
+    institution/counterparty (e.g. receiving bank or UTR in an unauthorized loan),
+    it remains missing/unknown but does NOT block progress.
+    """
+    if safety.is_safety_case and not safety_triage_resolved(profile.key_facts or {}):
+        return [fact for fact in SAFETY_INTAKE_FACTS if not _has_value(profile, fact)]
+
+    stated_unknown = set(getattr(profile, "key_facts", {}).get("stated_unknown_facts", []))
+    metadata = getattr(profile, "fact_metadata", {}) or {}
+    for key, meta in metadata.items():
+        if isinstance(meta, dict) and meta.get("stated_unknown"):
+            stated_unknown.add(key)
+
+    blocking: List[str] = []
+    category = getattr(profile, "category", "GENERAL")
+
+    if category == "CYBER_FRAUD":
+        # In cyber fraud / unauthorized loan:
+        # If we know the lender/bank or opposite party, and amount/reference,
+        # missing receiving bank or UTR is not blocking because it can be demanded from the lender.
+        has_party = bool(getattr(profile, "opposite_party_name", None) or getattr(profile, "bank_name", None))
+        has_amount_or_ref = bool(getattr(profile, "disputed_amount", 0) or getattr(profile, "transaction_id", None) or (profile.key_facts or {}).get("loan_reference"))
+        for fact in intake_missing:
+            if fact in stated_unknown:
+                continue
+            if fact in {"bank_name", "transaction_id"} and has_party and has_amount_or_ref:
+                # Actionable against the known lender/institution
+                continue
+            if fact in {"incident_date", "user_state", "scam_method"}:
+                # Contextual/jurisdiction fields that don't block initial action
+                continue
+            blocking.append(fact)
+    else:
+        for fact in intake_missing:
+            if fact in stated_unknown:
+                continue
+            blocking.append(fact)
+
+    return blocking
+
+
+def compute_readiness(
+    profile: Any,
+    safety: SafetyAssessment,
+    blocking_missing: List[str],
     message: str = "",
 ) -> str:
-    """Place the case on the readiness ladder."""
+    """Place the case on the readiness ladder based on blocking facts."""
     if profile.category == "GENERAL" and (is_greeting_only(message) or not profile.issue_type):
         return PRE_INTAKE
 
@@ -122,7 +172,7 @@ def compute_readiness(
     if safety.is_safety_case and not safety_triage_resolved(profile.key_facts or {}):
         return UNDERSTANDING_CASE
 
-    if intake_missing:
+    if blocking_missing:
         return UNDERSTANDING_CASE
 
     if profile.risk_level == "RED":

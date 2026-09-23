@@ -11,8 +11,7 @@ CYBER_FRAUD_DOMAIN = DomainDefinition(
     case_title="Cyber Financial Fraud",
     version="1.0",
     description="Online scams, account compromise, and electronic payment fraud.",
-    aliases=("CYBER",),
-    classification_terms=("upi", "cyber", "phishing", "otp", "bank fraud", "online fraud", "scam", "hacked", "card fraud"),
+    classification_terms=("upi", "cyber", "phishing", "otp", "bank fraud", "online fraud", "scam", "hacked", "card fraud", "unauthorized loan", "fraudulent loan", "credit report", "disbursed", "personal loan", "loan in my name", "took a loan", "fake loan", "unauthorized", "loan", "finance", "nbfc"),
     fallback_priority=30,
     issue_types=(
         IssueTypeDefinition(id="UPI_BANK_TRANSFER_FRAUD", display_name="UPI or bank-transfer fraud", aliases=("UPI / Banking Scam / Financial Fraud",)),

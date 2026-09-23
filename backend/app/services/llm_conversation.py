@@ -12,6 +12,7 @@ from app.services.language_style import LanguageScript
 from app.services.pii_masker import PIIMasker
 from app.services.case_readiness import (
     READY_FOR_DOCUMENT,
+    compute_blocking_missing_facts,
     compute_intake_missing_facts,
     compute_readiness,
     document_routing_allowed,
@@ -197,9 +198,9 @@ class GeminiConversationService:
             workflow_state = self._workflow_summary(profile)
             legal_sources = self._verified_sources(profile, req.message, workflow_state)
             # While understanding the case the model is told what we still need to
-            # understand - never a template's fields, which would push it to ask
-            # for a name and city before the problem is even clear.
-            missing_for_response = list(profile.intake_missing_facts)
+            # understand - only blocking missing facts, never facts already stated unknown.
+            blocking_missing = compute_blocking_missing_facts(profile, safety, profile.intake_missing_facts)
+            missing_for_response = list(blocking_missing)
             if profile.missing_document_fields and profile.key_facts.get("document_intake_active"):
                 missing_for_response.extend(
                     f"document:{field}" for field in profile.missing_document_fields
@@ -650,7 +651,8 @@ class GeminiConversationService:
         elif not profile.key_facts.get("safety_triage_complete"):
             profile.safety_status = None
         profile.intake_missing_facts = compute_intake_missing_facts(profile, safety)
-        profile.readiness = compute_readiness(profile, safety, profile.intake_missing_facts, message)
+        blocking_missing = compute_blocking_missing_facts(profile, safety, profile.intake_missing_facts)
+        profile.readiness = compute_readiness(profile, safety, blocking_missing, message)
 
         # Kept for existing callers and persisted cases; it now mirrors intake
         # only, and no longer carries document-template requirements.
@@ -743,8 +745,13 @@ class GeminiConversationService:
             if item.is_available and item.id in RAG_FACT_ALLOWLIST:
                 facts.append(item.id)
         for action in profile.actions_completed:
-            if action in RAG_FACT_ALLOWLIST:
-                facts.append(action)
+            action_key = (
+                action.get("type") or action.get("id") or action.get("action")
+                if isinstance(action, dict)
+                else str(action)
+            )
+            if action_key and action_key in RAG_FACT_ALLOWLIST:
+                facts.append(action_key)
 
         domain = domain_registry.resolve(profile.category)
         return RagQueryContext(
@@ -872,7 +879,11 @@ class GeminiConversationService:
         return []
 
     def _safe_next_prompt(self, profile: StructuredCaseProfile) -> str:
-        missing = profile.missing_required_fields or profile.missing_document_fields
+        stated_unknown = set(profile.key_facts.get("stated_unknown_facts", []))
+        missing = [
+            field for field in (profile.missing_required_fields or profile.missing_document_fields)
+            if field not in stated_unknown
+        ]
         if missing:
             labels = ", ".join(field.replace("_", " ") for field in missing[:2])
             return f"I kept your case progress. You can continue by sharing: {labels}."

@@ -17,6 +17,27 @@ class EvidenceStatusItem(BaseModel):
     why_needed: str
     annexure_label: Optional[str] = None
 
+from enum import Enum
+
+class NextActionStatus(str, Enum):
+    READY = "READY"
+    BLOCKED = "BLOCKED"
+    COMPLETED = "COMPLETED"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+
+class NextActionPlan(BaseModel):
+    action_id: str
+    label: str
+    description: str
+    target_workflow_stage: Optional[str] = None
+    required_facts: List[str] = Field(default_factory=list)
+    available_facts: List[str] = Field(default_factory=list)
+    blocking_missing_facts: List[str] = Field(default_factory=list)
+    non_blocking_missing_facts: List[str] = Field(default_factory=list)
+    status: NextActionStatus = NextActionStatus.READY
+    doc_type: Optional[str] = None
+    explanation: Optional[str] = None
+
 class LegalStageMilestone(BaseModel):
     id: str
     title: str
@@ -56,6 +77,7 @@ class StructuredCaseProfile(BaseModel):
     deadlines: List[Dict[str, Any]] = Field(default_factory=list)
     documents: List[Dict[str, Any]] = Field(default_factory=list)
     recommended_next_action: Optional[Dict[str, Any]] = None
+    next_action_plan: Optional[NextActionPlan] = None
     rights_summary: Optional[Dict[str, Any]] = None  # {what_this_means, possible_rights: [], useful_evidence: [], legal_source}
     risk_level: str = "GREEN"  # GREEN | AMBER | RED
     safety_notice: Optional[str] = None
@@ -90,6 +112,7 @@ class ChatTurnResponse(BaseModel):
     case_profile: StructuredCaseProfile
     quick_replies: List[str] = Field(default_factory=list)
     suggested_action: Optional[Dict[str, Any]] = None
+    next_action_plan: Optional[NextActionPlan] = None
     message_id: str
     llm_provider: str = "groq"
     llm_model: Optional[str] = None

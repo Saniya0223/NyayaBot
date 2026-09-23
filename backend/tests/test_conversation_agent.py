@@ -144,3 +144,40 @@ def test_confirmed_rejection_upload_advances_the_workflow():
     )
     assert confirmed.case_profile.current_stage_key == "EDAAKHIL_COMPLAINT"
     assert len([action for action in confirmed.case_profile.actions_completed if action["type"] == "response_rejected"]) == 1
+
+
+def test_unauthorized_loan_blocking_vs_missing_flow():
+    # Turn 1: User provides unauthorized loan problem with lender, amount, reference, but unknown UTR / receiving bank
+    req1 = ChatTurnRequest(
+        message=(
+            "I found a ₹3 lakh personal loan on my credit report from ABC Finance Ltd. "
+            "I never applied for it or signed anything. ABC Finance emailed me saying it was disbursed to an account ending 4821. "
+            "My HDFC and SBI accounts don't end in 4821. The disbursement reference is ABC/LD/2026/091247. "
+            "I don't have the UTR or the receiving bank details."
+        )
+    )
+    res1 = conversational_agent.process_turn(req1)
+
+    assert res1.case_profile.category == "CYBER_FRAUD"
+    assert res1.case_profile.disputed_amount == 300000.0
+    assert "ABC Finance" in (res1.case_profile.opposite_party_name or "")
+    assert "ABC/LD/2026/091247" in (res1.case_profile.transaction_id or res1.case_profile.key_facts.get("loan_reference", ""))
+
+    # Turn 2: User repeats that they genuinely don't know the receiving bank or UTR
+    req2 = ChatTurnRequest(
+        message="I genuinely don't know the receiving bank or UTR.",
+        case_id=res1.case_profile.case_id,
+    )
+    res2 = conversational_agent.process_turn(req2, res1.case_profile)
+
+    reply_lower = res2.reply_text.lower()
+    # Must NOT repeatedly ask for bank or UTR
+    assert "which bank" not in reply_lower
+    assert "what is the utr" not in reply_lower
+    assert "what were the transaction" not in reply_lower
+    # Must acknowledge actionable next steps against the lender & cybercrime portal
+    assert "abc finance" in reply_lower
+    assert "dispute" in reply_lower
+    assert res2.case_profile.is_ready_for_document is True
+    assert res2.suggested_action is not None
+

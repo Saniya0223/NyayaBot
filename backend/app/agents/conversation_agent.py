@@ -15,6 +15,7 @@ from app.schemas.chat import (
     LegalStageMilestone,
     StructuredCaseProfile,
 )
+from app.services.action_planner import NextActionPlan, NextActionStatus, action_planner
 from app.services.document_registry import DOCUMENT_DEFINITIONS, select_document_for_workflow
 from app.services.pii_masker import PIIMasker
 
@@ -67,9 +68,13 @@ class ConversationalLegalAgent:
         workflow = self._workflow_for_category(profile.category)
         missing_fields = self._compute_missing_fields(profile)
         profile.missing_required_fields = missing_fields
-        profile.recommended_doc_type = select_document_for_workflow(profile.category, profile.current_stage_key)
-        profile.recommended_doc_label = workflow.get("default_doc_label", "Prepare Complaint Letter")
-        profile.is_ready_for_document = len(missing_fields) == 0 and profile.risk_level != "RED"
+        blocking_fields = self._compute_blocking_fields(profile, missing_fields)
+
+        plan = action_planner.plan_next_action(profile, workflow)
+        profile.next_action_plan = plan
+        profile.recommended_doc_type = plan.doc_type or select_document_for_workflow(profile.category, profile.current_stage_key)
+        profile.recommended_doc_label = plan.label
+        profile.is_ready_for_document = plan.status == NextActionStatus.READY and profile.risk_level != "RED"
 
         reply_text, quick_replies, suggested_action = self._formulate_response(
             sanitized_text, profile, missing_fields, workflow
@@ -81,6 +86,7 @@ class ConversationalLegalAgent:
             case_profile=profile,
             quick_replies=quick_replies,
             suggested_action=suggested_action,
+            next_action_plan=plan,
             message_id=str(uuid.uuid4()),
         )
 
@@ -174,6 +180,22 @@ class ConversationalLegalAgent:
             profile.safety_notice = None
 
     def _amount_from_text(self, text: str) -> Optional[float]:
+        lakh_match = re.search(
+            r"(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d{1,2})?)\s*(?:lakh|lac|lakhs|lacs|लाख)\b",
+            text,
+            re.IGNORECASE,
+        )
+        if lakh_match:
+            return float(lakh_match.group(1).replace(",", "")) * 100000.0
+
+        crore_match = re.search(
+            r"(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d{1,2})?)\s*(?:crore|cr|crores|करोड़)\b",
+            text,
+            re.IGNORECASE,
+        )
+        if crore_match:
+            return float(crore_match.group(1).replace(",", "")) * 10000000.0
+
         match = re.search(
             r"(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)|([\d,]+(?:\.\d{1,2})?)\s*(?:rupees|rs|inr|rupaye|रुपये|k\b)",
             text,
@@ -243,11 +265,19 @@ class ConversationalLegalAgent:
                 text,
                 re.IGNORECASE,
             )
+            from_match = re.search(
+                r"\bfrom\s+([A-Z][a-zA-Z0-9\s&.\-]{1,35}?)(?:[\.,;]|\band\b|\s+regarding|$)",
+                text,
+            )
             if company:
                 profile.opposite_party_name = company.group(1).strip()
             elif landlord:
                 profile.opposite_party_name = landlord.group(1).strip()
-            else:
+            elif from_match:
+                extracted_from = from_match.group(1).strip()
+                if not any(city in extracted_from for city in ["Delhi", "Noida", "Pune", "Mumbai", "Jaipur"]):
+                    profile.opposite_party_name = extracted_from
+            if not profile.opposite_party_name:
                 for brand in ["Amazon", "Flipkart", "Myntra", "Croma", "Swiggy", "Zomato", "Samsung", "Apple", "Paytm"]:
                     if re.search(r"\b" + brand + r"\b", text, re.IGNORECASE):
                         profile.opposite_party_name = brand
@@ -279,15 +309,37 @@ class ConversationalLegalAgent:
         if salary_match:
             profile.key_facts["monthly_salary"] = float(salary_match.group(1).replace(",", ""))
 
-        transaction_match = re.search(r"(?:transaction id|transaction ref|utr|rrn|reference number|ref no)\s*(?:is|:|-)?\s*([A-Z0-9\-]{6,30})", text, re.IGNORECASE)
+        transaction_match = re.search(
+            r"(?:transaction id|transaction ref|utr|rrn|reference number|ref no|disbursement reference|loan reference|disbursement ref|loan ref|reference)\s*(?:is|:|-)?\s*([A-Z0-9\-/]{6,40})",
+            text,
+            re.IGNORECASE,
+        )
         if transaction_match:
             profile.transaction_id = transaction_match.group(1)
             self._set_fact(profile, "transaction_id", profile.transaction_id, 0.96)
+            profile.key_facts["loan_reference"] = transaction_match.group(1)
+
+        # Detect stated unknown facts (e.g. user does not have receiving bank or UTR)
+        stated_unknown = set(profile.key_facts.get("stated_unknown_facts", []))
+        if re.search(r"(?:don't have|do not have|don't know|do not know|genuinely don't know|cannot provide|can't provide|nahi pata|nahi hai)\s+.*?(?:utr|transaction id|payment id|receiving bank|bank details|bank name)", lower) or re.search(r"(?:genuinely don't know|don't know|do not know)\s+.*?(?:receiving bank|utr)", lower):
+            if any(term in lower for term in ["utr", "transaction", "payment"]):
+                stated_unknown.add("transaction_id")
+            if any(term in lower for term in ["bank", "receiving"]):
+                stated_unknown.add("bank_name")
+        if stated_unknown:
+            profile.key_facts["stated_unknown_facts"] = sorted(list(stated_unknown))
+            for f_key in stated_unknown:
+                if f_key in profile.fact_metadata:
+                    profile.fact_metadata[f_key]["stated_unknown"] = True
+                else:
+                    profile.fact_metadata[f_key] = {"stated_unknown": True, "source": "user_stated_unknown"}
 
         for bank in ["State Bank of India", "SBI", "HDFC", "ICICI", "Axis Bank", "Kotak", "Paytm", "PhonePe", "Google Pay", "GPay"]:
             if re.search(r"\b" + re.escape(bank) + r"\b", text, re.IGNORECASE):
-                profile.bank_name = profile.bank_name or bank
-                break
+                # Only set bank_name if not referring to an existing unrelated personal account
+                if not any(term in lower for term in ["accounts don't end", "accounts do not end", "my hdfc and sbi"]):
+                    profile.bank_name = profile.bank_name or bank
+                    break
 
         station_match = re.search(r"(?:police station|thana|sho at)\s+(?:is|:|-)?\s*([A-Z][a-zA-Z\s]{2,40}?)(?:[\.,]|$)", text, re.IGNORECASE)
         if station_match:
@@ -377,6 +429,33 @@ class ConversationalLegalAgent:
     def _compute_missing_fields(self, profile: StructuredCaseProfile) -> List[str]:
         return [fact.key for fact in domain_registry.unresolved_facts(profile)]
 
+    def _compute_blocking_fields(self, profile: StructuredCaseProfile, missing: List[str]) -> List[str]:
+        stated_unknown = set(profile.key_facts.get("stated_unknown_facts", []))
+        for key, meta in profile.fact_metadata.items():
+            if isinstance(meta, dict) and meta.get("stated_unknown"):
+                stated_unknown.add(key)
+
+        if profile.category == "CYBER_FRAUD":
+            has_party = bool(profile.opposite_party_name or profile.bank_name)
+            has_amount_or_ref = bool(
+                profile.disputed_amount
+                or profile.transaction_id
+                or profile.key_facts.get("loan_reference")
+            )
+            blocking = []
+            for field in missing:
+                if field in stated_unknown:
+                    continue
+                if field in {"bank_name", "transaction_id"} and has_party and has_amount_or_ref:
+                    # Actionable against the lender/institution
+                    continue
+                if field in {"incident_date", "user_state", "scam_method"}:
+                    continue
+                blocking.append(field)
+            return blocking
+
+        return [field for field in missing if field not in stated_unknown]
+
     def _detect_conflicts(self, text: str, profile: StructuredCaseProfile) -> Optional[ChatTurnResponse]:
         lowered = text.lower()
         if any(term in lowered for term in ["monthly salary", "salary is", "salary of", "transaction id", "transaction ref", "utr", "rrn"]):
@@ -443,11 +522,15 @@ class ConversationalLegalAgent:
                 )
             profile.key_facts.pop("pending_document_extraction", None)
             profile.missing_required_fields = self._compute_missing_fields(profile)
-            profile.is_ready_for_document = len(profile.missing_required_fields) == 0 and profile.risk_level != "RED"
+            workflow = self._workflow_for_category(profile.category)
+            plan = action_planner.plan_next_action(profile, workflow)
+            profile.next_action_plan = plan
+            profile.is_ready_for_document = plan.status == NextActionStatus.READY and profile.risk_level != "RED"
             return ChatTurnResponse(
                 reply_text="Thanks. I recorded the confirmed details, updated the legal journey where applicable, and kept the uploaded file in your evidence checklist.",
                 case_profile=profile,
                 quick_replies=["Continue my case"],
+                next_action_plan=plan,
                 message_id=str(uuid.uuid4()),
             )
 
@@ -455,10 +538,13 @@ class ConversationalLegalAgent:
             profile.current_stage_key = "RESOLVED"
             profile.current_stage_label = "Resolved"
             self._add_action(profile, "case_resolved", "Case marked resolved")
+            plan = action_planner.plan_next_action(profile, self._workflow_for_category(profile.category))
+            profile.next_action_plan = plan
             return ChatTurnResponse(
                 reply_text="That is good news. I marked this case as resolved. Keep the payment or settlement proof with your case records.",
                 case_profile=profile,
                 quick_replies=[],
+                next_action_plan=plan,
                 message_id=str(uuid.uuid4()),
             )
 
@@ -467,6 +553,8 @@ class ConversationalLegalAgent:
             action = domain_registry.resolve(profile.category).action("formal_demand_sent")
             self._set_journey_current(profile, action.target_workflow_stage if action and action.target_workflow_stage else "AWAITING_RESPONSE", complete_through=True)
             self._add_action(profile, "formal_demand_sent", "Formal letter recorded as sent")
+            plan = action_planner.plan_next_action(profile, self._workflow_for_category(profile.category))
+            profile.next_action_plan = plan
             return ChatTurnResponse(
                 reply_text=(
                     f"Recorded as sent on {datetime.now().strftime('%d %B %Y')}. Your case is now awaiting response. "
@@ -474,6 +562,7 @@ class ConversationalLegalAgent:
                 ),
                 case_profile=profile,
                 quick_replies=["They rejected my demand", "They agreed to resolve it", "No response received"],
+                next_action_plan=plan,
                 message_id=str(uuid.uuid4()),
             )
 
@@ -482,8 +571,10 @@ class ConversationalLegalAgent:
             action_definition = domain_registry.resolve(profile.category).action("response_rejected")
             self._set_journey_current(profile, action_definition.target_workflow_stage if action_definition and action_definition.target_workflow_stage else "ESCALATION", complete_through=True)
             self._add_action(profile, "response_rejected", "Response rejected or no response recorded")
-            document_type = select_document_for_workflow(profile.category, profile.current_stage_key)
-            action = {"type": "PREPARE_DOC", "doc_type": document_type, "label": "Prepare next complaint draft"}
+            plan = action_planner.plan_next_action(profile, self._workflow_for_category(profile.category))
+            profile.next_action_plan = plan
+            document_type = plan.doc_type or select_document_for_workflow(profile.category, profile.current_stage_key)
+            action = {"type": "PREPARE_DOC", "doc_type": document_type, "label": plan.label or "Prepare next complaint draft"}
             return ChatTurnResponse(
                 reply_text=(
                     "I recorded the refusal or non-response. The next route depends on the forum and facts shown in your case workspace. "
@@ -492,6 +583,7 @@ class ConversationalLegalAgent:
                 case_profile=profile,
                 quick_replies=["Show my legal journey", "What evidence should I attach?"],
                 suggested_action=action,
+                next_action_plan=plan,
                 message_id=str(uuid.uuid4()),
             )
         return None
@@ -538,72 +630,99 @@ class ConversationalLegalAgent:
                 None,
             )
 
-        if profile.category == "CYBER_FRAUD" and missing:
-            urgent = (
-                "Act now: call your bank's fraud helpline, ask it to block further transactions, and report financial fraud at 1930 or cybercrime.gov.in. "
-                "Keep every acknowledgement number. Recovery is not guaranteed, but prompt reporting matters.\n\n"
-            )
-            if any(field in missing for field in ["incident_date", "transaction_id", "bank_name"]):
-                profile.key_facts["last_question_group"] = "cyber_transaction"
-                return urgent + "What were the transaction date/time, UTR or transaction ID, and bank/payment app?", [], None
-            profile.key_facts["last_question_group"] = "cyber_reports"
-            return urgent + "Have you already reported this to both your bank and the 1930/cybercrime portal?", ["Yes, both", "Bank only", "Not yet"], None
+        plan = action_planner.plan_next_action(profile, workflow)
+        profile.next_action_plan = plan
 
-        if profile.category == "HOUSING_TENANT":
-            if any(field in missing for field in ["user_city", "vacating_date"]):
-                profile.key_facts["last_question_group"] = "tenant_location_date"
-                return "I can help you work through the deposit issue. Which city and state is the property in, and when did you move out?", [], None
-            if any(field in missing for field in ["rental_agreement_available", "deposit_payment_proof_available"]):
-                profile.key_facts["last_question_group"] = "tenant_evidence"
-                deposit_label = (
-                    f"the ₹{profile.disputed_amount:,.0f} deposit"
-                    if profile.disputed_amount
-                    else "the security deposit"
+        # 1. If the selected action is BLOCKED, ask only for the blocking facts required by this action
+        if plan.status == NextActionStatus.BLOCKED:
+            blocking = plan.blocking_missing_facts
+            if "opposite_party_name" in blocking or "bank_name" in blocking:
+                if profile.category == "CYBER_FRAUD":
+                    return "Which bank, lender, or financial institution is this unauthorized transaction or dispute against?", [], None
+                elif profile.category == "EMPLOYMENT":
+                    return "Who is the employer or company you are working for?", [], None
+                elif profile.category == "CONSUMER":
+                    return "Which seller, merchant, or company did you purchase from or have a dispute with?", [], None
+                elif profile.category == "HOUSING_TENANT":
+                    return "Which city and state was the rental property located in, and what is your landlord's name?", [], None
+                else:
+                    return "Which company, lender, or financial institution is this complaint against?", [], None
+
+            if "disputed_amount" in blocking:
+                if profile.category == "HOUSING_TENANT":
+                    return "What was the security deposit amount withheld by the landlord?", [], None
+                return "What is the disputed amount involved in this matter?", [], None
+
+            if "unpaid_months" in blocking:
+                return "Which specific months or period has your salary been unpaid?", [], None
+
+            if "vacating_date" in blocking:
+                return "When did you vacate or move out of the rental property?", [], None
+
+            if "deposit_payment_proof_available" in blocking:
+                return "Do you have proof of paying the security deposit (such as a bank transfer or receipt)?", [], None
+
+            if "landlord_reason" in blocking:
+                return "What reason, if any, did the landlord give for withholding your deposit?", [], None
+
+            if "user_city" in blocking:
+                return "Which city and state did this occur in?", [], None
+
+            # Fallback for other blocking facts
+            if blocking:
+                labels = ", ".join(field.replace("_", " ") for field in blocking[:2])
+                return f"To proceed with the next step ({plan.label}), please provide: {labels}.", [], None
+
+        # 2. If the selected action is READY, proceed with execution / document preparation
+        if plan.status == NextActionStatus.READY:
+            profile.is_ready_for_document = True
+            doc_type = plan.doc_type or select_document_for_workflow(profile.category, profile.current_stage_key)
+            doc_label = plan.label
+            action = {"type": "PREPARE_DOC", "doc_type": doc_type, "label": doc_label}
+            profile.recommended_doc_type = doc_type
+            profile.recommended_doc_label = doc_label
+
+            if profile.category == "CYBER_FRAUD":
+                party_name = profile.opposite_party_name or profile.bank_name or "the financial institution"
+                ref_num = (
+                    profile.transaction_id
+                    or profile.key_facts.get("loan_reference")
+                    or "Disbursement Record"
                 )
-                return f"Do you have a rental agreement and proof that you paid {deposit_label}?", ["Yes, both", "Agreement only", "Payment proof only", "Neither"], None
-            if "landlord_reason" in missing:
-                profile.key_facts["last_question_group"] = "tenant_reason"
-                return "Has the landlord given a reason for keeping the deposit, or only said it will be returned later?", ["Only says it will be returned later", "Claims property damage", "Gave no reason"], None
+                amount_str = f"₹{profile.disputed_amount:,.0f}" if profile.disputed_amount else "the disputed transaction/loan"
 
-        if profile.category == "CONSUMER":
-            if any(field in missing for field in ["user_city", "incident_date", "product_name"]):
-                profile.key_facts["last_question_group"] = "consumer_purchase"
-                return "What product or service was this, when did you buy it, and which city/state are you in?", [], None
-            if any(field in missing for field in ["invoice_available", "seller_contacted", "seller_response"]):
-                profile.key_facts["last_question_group"] = "consumer_evidence"
-                return "Do you have the invoice, and have you already contacted the seller? What response did they give?", ["Yes—invoice and written rejection", "Invoice, but no written reply", "I have no invoice"], None
+                reply = (
+                    f"I have enough details to proceed with the next practical action regarding the unauthorized {amount_str} involving {party_name} (Reference: {ref_num}).\n\n"
+                    f"### What this means\n"
+                    f"Because you did not apply for, authorize, or receive these funds, this constitutes unauthorized financial identity fraud. "
+                    f"You do not need to know the receiving bank or disbursement UTR right now—those details are within the records of {party_name} and can be requested from them in your dispute.\n\n"
+                    f"### What you should do now\n"
+                    f"1. **Dispute directly with {party_name}:** Send a formal written grievance citing reference {ref_num}, explicitly denying having applied for or received the funds, and demanding a full investigation, cancellation of the loan, and copies of disbursement records (receiving bank & UTR).\n"
+                    f"2. **Report to Cyber Helpline 1930 & Portal:** Register a complaint on cybercrime.gov.in using reference {ref_num} and {party_name}.\n"
+                    f"3. **Credit Bureau Dispute:** If this appears on your credit report, raise an unauthorized-account dispute with credit bureaus (CIBIL / Experian) to remove the fraudulent loan entry.\n\n"
+                    f"### Recommended Next Step\n"
+                    f"{doc_label}. You will review and confirm all details before the draft is generated."
+                )
+                return reply, [f"Draft dispute letter to {party_name}", "How to report on 1930 portal", "Dispute credit report entry"], action
 
-        if profile.category == "EMPLOYMENT":
-            if any(field in missing for field in ["user_city", "opposite_party_name", "unpaid_months", "monthly_salary"]):
-                profile.key_facts["last_question_group"] = "employment_basics"
-                return "Which state do you work in, who is the employer, which months are unpaid, and what is your monthly salary?", [], None
-            if any(field in missing for field in ["hr_contacted", "employment_proof_available"]):
-                profile.key_facts["last_question_group"] = "employment_contact_proof"
-                return "Have you contacted HR or management, and do you have an appointment letter, salary slips, or bank salary records?", ["Yes, both", "Contacted HR only", "Documents only", "Neither"], None
+            rights = profile.rights_summary or {}
+            possible_rights = rights.get("possible_rights", [])[:2]
+            rights_text = "\n".join(f"• {item}" for item in possible_rights)
+            reply = (
+                f"I have enough information to proceed with the next step: {plan.label}.\n\n"
+                f"### What this means\n{rights.get('what_this_means', plan.description)}\n\n"
+                f"### Your possible rights\n{rights_text}\n\n"
+                f"### What you should do now\n{plan.description}\n\n"
+                f"### Current next step\n{doc_label}. You will review all important names, amounts, dates, and addresses before anything is generated."
+            )
+            return reply, ["What evidence should I attach?", "How should I send it?"], action
 
-        if profile.category == "POLICE_COMPLAINT":
-            if any(field in missing for field in ["user_city", "incident_date", "police_station_name"]):
-                profile.key_facts["last_question_group"] = "police_basics"
-                return "Which city/state is this in, when did the incident happen, and which police station refused the complaint?", [], None
-            if "written_complaint_available" in missing:
-                profile.key_facts["last_question_group"] = "police_written"
-                return "Did you submit a written complaint or receive any diary/GD acknowledgement number?", ["Written complaint, no acknowledgement", "I have a GD/diary number", "Only spoke verbally"], None
-
-        profile.is_ready_for_document = True
-        document_type = profile.recommended_doc_type or select_document_for_workflow(profile.category)
-        document_label = profile.recommended_doc_label or "Prepare Complaint Letter"
-        action = {"type": "PREPARE_DOC", "doc_type": document_type, "label": document_label}
-        rights = profile.rights_summary or {}
-        possible_rights = rights.get("possible_rights", [])[:2]
-        rights_text = "\n".join(f"• {item}" for item in possible_rights)
-        reply = (
-            f"I have enough information to map the next practical step.\n\n"
-            f"### What this means\n{rights.get('what_this_means', 'Your case may have an actionable next step.')}\n\n"
-            f"### Your possible rights\n{rights_text}\n\n"
-            f"### What you should do now\nPrepare a clear written record using the facts you have confirmed.\n\n"
-            f"### Current next step\n{document_label}. You will review all important names, amounts, dates, and addresses before anything is generated."
+        # 3. If all actions in the workflow are completed
+        return (
+            "Your case records and completed steps are saved. Keep all receipts, acknowledgements, and correspondence.",
+            ["Show my case summary", "Download case records"],
+            None,
         )
-        return reply, ["What evidence should I attach?", "How should I send it?"], action
 
     def process_document_upload(
         self,

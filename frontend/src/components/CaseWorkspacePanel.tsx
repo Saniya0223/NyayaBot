@@ -163,9 +163,23 @@ export default function CaseWorkspacePanel({ profile, onTriggerDocumentModal }: 
           </button>
           {showRights ? (
             <div className="space-y-3 border-t border-[#edf1ee] px-4 py-3 text-[11px] leading-5 text-[#607068]">
-              <p>{profile.rights_summary.what_this_means}</p>
-              <ul className="space-y-1.5">{profile.rights_summary.possible_rights.map((right) => <li key={right} className="flex gap-2"><span className="text-[#2f755b]">•</span><span>{right}</span></li>)}</ul>
-              {profile.rights_summary.sources?.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer" className="block rounded-lg bg-[#f6f8f7] px-2.5 py-2 font-semibold text-[#2d6d53] hover:underline">{source.title}<span className="block text-[9px] font-medium text-[#839088]">{source.authority}</span></a>)}
+              {profile.rights_summary.what_this_means ? <p>{profile.rights_summary.what_this_means}</p> : null}
+              {profile.rights_summary.possible_rights?.length ? (
+                <ul className="space-y-1.5">
+                  {profile.rights_summary.possible_rights.map((right) => (
+                    <li key={right} className="flex gap-2">
+                      <span className="text-[#2f755b]">•</span>
+                      <span>{right}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {profile.rights_summary.sources?.map((source) => (
+                <a key={source.url} href={source.url} target="_blank" rel="noreferrer" className="block rounded-lg bg-[#f6f8f7] px-2.5 py-2 font-semibold text-[#2d6d53] hover:underline">
+                  {source.title}
+                  <span className="block text-[9px] font-medium text-[#839088]">{source.authority}</span>
+                </a>
+              ))}
             </div>
           ) : null}
         </section>
