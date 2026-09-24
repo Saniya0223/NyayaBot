@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Check, Copy, Download, FileText, LoaderCircle, PencilLine, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { absoluteDocumentUrl, DocumentResponse, generateDocument, StructuredCaseProfile } from '@/lib/api';
+import { knownDocumentValues } from '@/lib/documentHandoff';
 
 interface Props {
   profile: StructuredCaseProfile;
@@ -12,13 +13,15 @@ interface Props {
 }
 
 export default function FactualConfirmModal({ profile, docType, docLabel, onClose }: Props) {
-  const [fullName, setFullName] = useState(profile.user_name || '');
-  const [otherParty, setOtherParty] = useState(profile.opposite_party_name || profile.bank_name || profile.police_station_name || '');
-  const [city, setCity] = useState(profile.user_city || '');
-  const [amount, setAmount] = useState(profile.disputed_amount ? String(profile.disputed_amount) : '');
-  const [propertyAddress, setPropertyAddress] = useState(profile.property_address || '');
-  const [relevantDate, setRelevantDate] = useState(profile.vacating_date || profile.incident_date || '');
-  const [transactionId, setTransactionId] = useState(profile.transaction_id || '');
+  const initial = knownDocumentValues(profile, docType);
+  const [fullName, setFullName] = useState(initial.fullName);
+  const [otherParty, setOtherParty] = useState(initial.otherParty);
+  const [city, setCity] = useState(initial.city);
+  const [amount, setAmount] = useState(initial.amount);
+  const [propertyAddress, setPropertyAddress] = useState(initial.propertyAddress);
+  const [relevantDate, setRelevantDate] = useState(initial.relevantDate);
+  const [transactionId, setTransactionId] = useState(initial.transactionId);
+  const [editingFields, setEditingFields] = useState<string[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [document, setDocument] = useState<DocumentResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +33,19 @@ export default function FactualConfirmModal({ profile, docType, docLabel, onClos
   const needsTransaction = docType === 'CYBERCRIME_BANK_FREEZE';
   const otherPartyLabel = docType === 'POLICE_COMPLAINT_BNSS' ? 'Police station' : docType === 'CYBERCRIME_BANK_FREEZE' ? 'Bank / payment app' : docType === 'RTI_SEC6' ? 'Public authority' : 'Other party';
   const canGenerate = Boolean(fullName.trim() && otherParty.trim() && city.trim() && (!needsAmount || Number(amount) > 0) && (!needsProperty || propertyAddress.trim()) && (!needsDate || relevantDate.trim()) && (!needsTransaction || transactionId.trim()));
+  type FieldKey = keyof typeof initial;
+  type ConfirmField = { id: FieldKey; label: string; value: string; onChange: (value: string) => void; placeholder: string; inputMode?: 'decimal' };
+  const fields: ConfirmField[] = [
+    { id: 'fullName', label: 'Your full legal name', value: fullName, onChange: setFullName, placeholder: 'As it should appear in the letter' },
+    { id: 'otherParty', label: otherPartyLabel, value: otherParty, onChange: setOtherParty, placeholder: `Enter ${otherPartyLabel.toLowerCase()}` },
+    { id: 'city', label: 'City / jurisdiction', value: city, onChange: setCity, placeholder: 'City and State' },
+    ...(needsAmount ? [{ id: 'amount' as const, label: 'Disputed amount (₹)', value: amount, onChange: setAmount, placeholder: '50000', inputMode: 'decimal' as const }] : []),
+    ...(needsProperty ? [{ id: 'propertyAddress' as const, label: 'Full rented property address', value: propertyAddress, onChange: setPropertyAddress, placeholder: 'House/flat, street, locality, city, PIN' }] : []),
+    ...(needsDate ? [{ id: 'relevantDate' as const, label: docType === 'TENANT_DEMAND_NOTICE' ? 'Vacating / handover date' : 'Incident / transaction date', value: relevantDate, onChange: setRelevantDate, placeholder: 'DD Month YYYY' }] : []),
+    ...(needsTransaction ? [{ id: 'transactionId' as const, label: 'UTR / transaction ID', value: transactionId, onChange: setTransactionId, placeholder: 'Enter the exact reference' }] : []),
+  ];
+  const knownFields = fields.filter((field) => initial[field.id].trim());
+  const missingFields = fields.filter((field) => !initial[field.id].trim());
 
   async function createDocument() {
     if (!canGenerate || isGenerating) return;
@@ -85,15 +101,35 @@ export default function FactualConfirmModal({ profile, docType, docLabel, onClos
           {!document ? (
             <div className="space-y-5">
               <div className="flex gap-2.5 rounded-2xl border border-[#cfe0d6] bg-[#f1f7f3] p-3.5 text-[11px] leading-5 text-[#52655b]"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-[#2f755b]" /><span>Important names, amounts, dates, and addresses must be confirmed by you. NyayaBot will not fill missing personal details with guesses.</span></div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Field label="Your full legal name" value={fullName} onChange={setFullName} placeholder="As it should appear in the letter" />
-                <Field label={otherPartyLabel} value={otherParty} onChange={setOtherParty} placeholder={`Enter ${otherPartyLabel.toLowerCase()}`} />
-                <Field label="City / jurisdiction" value={city} onChange={setCity} placeholder="City and State" />
-                {needsAmount ? <Field label="Disputed amount (₹)" value={amount} onChange={setAmount} placeholder="50000" inputMode="decimal" /> : null}
-                {needsProperty ? <div className="sm:col-span-2"><Field label="Full rented property address" value={propertyAddress} onChange={setPropertyAddress} placeholder="House/flat, street, locality, city, PIN" /></div> : null}
-                {needsDate ? <Field label={docType === 'TENANT_DEMAND_NOTICE' ? 'Vacating / handover date' : 'Incident / transaction date'} value={relevantDate} onChange={setRelevantDate} placeholder="DD Month YYYY" /> : null}
-                {needsTransaction ? <Field label="UTR / transaction ID" value={transactionId} onChange={setTransactionId} placeholder="Enter the exact reference" /> : null}
-              </div>
+              {knownFields.length ? (
+                <div className="rounded-2xl border border-[#e1e7e3] p-4">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#75827b]">Review details already in your case</p>
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {knownFields.map((field) => (
+                      <div key={field.id}>
+                        {editingFields.includes(field.id) ? (
+                          <>
+                            <Field label={field.label} value={field.value} onChange={field.onChange} placeholder={field.placeholder} inputMode={field.inputMode} />
+                            <button type="button" onClick={() => setEditingFields((current) => current.filter((id) => id !== field.id))} className="mt-1 text-[11px] font-semibold text-[#174e3b]">Done editing</button>
+                          </>
+                        ) : (
+                          <div className="flex items-start justify-between gap-2 text-xs">
+                            <div><span className="block text-[10px] font-semibold text-[#75827b]">{field.label}</span><span className="font-medium text-[#24322c]">{field.value || 'Needs correction'}</span></div>
+                            <button type="button" onClick={() => setEditingFields((current) => [...current, field.id])} className="shrink-0 font-semibold text-[#174e3b]">Edit</button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {missingFields.length ? (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {missingFields.map((field) => (
+                    <Field key={field.id} label={field.label} value={field.value} onChange={field.onChange} placeholder={field.placeholder} inputMode={field.inputMode} />
+                  ))}
+                </div>
+              ) : null}
               <div className="rounded-2xl border border-[#e1e7e3] p-4"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#75827b]">Evidence currently noted</p><div className="mt-2 flex flex-wrap gap-2">{profile.evidence_checklist.filter((item) => item.is_available).map((item) => <span key={item.id} className="rounded-full bg-[#e8f2ec] px-2.5 py-1 text-[10px] font-semibold text-[#2e6d53]">✓ {item.name}</span>)}{profile.evidence_checklist.every((item) => !item.is_available) ? <span className="text-[11px] text-[#86918c]">No evidence confirmed yet</span> : null}</div></div>
               {error ? <p role="alert" className="rounded-xl bg-[#fff0ed] p-3 text-xs text-[#a2473a]">{error}</p> : null}
             </div>

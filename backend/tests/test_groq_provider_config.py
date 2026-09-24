@@ -37,6 +37,13 @@ def test_both_provider_prompts_use_domain_candidates_for_conversational_question
     assert "unavailable_facts" in GROQ_EXTRACTION_SYSTEM_PROMPT
 
 
+def test_both_chat_prompts_handoff_eligible_documents_instead_of_drafting_them():
+    assert GROQ_CHAT_SYSTEM_PROMPT == GEMINI_CHAT_SYSTEM_PROMPT
+    assert "recommended_next_action is PREPARE_DOC" in GROQ_CHAT_SYSTEM_PROMPT
+    assert "Do not write or simulate the final notice" in GROQ_CHAT_SYSTEM_PROMPT
+    assert "deterministic document" in GROQ_CHAT_SYSTEM_PROMPT
+
+
 def test_groq_status_unconfigured():
     provider = GroqProvider(api_key="", model="llama-3.3-70b-versatile")
     assert provider.status.configured is False

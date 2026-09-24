@@ -196,6 +196,29 @@ class GeminiConversationService:
             self.workflow_agent._assess_risk(req.message, profile)
             self._refresh_workflow(profile, safety, req.message)
 
+            # The workflow has already decided whether a document action exists.
+            # A request to prepare that document hands off to the confirmation
+            # form; the chat model must never render the final document body.
+            action = profile.recommended_next_action
+            if (
+                not conflict
+                and action
+                and action.get("type") == "PREPARE_DOC"
+                and self._is_document_handoff_request(req.message)
+            ):
+                profile.key_facts.pop("document_intake_active", None)
+                self.workflow_agent._touch(profile)
+                return self._tag_response(
+                    ChatTurnResponse(
+                        reply_text=self._document_handoff_reply(style, bool(profile.missing_document_fields)),
+                        case_profile=profile,
+                        quick_replies=[],
+                        suggested_action=action,
+                        message_id=str(uuid.uuid4()),
+                    ),
+                    self._provider_mode,
+                )
+
             workflow_state = self._workflow_summary(profile)
             legal_sources = self._verified_sources(profile, req.message, workflow_state)
             # Ordinary follow-ups come only from the ranked domain context.
@@ -955,6 +978,43 @@ class GeminiConversationService:
     def _is_document_request(message: str) -> bool:
         lowered = message.casefold()
         return any(term in lowered for term in ["prepare", "draft", "create the letter", "make the letter"])
+
+    @staticmethod
+    def _is_document_handoff_request(message: str) -> bool:
+        lowered = message.casefold()
+        if re.search(r"\b(?:don't|do not|not|never|can't)\s+(?:prepare|generate|create|draft|make|write)\b", lowered):
+            return False
+        action_words = re.search(
+            r"\b(?:prepare|generate|create|draft|make|write|banao|bana|banado|taiyar|likho)\b"
+            r"|तैयार|बनाओ|बनाइ|बनाना|लिख",
+            lowered,
+        )
+        document_words = re.search(
+            r"\b(?:notice|document|letter|complaint|application|pdf|docx)\b"
+            r"|नोटिस|दस्तावेज|पत्र|शिकायत|आवेदन|पीडीएफ",
+            lowered,
+        )
+        return bool(action_words and document_words)
+
+    @staticmethod
+    def _document_handoff_reply(style: LanguageScript, has_missing_details: bool) -> str:
+        if style.script == "devanagari":
+            return (
+                "मैं यह दस्तावेज़ तैयार कर सकता हूँ। बाकी विवरण फ़ॉर्म में पुष्टि करें, फिर PDF या DOCX बनाएँ।"
+                if has_missing_details
+                else "मैं यह दस्तावेज़ तैयार कर सकता हूँ। फ़ॉर्म में विवरण जाँचें, फिर PDF या DOCX बनाएँ।"
+            )
+        if style.language == "hinglish":
+            return (
+                "Main yeh document taiyar kar sakta hoon. Baaki details form mein confirm karke PDF ya DOCX banayein."
+                if has_missing_details
+                else "Main yeh document taiyar kar sakta hoon. Form mein details check karke PDF ya DOCX banayein."
+            )
+        return (
+            "I can prepare this document. Please confirm the remaining details in the form, then generate the PDF or DOCX."
+            if has_missing_details
+            else "I can prepare this document. Please review the details in the form, then generate the PDF or DOCX."
+        )
 
     @staticmethod
     def _missing_document_fields(profile: StructuredCaseProfile) -> list[str]:

@@ -13,6 +13,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { API_BASE_URL, ChatMessageItem, fetchLLMStatus, LLMStatus, sendChatMessage, StructuredCaseProfile } from '@/lib/api';
+import { routeDocumentAction } from '@/lib/documentHandoff';
 
 interface ChatInterfaceProps {
   activeProfile?: StructuredCaseProfile | null;
@@ -215,11 +216,13 @@ export default function ChatInterface({
   }
 
   function handleDocumentAction(action: { type: string; doc_type?: string; label: string }) {
-    if (isLLMActive && activeProfile?.missing_document_fields?.length) {
-      void handleSend(`I want to prepare the ${action.label}. Please ask me for the missing details.`);
-      return;
-    }
-    onTriggerDocumentModal(action.doc_type || 'GENERAL_COMPLAINT_LETTER', action.label || 'Prepare document');
+    routeDocumentAction(action, {
+      isLLMActive,
+      missingDocumentFields: activeProfile?.missing_document_fields,
+      recommendedDocType: activeProfile?.recommended_doc_type,
+      openModal: onTriggerDocumentModal,
+      sendMessage: (message) => { void handleSend(message); },
+    });
   }
 
   return (

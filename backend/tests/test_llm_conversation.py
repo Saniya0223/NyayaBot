@@ -65,6 +65,61 @@ class SequencedFakeProvider(FakeGeminiProvider):
         return "I have noted the facts and can explain the current workflow step."
 
 
+def test_eligible_document_request_uses_prepare_action_without_model_draft():
+    provider = FakeGeminiProvider(
+        CaseExtraction(
+            user_intent="Prepare the consumer notice",
+            classification=IssueClassification(
+                category="CONSUMER", issue_type="DEFECTIVE_PRODUCT", confidence=0.98,
+            ),
+        )
+    )
+    agent = ConversationalLegalAgent()
+    service = GeminiConversationService(provider=provider, workflow_agent=agent)
+    profile = agent._init_case_profile("The seller supplied a defective product", category_override="CONSUMER")
+    profile.opposite_party_name = "Example Seller"
+    profile.key_facts["product_name"] = "Air conditioner"
+    profile.incident_date = "10 September 2026"
+    profile.key_facts["seller_contacted"] = False
+    profile.key_facts["invoice_available"] = True
+    profile.user_state = "Maharashtra"
+    service._refresh_workflow(profile)
+    assert profile.recommended_next_action is not None
+    assert profile.recommended_next_action["type"] == "PREPARE_DOC"
+    assert profile.missing_document_fields
+
+    response = asyncio.run(service.process_turn(ChatTurnRequest(message="prepare the notice"), profile, []))
+
+    assert provider.extraction_context is not None
+    assert provider.response_context is None
+    assert response.suggested_action == response.case_profile.recommended_next_action
+    assert response.suggested_action["type"] == "PREPARE_DOC"
+    assert not response.case_profile.key_facts.get("document_intake_active")
+    assert len(response.reply_text) < 250
+    assert "PDF" in response.reply_text
+    assert "LEGAL NOTICE" not in response.reply_text
+
+    provider.response_context = None
+    ordinary = asyncio.run(service.process_turn(ChatTurnRequest(message="What can I do next?"), response.case_profile, []))
+    assert provider.response_context is not None
+    assert ordinary.suggested_action == ordinary.case_profile.recommended_next_action
+
+
+def test_document_words_without_prepare_action_remain_ordinary_chat():
+    provider = FakeGeminiProvider(
+        CaseExtraction(
+            user_intent="Asks about a notice",
+            classification=IssueClassification(category="GENERAL", issue_type="GENERAL", confidence=0.9),
+        )
+    )
+    service = GeminiConversationService(provider=provider, workflow_agent=ConversationalLegalAgent())
+
+    response = asyncio.run(service.process_turn(ChatTurnRequest(message="prepare the notice"), None, []))
+
+    assert response.suggested_action is None
+    assert provider.response_context is not None
+
+
 def tenancy_extraction(amount: float = 50000) -> CaseExtraction:
     return CaseExtraction(
         user_intent="Recover rental security deposit",
@@ -230,7 +285,8 @@ def test_gemini_turn_uses_recent_history_and_updated_workflow_context():
     assert "document:user_name" not in provider.response_context.missing_information
     assert "user_name" in response.case_profile.missing_document_fields
 
-    asyncio.run(
+    provider.response_context = None
+    handoff = asyncio.run(
         service.process_turn(
             ChatTurnRequest(
                 message="I want to prepare the demand letter. Please ask for missing details.",
@@ -240,8 +296,11 @@ def test_gemini_turn_uses_recent_history_and_updated_workflow_context():
             history,
         )
     )
-    assert "document:user_name" in provider.response_context.missing_information
-    assert "document:property_address" in provider.response_context.missing_information
+    assert provider.response_context is None
+    assert handoff.suggested_action["type"] == "PREPARE_DOC"
+    assert "user_name" in handoff.case_profile.missing_document_fields
+    assert "property_address" in handoff.case_profile.missing_document_fields
+    assert "form" in handoff.reply_text.casefold()
 
 
 def test_gemini_candidate_conflict_does_not_overwrite_existing_fact():
