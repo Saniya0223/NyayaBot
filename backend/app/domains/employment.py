@@ -21,6 +21,7 @@ EMPLOYMENT_DOMAIN = DomainDefinition(
         IssueTypeDefinition(id="WORKPLACE_GRIEVANCE", display_name="Workplace grievance"),
     ),
     default_issue_type_id="UNPAID_DELAYED_SALARY",
+    minimum_context_any_of=("unpaid_months", "monthly_salary", "opposite_party_name", "employee_role"),
     facts=(
         FactDefinition(key="opposite_party_name", value_type=FactValueType.TEXT, meaning="employer involved", priority=QuestionPriority.ISSUE_IDENTIFICATION),
         FactDefinition(key="unpaid_months", value_type=FactValueType.TEXT_LIST, meaning="months or period for which salary is unpaid", priority=QuestionPriority.CORE_EVENT_FACTS),

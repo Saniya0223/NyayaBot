@@ -4,17 +4,20 @@ from pydantic import ValidationError
 from app.agents.conversation_agent import ConversationalLegalAgent
 from app.agents.rag_node import CATEGORY_TO_CORPUS, RagQueryContext, statutory_rag
 from app.domains import DomainRegistry, DomainRegistryError, domain_registry
-from app.domains.compatibility import provenance_from_legacy_metadata
+from app.domains.compatibility import provenance_from_legacy_metadata, read_profile_fact
 from app.domains.contracts import (
     DomainDefinition,
     FactDefinition,
     FactStage,
+    FactState,
     FactValueType,
     IssueTypeDefinition,
     JurisdictionPolicy,
     JurisdictionRequirement,
     QuestionPriority,
+    fact_state,
 )
+from app.llm.contracts import ExtractedCaseFacts
 from app.services.case_readiness import compute_intake_missing_facts
 from app.services.language_style import detect_language_script
 from app.services.safety_triage import SafetyAssessment, assess_safety
@@ -36,6 +39,12 @@ def test_registry_loads_four_deep_domains_and_resolves_aliases():
     assert domain_registry.require("TENANCY").id == "HOUSING_TENANT"
     assert domain_registry.require("housing").id == "HOUSING_TENANT"
     assert domain_registry.require("CYBER").id == "CYBER_FRAUD"
+
+
+def test_registered_domain_facts_are_extractable():
+    extractable = set(ExtractedCaseFacts.model_fields)
+    for domain in domain_registry.all():
+        assert {fact.key for fact in domain.facts} <= extractable
 
 
 def test_registry_rejects_duplicate_ids_and_unknown_alias_targets():
@@ -185,6 +194,107 @@ def test_compact_domain_context_exposes_priority_reason_not_full_configuration()
     assert len(context["next_fact_candidates"]) <= 4
     assert context["next_fact_candidates"][0]["priority_reason"] == "ISSUE_IDENTIFICATION"
     assert "facts" not in context
+
+
+def test_consumer_conversation_remembers_negative_answers_and_skips_form_fields():
+    profile = profile_for("CONSUMER")
+    profile.issue_type = "NON_DELIVERY"
+    profile.opposite_party_name = "Mahima Gift Gallery"
+    profile.key_facts.update({
+        "seller_platform": "Instagram",
+        "product_name": "resin items",
+        "purchase_timing": "about a month ago",
+        "advance_payment_made": True,
+        "seller_contacted": True,
+        "seller_response_received": False,
+        "seller_response": "No replies; calls unanswered",
+        "desired_outcome": "delivery",
+    })
+    domain = domain_registry.require("CONSUMER")
+    definitions = {fact.key: fact for fact in domain.facts}
+    assert fact_state(False, present=True, definition=definitions["seller_response_received"]) == FactState.FALSE
+    assert fact_state(profile.key_facts["seller_response"], present=True, definition=definitions["seller_response"]) == FactState.KNOWN
+
+    context = domain_registry.compact_context(profile)
+    candidate_keys = {item["key"] for item in context["next_fact_candidates"]}
+    assert context["issue_understood"] is True
+    assert context["guidance_possible"] is True
+    assert not candidate_keys & {
+        "seller_contacted", "seller_response_received", "seller_response",
+        "desired_outcome", "incident_date", "order_reference_id",
+        "payment_transaction_id", "shipment_tracking_id", "user_name",
+    }
+    assert all(item["purpose"] != "document_only" for item in context["next_fact_candidates"])
+
+
+def test_no_seller_contact_is_known_and_does_not_trigger_response_questions():
+    profile = profile_for("CONSUMER")
+    profile.issue_type = "NON_DELIVERY"
+    profile.key_facts["seller_contacted"] = False
+    missing = compute_intake_missing_facts(profile, SafetyAssessment())
+    candidates = {item["key"] for item in domain_registry.compact_context(profile)["next_fact_candidates"]}
+    assert "seller_contacted" not in missing
+    assert "seller_response_received" not in missing
+    assert "seller_contacted" not in candidates
+    assert "seller_response_received" not in candidates
+    assert "seller_response" not in candidates
+
+
+def test_legacy_consumer_response_and_outcome_are_not_asked_again():
+    profile = profile_for("CONSUMER")
+    profile.issue_type = "NON_DELIVERY"
+    profile.key_facts.update({
+        "seller_name": "Mahima Gift Gallery",
+        "seller_contacted": True,
+        "seller_response_summary": "No reply to messages or calls",
+        "desired_resolution": "delivery",
+    })
+    context = domain_registry.compact_context(profile)
+    candidate_keys = {item["key"] for item in context["next_fact_candidates"]}
+    assert context["issue_understood"] is True
+    assert not candidate_keys & {
+        "opposite_party_name", "seller_response_received", "seller_response", "desired_outcome",
+    }
+    assert "seller_name" in profile.key_facts
+    assert "opposite_party_name" not in profile.key_facts
+
+
+def test_false_zero_empty_and_not_applicable_remain_distinct():
+    definitions = {fact.key: fact for fact in domain_registry.require("CONSUMER").facts}
+    assert fact_state(False, present=True, definition=definitions["seller_contacted"]) == FactState.FALSE
+    assert fact_state(None, present=False, definition=definitions["seller_contacted"]) == FactState.UNKNOWN
+    assert fact_state("", present=True, definition=definitions["seller_response"]) == FactState.UNKNOWN
+    assert fact_state("NOT_APPLICABLE", present=True, definition=definitions["seller_response"]) == FactState.NOT_APPLICABLE
+    cyber_amount = next(fact for fact in domain_registry.require("CYBER_FRAUD").facts if fact.key == "disputed_amount")
+    assert fact_state(0, present=True, definition=cyber_amount) == FactState.UNKNOWN
+
+
+def test_legacy_alias_is_read_when_canonical_direct_field_is_empty():
+    profile = profile_for("CYBER_FRAUD")
+    profile.key_facts["transaction_ref"] = "legacy-reference"
+    present, value = read_profile_fact(profile, "transaction_id", ("transaction_ref",))
+    assert present is True
+    assert value == "legacy-reference"
+    assert "transaction_id" not in {fact.key for fact in domain_registry.unresolved_facts(profile)}
+
+
+@pytest.mark.parametrize("domain_id,field,value", [
+    ("CONSUMER", "product_name", "resin items"),
+    ("HOUSING_TENANT", "vacating_date", "2026-08-10"),
+    ("EMPLOYMENT", "opposite_party_name", "Example Employer"),
+    ("CYBER_FRAUD", "scam_method", "account takeover"),
+])
+def test_minimum_context_supports_guidance_across_domains(domain_id, field, value):
+    profile = profile_for(domain_id)
+    if hasattr(profile, field):
+        setattr(profile, field, value)
+    else:
+        profile.key_facts[field] = value
+    assert domain_registry.issue_understood(profile)
+    assert domain_registry.guidance_possible(profile)
+    assert compute_intake_missing_facts(profile, SafetyAssessment())
+    profile.safety_status = {"is_safety_case": True, "triage_complete": False}
+    assert not domain_registry.guidance_possible(profile)
 
 
 def test_legacy_fact_metadata_has_non_verifying_provenance_adapter():

@@ -29,10 +29,14 @@ def read_profile_fact(profile: Any, key: str, aliases: tuple[str, ...] = ()) -> 
     """Read old and new profiles without rewriting their stored category/facts."""
     for candidate in (key, *aliases):
         if candidate in PROFILE_FACT_FIELDS and hasattr(profile, candidate):
-            return True, getattr(profile, candidate)
+            value = getattr(profile, candidate)
+            if value is not None and value != "" and value != []:
+                return True, value
         facts = getattr(profile, "key_facts", {}) or {}
         if candidate in facts:
-            return True, facts[candidate]
+            value = facts[candidate]
+            if value is not None and value != "" and value != []:
+                return True, value
     return False, None
 
 

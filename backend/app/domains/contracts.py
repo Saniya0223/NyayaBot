@@ -47,8 +47,8 @@ class QuestionPriority(IntEnum):
 
     SAFETY_OR_URGENCY = 10
     ISSUE_IDENTIFICATION = 20
-    JURISDICTION_WHEN_LEGALLY_RELEVANT = 30
-    CORE_EVENT_FACTS = 40
+    CORE_EVENT_FACTS = 30
+    JURISDICTION_WHEN_LEGALLY_RELEVANT = 40
     ACTIONS_ALREADY_TAKEN = 50
     EVIDENCE = 60
     DESIRED_OUTCOME = 70
@@ -73,7 +73,18 @@ class JurisdictionRequirement(str, Enum):
 class FactState(str, Enum):
     UNKNOWN = "UNKNOWN"
     KNOWN = "KNOWN"
+    FALSE = "FALSE"
     NOT_APPLICABLE = "NOT_APPLICABLE"
+
+
+class FactPurpose(str, Enum):
+    CORE_CONTEXT = "core_context"
+    ACTION_CONTEXT = "action_context"
+    EVIDENCE_CONTEXT = "evidence_context"
+    JURISDICTION_CONTEXT = "jurisdiction_context"
+    DESIRED_OUTCOME = "desired_outcome"
+    ADMINISTRATIVE_IDENTIFIER = "administrative_identifier"
+    DOCUMENT_ONLY = "document_only"
 
 
 class FactSourceKind(str, Enum):
@@ -121,6 +132,22 @@ class FactDefinition(BaseModel):
     issue_type_ids: tuple[str, ...] = ()
     evidence_type_id: Optional[str] = None
     normalization: Optional[str] = None
+    ask_when_fact: Optional[str] = None
+    ask_when_value: Optional[bool] = None
+    conversation_alternatives: tuple[str, ...] = ()
+
+    @property
+    def purpose(self) -> FactPurpose:
+        """Derive conversational purpose from the domain's existing priority."""
+        if self.document_only:
+            return FactPurpose.DOCUMENT_ONLY
+        return {
+            QuestionPriority.ACTIONS_ALREADY_TAKEN: FactPurpose.ACTION_CONTEXT,
+            QuestionPriority.EVIDENCE: FactPurpose.EVIDENCE_CONTEXT,
+            QuestionPriority.JURISDICTION_WHEN_LEGALLY_RELEVANT: FactPurpose.JURISDICTION_CONTEXT,
+            QuestionPriority.DESIRED_OUTCOME: FactPurpose.DESIRED_OUTCOME,
+            QuestionPriority.ADMINISTRATIVE_IDENTIFIERS: FactPurpose.ADMINISTRATIVE_IDENTIFIER,
+        }.get(self.priority, FactPurpose.CORE_CONTEXT)
 
     @model_validator(mode="after")
     def validate_semantics(self) -> "FactDefinition":
@@ -132,6 +159,8 @@ class FactDefinition(BaseModel):
             raise ValueError(f"jurisdiction fact {self.key} must use jurisdiction priority")
         if self.evidence_type_id and not self.evidence_related:
             raise ValueError(f"fact {self.key} has evidence binding but is not evidence-related")
+        if self.ask_when_value is not None and not self.ask_when_fact:
+            raise ValueError(f"fact {self.key} has a condition without a condition fact")
         return self
 
 
@@ -226,6 +255,7 @@ class DomainDefinition(BaseModel):
     issue_types: tuple[IssueTypeDefinition, ...]
     default_issue_type_id: str
     facts: tuple[FactDefinition, ...]
+    minimum_context_any_of: tuple[str, ...] = ()
     actions: tuple[ActionDefinition, ...] = ()
     evidence: tuple[EvidenceDefinition, ...] = ()
     workflow_binding: str
@@ -244,6 +274,8 @@ class DomainDefinition(BaseModel):
         fact_keys = [item.key for item in self.facts]
         unique(issue_ids, "issue type IDs")
         unique(fact_keys, "fact keys")
+        if set(self.minimum_context_any_of) - set(fact_keys):
+            raise ValueError(f"minimum context references unknown facts in {self.id}")
         unique([item.id for item in self.actions], "action IDs")
         unique([item.id for item in self.evidence], "evidence IDs")
         unique([item.document_type for item in self.documents], "document bindings")
@@ -253,6 +285,10 @@ class DomainDefinition(BaseModel):
             unknown = set(fact.issue_type_ids) - set(issue_ids)
             if unknown:
                 raise ValueError(f"fact {fact.key} references unknown issue types: {sorted(unknown)}")
+            if fact.ask_when_fact and fact.ask_when_fact not in fact_keys:
+                raise ValueError(f"fact {fact.key} references unknown condition {fact.ask_when_fact}")
+            if set(fact.conversation_alternatives) - set(fact_keys):
+                raise ValueError(f"fact {fact.key} references unknown conversation alternatives")
         evidence_ids = {item.id for item in self.evidence}
         for fact in self.facts:
             if fact.evidence_type_id and fact.evidence_type_id not in evidence_ids:
@@ -297,7 +333,7 @@ def fact_state(value: Any, *, present: bool, definition: FactDefinition) -> Fact
         if not stripped:
             return FactState.UNKNOWN
     if value is False:
-        return FactState.KNOWN if definition.false_is_known else FactState.UNKNOWN
+        return FactState.FALSE if definition.false_is_known else FactState.UNKNOWN
     if isinstance(value, (list, tuple, set, dict)) and not value:
         return FactState.UNKNOWN
     if definition.zero_is_unknown and isinstance(value, (int, float)) and not isinstance(value, bool) and value == 0:

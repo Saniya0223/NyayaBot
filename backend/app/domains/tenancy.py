@@ -22,7 +22,9 @@ TENANCY_DOMAIN = DomainDefinition(
         IssueTypeDefinition(id="PROPERTY_CONDITION", display_name="Repair or property-condition dispute"),
     ),
     default_issue_type_id="SECURITY_DEPOSIT_DISPUTE",
+    minimum_context_any_of=("vacating_date", "landlord_reason", "opposite_party_name"),
     facts=(
+        FactDefinition(key="opposite_party_name", value_type=FactValueType.TEXT, meaning="landlord or property manager involved", priority=QuestionPriority.ISSUE_IDENTIFICATION, required_for_understanding=False),
         FactDefinition(key="vacating_date", value_type=FactValueType.DATE, meaning="date the tenant left or expects to leave", priority=QuestionPriority.CORE_EVENT_FACTS),
         FactDefinition(key="landlord_reason", value_type=FactValueType.TEXT, meaning="reason given by the landlord", priority=QuestionPriority.CORE_EVENT_FACTS, not_applicable_allowed=True),
         FactDefinition(key="landlord_contacted", value_type=FactValueType.BOOLEAN, meaning="whether the landlord has been asked to resolve the issue", priority=QuestionPriority.ACTIONS_ALREADY_TAKEN),

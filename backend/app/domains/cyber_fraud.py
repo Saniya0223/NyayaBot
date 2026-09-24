@@ -20,9 +20,11 @@ CYBER_FRAUD_DOMAIN = DomainDefinition(
         IssueTypeDefinition(id="ONLINE_SCAM", display_name="Online scam or fraud"),
     ),
     default_issue_type_id="ONLINE_SCAM",
+    minimum_context_any_of=("incident_date", "bank_name", "scam_method", "disputed_amount"),
     facts=(
         FactDefinition(key="incident_date", value_type=FactValueType.DATE, meaning="date or time of the fraudulent event", priority=QuestionPriority.SAFETY_OR_URGENCY),
         FactDefinition(key="bank_name", value_type=FactValueType.TEXT, meaning="bank or payment service involved", priority=QuestionPriority.CORE_EVENT_FACTS),
+        FactDefinition(key="disputed_amount", value_type=FactValueType.MONEY, meaning="amount the user reports as lost or disputed", priority=QuestionPriority.CORE_EVENT_FACTS, required_for_understanding=False, zero_is_unknown=True),
         FactDefinition(key="bank_reported", value_type=FactValueType.BOOLEAN, meaning="whether the bank or payment provider has been alerted", priority=QuestionPriority.ACTIONS_ALREADY_TAKEN),
         FactDefinition(key="cyber_reported", value_type=FactValueType.BOOLEAN, meaning="whether the cyber-fraud reporting channel has been contacted", priority=QuestionPriority.ACTIONS_ALREADY_TAKEN),
         FactDefinition(key="transaction_id", value_type=FactValueType.IDENTIFIER, meaning="payment transaction, UTR, or bank reference identifier", priority=QuestionPriority.ADMINISTRATIVE_IDENTIFIERS, sensitive=True, aliases=("transaction_ref", "payment_transaction_id")),

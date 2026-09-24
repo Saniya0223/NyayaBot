@@ -8,6 +8,7 @@ from app.agents.conversation_agent import ConversationalLegalAgent, conversation
 from app.agents.rag_node import RagQueryContext, statutory_rag
 from app.domains import domain_registry
 from app.domains.compatibility import PROFILE_FACT_FIELDS, read_profile_fact
+from app.domains.contracts import FactState, FactValueType, fact_state
 from app.services.language_style import LanguageScript
 from app.services.pii_masker import PIIMasker
 from app.services.case_readiness import (
@@ -197,10 +198,9 @@ class GeminiConversationService:
 
             workflow_state = self._workflow_summary(profile)
             legal_sources = self._verified_sources(profile, req.message, workflow_state)
-            # While understanding the case the model is told what we still need to
-            # understand - only blocking missing facts, never facts already stated unknown.
-            blocking_missing = compute_blocking_missing_facts(profile, safety, profile.intake_missing_facts)
-            missing_for_response = list(blocking_missing)
+            # Ordinary follow-ups come only from the ranked domain context.
+            # Document fields are supplied separately after the user selects a document.
+            missing_for_response: list[str] = []
             if profile.missing_document_fields and profile.key_facts.get("document_intake_active"):
                 missing_for_response.extend(
                     f"document:{field}" for field in profile.missing_document_fields
@@ -527,17 +527,47 @@ class GeminiConversationService:
         extraction: CaseExtraction,
     ) -> Optional[dict[str, Any]]:
         facts = extraction.facts.model_dump(exclude_none=True)
+        domain = domain_registry.resolve(profile.category)
+        definitions = {fact.key: fact for fact in domain.facts}
+        alias_to_key = {
+            alias: fact.key for fact in domain.facts for alias in fact.aliases
+        }
+        unavailable: set[str] = set()
+        for field in profile.key_facts.get("unavailable_fact_keys") or ():
+            definition = definitions.get(field)
+            if definition is None or definition.value_type == FactValueType.BOOLEAN:
+                continue
+            present, value = read_profile_fact(profile, field, definition.aliases)
+            if fact_state(value, present=present, definition=definition) == FactState.UNKNOWN:
+                unavailable.add(field)
+        for extracted_field in extraction.unavailable_facts:
+            field = alias_to_key.get(extracted_field, extracted_field)
+            definition = definitions.get(field)
+            if definition is None or definition.value_type == FactValueType.BOOLEAN:
+                continue
+            present, value = read_profile_fact(profile, field, definition.aliases)
+            if fact_state(value, present=present, definition=definition) == FactState.UNKNOWN:
+                unavailable.add(field)
         confidence_by_field = {
             item.field: item.confidence for item in extraction.confidence_by_field
         }
         conflict: Optional[dict[str, Any]] = None
-        for field, candidate in facts.items():
-            confidence = confidence_by_field.get(field, extraction.classification.confidence)
+        for extracted_field, candidate in facts.items():
+            field = alias_to_key.get(extracted_field, extracted_field)
+            confidence = confidence_by_field.get(extracted_field, extraction.classification.confidence)
             if confidence < 0.55:
+                continue
+            if candidate is None or candidate == "" or candidate == []:
                 continue
 
             target = profile if field in DIRECT_PROFILE_FIELDS else profile.key_facts
-            existing = getattr(profile, field) if target is profile else profile.key_facts.get(field)
+            definition = definitions.get(field)
+            if definition:
+                present, existing = read_profile_fact(profile, field, definition.aliases)
+                if not present:
+                    existing = None
+            else:
+                existing = getattr(profile, field) if target is profile else profile.key_facts.get(field)
             metadata = profile.fact_metadata.get(field, {})
             existing_is_empty = (
                 existing is None
@@ -547,6 +577,9 @@ class GeminiConversationService:
             )
 
             if metadata.get("confirmed") and not self._same_value(existing, candidate):
+                continue
+            if not existing_is_empty and self._same_value(existing, candidate):
+                unavailable.discard(field)
                 continue
             if not existing_is_empty and not self._same_value(existing, candidate):
                 if conflict is None:
@@ -563,17 +596,20 @@ class GeminiConversationService:
                 setattr(profile, field, candidate)
             else:
                 profile.key_facts[field] = candidate
+            unavailable.discard(field)
             profile.fact_metadata[field] = {
                 "value": candidate,
                 "source": f"{self._provider_name}_chat",
                 "confidence": confidence,
                 "confirmed": False,
             }
-            domain = domain_registry.resolve(profile.category)
-            fact_definition = next((item for item in domain.facts if item.key == field), None)
-            evidence_id = fact_definition.evidence_type_id if fact_definition else None
+            evidence_id = definition.evidence_type_id if definition else None
             if candidate is True and evidence_id:
                 self.workflow_agent._mark_evidence(profile, [evidence_id])
+        if unavailable:
+            profile.key_facts["unavailable_fact_keys"] = sorted(unavailable)
+        else:
+            profile.key_facts.pop("unavailable_fact_keys", None)
         return conflict
 
     def _apply_actions(self, profile: StructuredCaseProfile, actions: list[DetectedAction]) -> None:
@@ -888,15 +924,17 @@ class GeminiConversationService:
         return []
 
     def _safe_next_prompt(self, profile: StructuredCaseProfile) -> str:
-        stated_unknown = set(profile.key_facts.get("stated_unknown_facts", []))
-        missing = [
-            field for field in (profile.missing_required_fields or profile.missing_document_fields)
-            if field not in stated_unknown
-        ]
-        if missing:
-            labels = ", ".join(field.replace("_", " ") for field in missing)
-            doc_label = profile.recommended_doc_label or "your legal document"
-            return f"To prepare {doc_label}, you can continue by sharing: {labels}."
+        if profile.key_facts.get("document_intake_active") and profile.missing_document_fields:
+            stated_unknown = set(profile.key_facts.get("stated_unknown_facts", []))
+            missing = [field for field in profile.missing_document_fields if field not in stated_unknown]
+            if missing:
+                labels = ", ".join(field.replace("_", " ") for field in missing)
+                doc_label = profile.recommended_doc_label or "your legal document"
+                return f"To prepare {doc_label}, you can continue by sharing: {labels}."
+        if not domain_registry.guidance_possible(profile):
+            candidates = domain_registry.compact_context(profile, max_candidates=1)["next_fact_candidates"]
+            if candidates:
+                return f"I kept your case progress. You can continue by sharing {candidates[0]['meaning']}."
         return f"I kept your case progress. Please try the {self._provider_title} response again in a moment."
 
     def _recent_history(self, messages: Iterable[ChatMessage]) -> list[dict[str, str]]:

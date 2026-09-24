@@ -18,7 +18,7 @@ class IssueClassification(BaseModel):
 
 
 class ExtractedCaseFacts(BaseModel):
-    """Closed schema: Gemini cannot introduce arbitrary persisted fields."""
+    """Closed schema: providers cannot introduce arbitrary persisted fields."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -38,8 +38,17 @@ class ExtractedCaseFacts(BaseModel):
     payment_transaction_id: Optional[str] = None
     shipment_tracking_id: Optional[str] = None
     bank_name: Optional[str] = None
+    scam_method: Optional[str] = None
     police_station_name: Optional[str] = None
+    police_contacted: Optional[bool] = None
+    threat_details: Optional[str] = None
+    evidence_available: Optional[bool] = None
+    issue_description: Optional[str] = None
     product_name: Optional[str] = None
+    seller_platform: Optional[str] = None
+    purchase_timing: Optional[str] = None
+    advance_payment_made: Optional[bool] = None
+    desired_outcome: Optional[str] = None
     employee_role: Optional[str] = None
     rental_agreement_available: Optional[bool] = None
     deposit_payment_proof_available: Optional[bool] = None
@@ -47,6 +56,7 @@ class ExtractedCaseFacts(BaseModel):
     landlord_reason: Optional[str] = None
     invoice_available: Optional[bool] = None
     seller_contacted: Optional[bool] = None
+    seller_response_received: Optional[bool] = None
     seller_response: Optional[str] = None
     hr_contacted: Optional[bool] = None
     employment_proof_available: Optional[bool] = None
@@ -79,6 +89,7 @@ class CaseExtraction(BaseModel):
     language_style: Literal["english", "hindi", "hinglish", "other"] = "english"
     classification: IssueClassification
     facts: ExtractedCaseFacts = Field(default_factory=ExtractedCaseFacts)
+    unavailable_facts: List[str] = Field(default_factory=list)
     confidence_by_field: List[FieldConfidence] = Field(default_factory=list)
     actions_detected: List[DetectedAction] = Field(default_factory=list)
     evidence_detected: List[EvidenceId] = Field(default_factory=list)

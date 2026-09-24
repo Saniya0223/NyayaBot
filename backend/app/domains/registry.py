@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from typing import Any, Optional
 
 from app.domains.compatibility import CATEGORY_ALIASES, read_profile_fact
-from app.domains.contracts import DomainDefinition, FactDefinition, FactState, fact_state
+from app.domains.contracts import DomainDefinition, FactDefinition, FactPurpose, FactState, fact_state
 
 
 class DomainRegistryError(ValueError):
@@ -71,6 +71,11 @@ class DomainRegistry:
             return "GENERAL"
         return min(matches, key=lambda item: item.fallback_priority).id
 
+    @staticmethod
+    def _fact_is_known(profile: Any, definition: FactDefinition) -> bool:
+        present, value = read_profile_fact(profile, definition.key, definition.aliases)
+        return fact_state(value, present=present, definition=definition) != FactState.UNKNOWN
+
     def unresolved_facts(
         self,
         profile: Any,
@@ -83,27 +88,65 @@ class DomainRegistry:
         for definition in domain.ordered_facts(getattr(profile, "issue_type", None), include_document=include_document):
             if required_only and not definition.required_for_understanding:
                 continue
-            present, value = read_profile_fact(profile, definition.key, definition.aliases)
-            if fact_state(value, present=present, definition=definition) == FactState.UNKNOWN:
+            if definition.ask_when_fact:
+                _, condition = read_profile_fact(profile, definition.ask_when_fact)
+                if condition is not definition.ask_when_value:
+                    continue
+            if not self._fact_is_known(profile, definition):
                 unresolved.append(definition)
         return tuple(unresolved)
 
+    def issue_understood(self, profile: Any) -> bool:
+        domain = self.resolve(getattr(profile, "category", None))
+        if domain.id == "GENERAL":
+            return False
+        context_keys = domain.minimum_context_any_of or tuple(
+            fact.key for fact in domain.ordered_facts(getattr(profile, "issue_type", None))
+            if fact.purpose == FactPurpose.CORE_CONTEXT
+        )
+        definitions = {fact.key: fact for fact in domain.facts}
+        return any(self._fact_is_known(profile, definitions[key]) for key in context_keys if key in definitions)
+
+    def guidance_possible(self, profile: Any) -> bool:
+        if not self.issue_understood(profile) or getattr(profile, "risk_level", "GREEN") == "RED":
+            return False
+        safety = getattr(profile, "safety_status", None) or {}
+        return not (
+            safety.get("immediate_danger") is True
+            or (safety.get("is_safety_case") and not safety.get("triage_complete"))
+        )
+
     def compact_context(self, profile: Any, *, max_candidates: int = 4) -> dict[str, Any]:
         domain = self.resolve(getattr(profile, "category", None))
-        missing = self.unresolved_facts(profile)[:max_candidates]
+        definitions = {fact.key: fact for fact in domain.facts}
+        candidates = []
+        unavailable = set((getattr(profile, "key_facts", {}) or {}).get("unavailable_fact_keys") or ())
+        for fact in self.unresolved_facts(profile, required_only=False):
+            if fact.key in unavailable:
+                continue
+            if fact.purpose in {FactPurpose.ADMINISTRATIVE_IDENTIFIER, FactPurpose.DOCUMENT_ONLY}:
+                continue
+            if any(self._fact_is_known(profile, definitions[key]) for key in fact.conversation_alternatives):
+                continue
+            candidates.append(fact)
+            if len(candidates) == max_candidates:
+                break
         return {
             "domain_id": domain.id,
             "display_name": domain.display_name,
             "issue_type_id": domain.normalize_issue_type(getattr(profile, "issue_type", None)),
             "workflow_binding": domain.workflow_binding,
+            "issue_understood": self.issue_understood(profile),
+            "guidance_possible": self.guidance_possible(profile),
             "next_fact_candidates": [
                 {
                     "key": fact.key,
                     "meaning": fact.meaning,
+                    "purpose": fact.purpose.value,
                     "priority_reason": fact.priority.name,
                     "stage": fact.stage.name,
                 }
-                for fact in missing
+                for fact in candidates
             ],
             "jurisdiction": {
                 "requirement": domain.jurisdiction.requirement.value,

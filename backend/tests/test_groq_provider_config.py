@@ -10,7 +10,9 @@ from app.llm.contracts import (
     LLMResponseContext,
 )
 from app.llm.gemini_provider import CHAT_SYSTEM_PROMPT as GEMINI_CHAT_SYSTEM_PROMPT
+from app.llm.gemini_provider import EXTRACTION_SYSTEM_PROMPT as GEMINI_EXTRACTION_SYSTEM_PROMPT
 from app.llm.groq_provider import CHAT_SYSTEM_PROMPT as GROQ_CHAT_SYSTEM_PROMPT, GroqProvider
+from app.llm.groq_provider import EXTRACTION_SYSTEM_PROMPT as GROQ_EXTRACTION_SYSTEM_PROMPT
 
 
 def test_chat_prompt_has_consistent_professional_emoji_rules():
@@ -22,6 +24,17 @@ In urgent or safety situations, use clear plain language rather than decorative 
 
     assert GROQ_CHAT_SYSTEM_PROMPT == GEMINI_CHAT_SYSTEM_PROMPT
     assert expected_rule in GROQ_CHAT_SYSTEM_PROMPT
+
+
+def test_both_provider_prompts_use_domain_candidates_for_conversational_questions():
+    assert GROQ_CHAT_SYSTEM_PROMPT == GEMINI_CHAT_SYSTEM_PROMPT
+    assert GROQ_EXTRACTION_SYSTEM_PROMPT == GEMINI_EXTRACTION_SYSTEM_PROMPT
+    assert "domain_context.next_fact_candidates is the only ranked source" in GROQ_CHAT_SYSTEM_PROMPT
+    assert "Do not select ordinary questions from missing_information" in GROQ_CHAT_SYSTEM_PROMPT
+    assert 'from "missing_information"' not in GROQ_CHAT_SYSTEM_PROMPT
+    assert "offer useful preliminary guidance even if readiness is UNDERSTANDING_CASE" in GROQ_CHAT_SYSTEM_PROMPT
+    assert "seller_response_received=false" in GROQ_EXTRACTION_SYSTEM_PROMPT
+    assert "unavailable_facts" in GROQ_EXTRACTION_SYSTEM_PROMPT
 
 
 def test_groq_status_unconfigured():
