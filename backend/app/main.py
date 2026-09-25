@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.auth import get_current_user
 from app.auth_routes import router as auth_router
 from app.profile_routes import router as profile_router
+from app.browser_routes import router as browser_router
 from app.agents.conversation_agent import conversational_agent
 from app.agents.intake_node import IntakeFactExtractor
 from app.agents.orchestrator import legal_orchestrator
@@ -95,6 +96,7 @@ app.add_middleware(
 )
 app.include_router(auth_router)
 app.include_router(profile_router)
+app.include_router(browser_router)
 
 
 @app.middleware("http")

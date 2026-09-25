@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ArrowRight, BookOpen, ChevronDown, FileText, FolderOpen, ListChecks, Scale, Sparkles, X } from 'lucide-react';
+import { ArrowRight, BookOpen, ChevronDown, FileText, FolderOpen, Globe, ListChecks, Scale, Sparkles, X } from 'lucide-react';
 import { absoluteDocumentUrl, generateCaseSummary, StructuredCaseProfile } from '@/lib/api';
 import { canGenerateSummary, caseTypeLabel, journeyEvents, keyFacts, suggestedActions } from '@/lib/caseWorkspace';
 import { helpLevelLabels } from '@/lib/professionalHelp';
+import BrowserAgentPanel from './BrowserAgentPanel';
 
 interface Props {
   profile: StructuredCaseProfile | null;
@@ -28,6 +29,7 @@ function CaseWorkspaceContent({ profile, onTriggerDocumentModal }: Props) {
   const [summaryText, setSummaryText] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [browserPanelOpen, setBrowserPanelOpen] = useState(false);
 
   useEffect(() => {
     if (!documentsOpen && !summaryOpen) return;
@@ -140,6 +142,31 @@ function CaseWorkspaceContent({ profile, onTriggerDocumentModal }: Props) {
 
       <section className="mt-4 border-t border-[#e7ede9] pt-4" aria-label="AI case summary"><button type="button" onClick={openSummary} disabled={!profile || !canGenerateSummary(profile) || summaryLoading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#174e3b] px-3 py-2.5 text-xs font-bold text-white transition hover:bg-[#103c2d] disabled:cursor-not-allowed disabled:bg-[#c6d2cb]"><Sparkles className="size-4" />{summaryText ? 'View AI Summary' : 'Generate AI Summary'}</button>{!profile || !canGenerateSummary(profile) ? <p className="mt-1.5 text-center text-[10px] text-[#87938d]">Available after some case facts are recorded.</p> : null}</section>
 
+      {profile?.case_id ? (
+        <section className="mt-3" aria-label="Auto-fill portal">
+          <button
+            id="browser-agent-open-btn"
+            type="button"
+            onClick={() => setBrowserPanelOpen(true)}
+            disabled={!profile.category || profile.category === 'GENERAL'}
+            title={
+              !profile.category || profile.category === 'GENERAL'
+                ? 'Available once NyayaBot identifies your case type — keep describing your situation.'
+                : 'Open the live government portal and auto-fill your case details'
+            }
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#2f755b] bg-[#edf5f0] px-3 py-2.5 text-xs font-bold text-[#174e3b] transition hover:bg-[#daeee5] disabled:cursor-not-allowed disabled:border-[#c6d2cb] disabled:bg-[#f2f6f3] disabled:text-[#a0ada8]"
+          >
+            <Globe className="size-4" />
+            Fill Govt Form Online (Auto)
+          </button>
+          <p className="mt-1 text-center text-[10px] text-[#87938d]">
+            {!profile.category || profile.category === 'GENERAL'
+              ? 'Available after case type is identified.'
+              : 'Agent fills the form, you review & approve before anything is submitted.'}
+          </p>
+        </section>
+      ) : null}
+
       {documentsOpen ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#10261b]/50 p-4" role="presentation" onClick={() => setDocumentsOpen(false)}>
         <div role="dialog" aria-modal="true" aria-labelledby="case-documents-title" onClick={(event) => event.stopPropagation()} className="soft-scrollbar max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl sm:p-6">
           <div className="flex items-center justify-between gap-3"><h2 id="case-documents-title" className="text-lg font-bold text-[#26362f]">Case documents ({documentCount})</h2><button type="button" onClick={() => setDocumentsOpen(false)} aria-label="Close documents" className="rounded-lg p-1 text-[#718078] hover:bg-[#f1f5f2]"><X className="size-5" /></button></div>
@@ -149,6 +176,10 @@ function CaseWorkspaceContent({ profile, onTriggerDocumentModal }: Props) {
       </div> : null}
 
       {summaryOpen ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#10261b]/50 p-4" role="presentation" onClick={() => setSummaryOpen(false)}><div role="dialog" aria-modal="true" aria-labelledby="case-summary-title" onClick={(event) => event.stopPropagation()} className="soft-scrollbar max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl sm:p-6"><div className="flex items-start justify-between gap-4"><div><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#2f755b]">On-demand brief</p><h2 id="case-summary-title" className="mt-1 text-lg font-bold text-[#26362f]">AI Case Summary</h2></div><button type="button" onClick={() => setSummaryOpen(false)} aria-label="Close summary" className="rounded-lg p-1 text-[#718078] hover:bg-[#f1f5f2]"><X className="size-5" /></button></div>{summaryLoading ? <p className="mt-5 text-sm text-[#718078]">Preparing your case brief…</p> : null}{summaryError ? <div className="mt-5"><p role="alert" className="text-sm text-[#a33f32]">{summaryError}</p><button type="button" onClick={openSummary} className="mt-3 text-xs font-bold text-[#2f755b] hover:underline">Try again</button></div> : null}{summaryText ? <div className="mt-5 whitespace-pre-wrap text-sm leading-6 text-[#34443c]">{summaryText}</div> : null}<p className="mt-5 border-t border-[#e7ede9] pt-3 text-[10px] text-[#87938d]">This overview uses recorded case information and is not legal representation. Verify important legal steps with an appropriate professional or authority.</p></div></div> : null}
+
+      {browserPanelOpen && profile?.case_id ? (
+        <BrowserAgentPanel caseId={profile.case_id} onClose={() => setBrowserPanelOpen(false)} />
+      ) : null}
     </aside>
   );
 }
