@@ -47,6 +47,10 @@ from app.services.document_registry import DOCUMENT_DEFINITIONS, select_document
 from app.services.document_generation import assess_document_generation, resolve_requested_document
 from app.services.professional_help import SIGNAL_FACT_KEYS, asks_about_legal_help, evaluate_professional_help
 from app.schemas.professional_help import ProfessionalHelpLevel
+from app.services.pending_interaction import (
+    PendingResolution, document_offer, fact_candidate, is_bare_confirmation,
+    resolve_reply, valid_for_case,
+)
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -137,6 +141,8 @@ class GeminiConversationService:
         style = LanguageScript(safety.language_style, safety.script_style)
 
         if self._safety_route_required(safety, existing_profile):
+            if existing_profile:
+                existing_profile.pending_interaction = None
             return self._process_safety_turn(req, existing_profile, safety, style)
 
         if (existing_profile and existing_profile.document_request
@@ -153,6 +159,8 @@ class GeminiConversationService:
         pending_document_request = bool(existing_profile and existing_profile.document_request and existing_profile.document_request.get("status") == "SAFETY_PAUSED")
         previous_help_level = existing_profile.professional_help.level if existing_profile and existing_profile.professional_help else None
         if not self.provider.status.configured:
+            if existing_profile:
+                existing_profile.pending_interaction = None
             fallback = self.workflow_agent.process_turn(req, existing_profile)
             fallback.case_profile.language_style = style.language
             fallback.case_profile.script_style = style.script
@@ -182,6 +190,14 @@ class GeminiConversationService:
             return self._tag_response(fallback, "limited_demo")
 
         profile = existing_profile
+        pending = profile.pending_interaction if profile else None
+        if profile and pending and (
+            not valid_for_case(pending, profile)
+            or (req.case_id not in {None, "new", "default-new", profile.case_id})
+        ):
+            profile.pending_interaction = None
+            pending = None
+        resolution = resolve_reply(pending, req.message) if pending else PendingResolution()
 
         try:
             if profile and (
@@ -197,6 +213,7 @@ class GeminiConversationService:
                     user_message=req.message,
                     recent_messages=history,
                     case_summary=self._compact_case(profile) if profile else None,
+                    pending_interaction=pending,
                     language_style=style.language,
                     script_style=style.script,
                     domain_catalog=domain_registry.extraction_catalog(),
@@ -216,12 +233,51 @@ class GeminiConversationService:
             profile.language_style = style.language
             profile.script_style = style.script
 
+            # A short answer is meaningful only against its validated case-scoped
+            # referent. The same extraction call still handles any other facts.
+            if is_bare_confirmation(req.message):
+                # An elliptical reply supplies no standalone facts. Preserve only
+                # the validated referent, if one exists; never trust extra fields
+                # or action/document guesses from a bare confirmation.
+                anchored = resolution.values if pending and resolution.status == "RESOLVED" else {}
+                extraction.facts = extraction.facts.__class__.model_validate(anchored)
+                extraction.confidence_by_field = []
+                extraction.actions_detected = []
+                extraction.evidence_detected = []
+                extraction.document_request = None
+            elif pending and resolution.status == "RESOLVED" and resolution.values:
+                facts = extraction.facts.model_dump(exclude_none=True)
+                facts.update(resolution.values)
+                extraction.facts = extraction.facts.__class__.model_validate(facts)
+                extraction.confidence_by_field = [
+                    item for item in extraction.confidence_by_field
+                    if item.field not in resolution.values
+                ]
+            elif pending and resolution.status == "AMBIGUOUS":
+                facts = extraction.facts.model_dump(exclude_none=True)
+                for key in pending.target_keys:
+                    facts.pop(key, None)
+                extraction.facts = extraction.facts.__class__.model_validate(facts)
+                extraction.document_request = None
+
             conflict = self._apply_extraction(profile, extraction)
             self._apply_actions(profile, extraction.actions_detected)
             self.workflow_agent._mark_evidence(profile, extraction.evidence_detected)
             self.workflow_agent._assess_risk(req.message, profile)
             self._refresh_workflow(profile, safety, req.message)
             profile.professional_help = evaluate_professional_help(profile)
+            if pending and resolution.status == "RESOLVED":
+                profile.pending_interaction = None
+            elif pending and resolution.status == "UNRELATED":
+                extracted_facts = extraction.facts.model_dump(exclude_none=True)
+                target_answered = any(key in extracted_facts for key in pending.target_keys)
+                other_update = (
+                    any(key not in pending.target_keys for key in extracted_facts)
+                    or bool(extraction.actions_detected or extraction.evidence_detected or extraction.document_request)
+                    or (len(req.message.split()) >= 4 and extraction.classification.category != profile.category)
+                )
+                if target_answered or other_update or len(req.message.split()) > 4:
+                    profile.pending_interaction = None
             help_question = asks_about_legal_help(req.message)
             help_level = profile.professional_help.level
             help_should_surface = help_question or (
@@ -229,13 +285,20 @@ class GeminiConversationService:
                 and help_level != previous_help_level
             )
 
-            if not conflict and (self._is_document_handoff_request(req.message) or extraction.document_request or pending_document_request):
-                hint = extraction.document_request or (existing_profile.document_request.get("document_type") if pending_document_request else None)
+            if not conflict and (resolution.document_type or self._is_document_handoff_request(req.message) or extraction.document_request or pending_document_request):
+                hint = resolution.document_type or extraction.document_request or (existing_profile.document_request.get("document_type") if pending_document_request else None)
+                profile.pending_interaction = None
                 self.workflow_agent._touch(profile)
                 return self._tag_response(self._document_request_response(profile, req.message, style, hint=hint), self._provider_mode)
 
             workflow_state = self._workflow_summary(profile)
             legal_sources = self._verified_sources(profile, req.message, workflow_state)
+            domain_context = domain_registry.compact_context(profile)
+            # Expose at most one ordinary follow-up target to the model. This
+            # makes the backend's pending referent match the question it asks.
+            domain_context["next_fact_candidates"] = domain_context["next_fact_candidates"][:1]
+            if resolution.status == "AMBIGUOUS":
+                domain_context["next_fact_candidates"] = []
             # The workspace reuses citations already selected for this answer.
             # Generic domain source links are not case-specific provisions.
             profile.legal_sources = [
@@ -270,13 +333,42 @@ class GeminiConversationService:
                     conflict=conflict,
                     safety=safety.to_dict() if safety.is_safety_case else None,
                     readiness=profile.readiness,
-                    domain_context=domain_registry.compact_context(profile),
+                    domain_context=domain_context,
                     professional_help=profile.professional_help,
                     professional_help_should_surface=help_should_surface,
                     professional_help_question=help_question,
                     user_context=user_context or {},
+                    pending_resolution=(
+                        {"status": resolution.status, "target_keys": pending.target_keys,
+                         "allowed_choices": pending.allowed_choices}
+                        if pending and resolution.status != "UNRELATED" else None
+                    ),
                 )
             )
+            if resolution.status != "AMBIGUOUS":
+                offer = document_offer(profile)
+                doc_label = profile.recommended_doc_label or ""
+                declined_offer = bool(
+                    pending and pending.type == "DOCUMENT_CONFIRMATION"
+                    and resolution.status == "RESOLVED" and not resolution.document_type
+                )
+                # The UI exposes the supported PREPARE_DOC action. If the reply
+                # asks a question, distinguish an explicit document offer from
+                # an ordinary fact question, without deriving the document ID
+                # from model prose.
+                document_question = bool(re.search(
+                    r"\b(?:prepare|draft|create|make)\b.*\b(?:notice|letter|complaint|document)\b",
+                    reply.casefold(),
+                ))
+                if offer and not declined_offer and (
+                    "?" not in reply or (doc_label and doc_label.casefold() in reply.casefold())
+                    or document_question
+                ):
+                    profile.pending_interaction = offer
+                elif "?" in reply and domain_context["next_fact_candidates"]:
+                    profile.pending_interaction = fact_candidate(profile, domain_context["next_fact_candidates"][0])
+                else:
+                    profile.pending_interaction = None
             self.workflow_agent._touch(profile)
             suggested_action = profile.recommended_next_action
             response = ChatTurnResponse(

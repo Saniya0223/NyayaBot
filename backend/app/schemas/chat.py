@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from pydantic import BaseModel, Field
 from app.schemas.professional_help import ProfessionalHelpAssessment
 
@@ -45,6 +45,20 @@ class LegalStageMilestone(BaseModel):
     description: str
     status: str  # "COMPLETED" | "CURRENT" | "FUTURE"
     is_current: bool = False
+
+
+class PendingInteraction(BaseModel):
+    """One case-scoped conversational referent, never a saved fact or action."""
+
+    type: Literal[
+        "FACT_CONFIRMATION", "EVIDENCE_CONFIRMATION", "ACTION_CONFIRMATION",
+        "DOCUMENT_CONFIRMATION", "CHOICE", "CLARIFICATION",
+    ]
+    target_keys: List[str] = Field(min_length=1, max_length=2)
+    expected_answer_type: Literal["boolean", "choice", "document", "text"]
+    case_id: str
+    allowed_choices: List[str] = Field(default_factory=list)
+    source: Optional[str] = None
 
 class StructuredCaseProfile(BaseModel):
     case_id: str
@@ -104,6 +118,7 @@ class StructuredCaseProfile(BaseModel):
     missing_required_fields: List[str] = Field(default_factory=list)
     missing_document_fields: List[str] = Field(default_factory=list)
     document_request: Optional[Dict[str, Any]] = None
+    pending_interaction: Optional[PendingInteraction] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 

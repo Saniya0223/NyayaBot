@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.domains.contracts import ActionId, DomainId, EvidenceId
 from app.schemas.professional_help import ProfessionalHelpAssessment
+from app.schemas.chat import PendingInteraction
 
 
 CaseCategory = DomainId
@@ -138,6 +139,7 @@ class LLMExtractionContext(BaseModel):
     user_message: str
     recent_messages: List[Dict[str, str]] = Field(default_factory=list)
     case_summary: Optional[Dict[str, Any]] = None
+    pending_interaction: Optional[PendingInteraction] = None
     language_style: str = "english"
     script_style: str = "roman"
     domain_catalog: List[Dict[str, Any]] = Field(default_factory=list)
@@ -164,6 +166,7 @@ class LLMResponseContext(BaseModel):
     professional_help_should_surface: bool = False
     professional_help_question: bool = False
     user_context: Dict[str, Any] = Field(default_factory=dict)
+    pending_resolution: Optional[Dict[str, Any]] = None
 
 
 class ProviderStatus(BaseModel):
