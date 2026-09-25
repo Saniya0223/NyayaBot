@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
@@ -63,6 +63,7 @@ def delete_memory(memory_id: str, db: Session = Depends(get_db),
 
 @router.get("/case-history", response_model=list[CaseHistoryItem])
 def list_case_history(response: Response, db: Session = Depends(get_db),
-                      user: UserModel = Depends(get_current_user)):
+                      user: UserModel = Depends(get_current_user),
+                      category: str | None = Query(default=None, max_length=50)):
     response.headers["Cache-Control"] = "no-store"
-    return case_history(db, user.id)
+    return case_history(db, user.id, category=category)

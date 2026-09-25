@@ -59,11 +59,11 @@ def test_case_history_stays_owned_and_chat_context_is_selective():
         assert any(item['title'] == 'Salary matter' for item in history)
         assert all(item['title'] != 'Private dispute' for item in history)
         ordinary = chat_user_context(db, owner, 'Hello', None)
-        assert 'previous_cases' not in ordinary
-        assert 'profile' not in ordinary
-        assert 'saved_information' not in ordinary
+        assert 'previous_case_context' not in ordinary
+        assert 'profile_context' not in ordinary
+        assert 'saved_memory_context' not in ordinary
         assert 'mobility aid' in str(chat_user_context(db, owner, 'Does my mobility aid affect work?', None))
-        assert chat_user_context(db, owner, 'What is my name?', None)['profile']['full_name'] == 'historyalice User'
+        assert chat_user_context(db, owner, 'What is my name?', None)['profile_context']['full_name'] == 'historyalice User'
         assert 'Private dispute' not in str(chat_user_context(db, owner, 'Tell me about my previous case', None))
         assert 'Salary matter' in str(chat_user_context(db, owner, 'Tell me about my previous case', None))
     finally:

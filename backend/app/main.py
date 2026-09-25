@@ -63,7 +63,7 @@ from app.services.dossier_generator import DossierGenerator
 from app.services.upload_intelligence import extract_upload_text, validate_upload
 from app.services.llm_conversation import gemini_conversation_service
 from app.services.case_summary import generate_case_summary, summary_fingerprint, summary_ready
-from app.services.user_context import chat_user_context, explicit_memory_text
+from app.services.user_context import CASE_HISTORY_LOOKUP, case_history_lookup_reply, chat_user_context, explicit_memory_text
 from app.llm.contracts import LLMProviderError
 
 
@@ -766,6 +766,8 @@ async def handle_chat_message(
     recent_messages = _messages_for_session(record) if record else []
     user_context = chat_user_context(db, current_user, req.message, req.case_id)
     response = await gemini_conversation_service.process_turn(req, existing_profile, recent_messages, user_context=user_context)
+    if user_context["intent"] == CASE_HISTORY_LOOKUP:
+        response.reply_text = case_history_lookup_reply(user_context, response.case_profile.language_style)
     memory_text = explicit_memory_text(req.message)
     if memory_text and not (response.case_profile.safety_status or {}).get("is_safety_case"):
         if db.query(UserMemoryModel).filter(UserMemoryModel.user_id == current_user.id).count() < 50:

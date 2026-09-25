@@ -252,8 +252,16 @@ class GeminiConversationService:
             reply = await self.provider.chat(
                 LLMResponseContext(
                     user_message=req.message,
-                    recent_messages=history,
-                    case_summary=self._compact_case(profile),
+                    # A durable-memory/history answer must not mistake recent
+                    # conversational text for a saved memory or prior case.
+                    recent_messages=([] if (user_context or {}).get("intent") in {
+                        "MEMORY_RECALL", "CASE_HISTORY_LOOKUP"
+                    } else history),
+                    case_summary=(
+                        self._current_case_reference(profile)
+                        if (user_context or {}).get("intent") in {"MEMORY_RECALL", "CASE_HISTORY_LOOKUP"}
+                        else self._compact_case(profile)
+                    ),
                     workflow=workflow_state,
                     missing_information=missing_for_response,
                     legal_sources=legal_sources,
@@ -1008,6 +1016,16 @@ class GeminiConversationService:
             "missing_document_fields": profile.missing_document_fields,
             "document_request": profile.document_request,
             "document_intake_active": bool(profile.key_facts.get("document_intake_active")),
+        }
+
+    @staticmethod
+    def _current_case_reference(profile: StructuredCaseProfile) -> dict[str, Any]:
+        """A memory question needs case identity, not full current-case facts."""
+        return {
+            "case_id": profile.case_id,
+            "title": profile.title,
+            "category": profile.category,
+            "current_stage": {"key": profile.current_stage_key, "label": profile.current_stage_label},
         }
 
     @staticmethod
