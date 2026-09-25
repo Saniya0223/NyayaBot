@@ -12,6 +12,8 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.professional_help import ProfessionalHelpPolicy
+
 
 DomainId = Literal[
     "CONSUMER", "EMPLOYMENT", "HOUSING_TENANT", "CYBER_FRAUD",
@@ -263,6 +265,7 @@ class DomainDefinition(BaseModel):
     rag: RagRoutingPolicy = RagRoutingPolicy()
     jurisdiction: JurisdictionPolicy
     safety: SafetyIntegration = SafetyIntegration()
+    professional_help: ProfessionalHelpPolicy = ProfessionalHelpPolicy()
 
     @model_validator(mode="after")
     def validate_definition(self) -> "DomainDefinition":

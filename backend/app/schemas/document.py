@@ -30,6 +30,23 @@ class DocumentDefinitionSchema(BaseModel):
     requires_professional_review: bool = False
     template_id: str
 
+class DocumentField(BaseModel):
+    key: str
+    label: str
+    required: bool
+    data_type: str = "text"
+    value: Any = None
+
+class DocumentAssessment(BaseModel):
+    document_type: str
+    intent: str
+    status: str
+    ready_to_generate: bool
+    fields: List[DocumentField] = Field(default_factory=list)
+    missing_required_fields: List[str] = Field(default_factory=list)
+    missing_optional_fields: List[str] = Field(default_factory=list)
+    blockers: List[str] = Field(default_factory=list)
+
 class PortalDossierStep(BaseModel):
     step_number: int
     title: str

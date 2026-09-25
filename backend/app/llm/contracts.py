@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domains.contracts import ActionId, DomainId, EvidenceId
+from app.schemas.professional_help import ProfessionalHelpAssessment
 
 
 CaseCategory = DomainId
@@ -64,6 +65,29 @@ class ExtractedCaseFacts(BaseModel):
     cyber_reported: Optional[bool] = None
     police_approached: Optional[bool] = None
     written_complaint_available: Optional[bool] = None
+    # Explicit tri-state procedural/complexity facts; null means unknown.
+    formal_proceeding_started: Optional[bool] = None
+    court_notice_received: Optional[bool] = None
+    formal_legal_notice_received: Optional[bool] = None
+    criminal_allegation_against_user: Optional[bool] = None
+    arrest_or_police_risk: Optional[bool] = None
+    facts_materially_disputed: Optional[bool] = None
+    multiple_significant_parties: Optional[bool] = None
+    cross_jurisdiction_complexity: Optional[bool] = None
+    counterparty_represented: Optional[bool] = None
+    repeated_escalation_failed: Optional[bool] = None
+    seller_disputes_transaction: Optional[bool] = None
+    fraud_or_forgery_alleged: Optional[bool] = None
+    eviction_proceeding_started: Optional[bool] = None
+    possession_at_risk: Optional[bool] = None
+    ownership_dispute: Optional[bool] = None
+    termination_occurred: Optional[bool] = None
+    retaliation_alleged: Optional[bool] = None
+    complex_contract_dispute: Optional[bool] = None
+    identity_theft: Optional[bool] = None
+    account_freeze_complication: Optional[bool] = None
+    bank_claim_rejected: Optional[bool] = None
+    police_case_complication: Optional[bool] = None
 
 
 class DetectedAction(BaseModel):
@@ -95,6 +119,7 @@ class CaseExtraction(BaseModel):
     evidence_detected: List[EvidenceId] = Field(default_factory=list)
     clarification_needed: bool = False
     ambiguity_note: Optional[str] = None
+    document_request: Optional[str] = None  # Supported document ID, or null; backend validates.
 
 
 class DocumentAnalysis(BaseModel):
@@ -116,10 +141,12 @@ class LLMExtractionContext(BaseModel):
     language_style: str = "english"
     script_style: str = "roman"
     domain_catalog: List[Dict[str, Any]] = Field(default_factory=list)
+    document_catalog: List[Dict[str, str]] = Field(default_factory=list)
 
 
 class LLMResponseContext(BaseModel):
     user_message: str
+    response_mode: Literal["CHAT", "CASE_SUMMARY"] = "CHAT"
     recent_messages: List[Dict[str, str]] = Field(default_factory=list)
     case_summary: Dict[str, Any]
     workflow: Dict[str, Any]
@@ -133,6 +160,10 @@ class LLMResponseContext(BaseModel):
     safety: Optional[Dict[str, Any]] = None
     readiness: str = "UNDERSTANDING_CASE"
     domain_context: Dict[str, Any] = Field(default_factory=dict)
+    professional_help: Optional[ProfessionalHelpAssessment] = None
+    professional_help_should_surface: bool = False
+    professional_help_question: bool = False
+    user_context: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ProviderStatus(BaseModel):

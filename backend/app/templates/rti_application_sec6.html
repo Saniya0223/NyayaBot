@@ -37,11 +37,11 @@
   </tr>
   <tr>
     <td style="font-weight: bold;">2. Complete Postal Address:</td>
-    <td>{{ complainant.address or complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}</td>
+    <td>{{ complainant.address or complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}{% if complainant.pin_code %} - {{ complainant.pin_code }}{% endif %}</td>
   </tr>
   <tr>
     <td style="font-weight: bold;">3. Contact Details:</td>
-    <td>Phone: {{ complainant.phone or 'N/A' }} | Email: {{ complainant.email or 'N/A' }}</td>
+    <td>{% if complainant.phone %}Phone: {{ complainant.phone }}{% endif %}{% if complainant.phone and complainant.email %} | {% endif %}{% if complainant.email %}Email: {{ complainant.email }}{% endif %}</td>
   </tr>
   <tr>
     <td style="font-weight: bold;">4. Citizenship Status:</td>

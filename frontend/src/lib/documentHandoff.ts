@@ -1,6 +1,6 @@
 import type { StructuredCaseProfile } from './api';
 
-type DocumentAction = { type: string; doc_type?: string; label: string };
+type DocumentAction = { type: string; doc_type?: string; label: string; open_confirmation_modal?: boolean };
 
 type HandoffOptions = {
   isLLMActive: boolean;
@@ -22,6 +22,18 @@ export function routeDocumentAction(action: DocumentAction, options: HandoffOpti
     return;
   }
   options.openModal(action.doc_type || 'GENERAL_COMPLAINT_LETTER', action.label || 'Prepare document');
+}
+
+export function openEligibleDocumentHandoff(
+  action: DocumentAction | undefined,
+  recommendedDocType: string | undefined,
+  openModal: (docType: string, docLabel: string) => void,
+): boolean {
+  if (action?.type !== 'PREPARE_DOC' || !action.open_confirmation_modal) return false;
+  const docType = action.doc_type || recommendedDocType;
+  if (!docType) return false;
+  openModal(docType, action.label || 'Prepare document');
+  return true;
 }
 
 function knownText(profile: StructuredCaseProfile, key: string): string {

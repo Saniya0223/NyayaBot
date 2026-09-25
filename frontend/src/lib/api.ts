@@ -142,6 +142,24 @@ export interface DocumentResponse {
   created_at: string;
 }
 
+export interface DocumentAssessment {
+  document_type: string;
+  intent: string;
+  status: string;
+  ready_to_generate: boolean;
+  fields: Array<{ key: string; label: string; required: boolean; data_type: string; value: unknown }>;
+  missing_required_fields: string[];
+  missing_optional_fields: string[];
+  blockers: string[];
+}
+
+export async function fetchDocumentAssessment(case_id: string, doc_type: string): Promise<DocumentAssessment> {
+  const query = new URLSearchParams({ case_id, doc_type });
+  const res = await apiFetch(`${API_BASE_URL}/documents/assessment?${query}`);
+  if (!res.ok) throw new Error('Could not load document requirements. Please retry.');
+  return res.json();
+}
+
 export interface PortalDossierStep {
   step_number: number;
   title: string;
@@ -228,8 +246,7 @@ export async function generateDocument(
     const payload = await res.json().catch(() => null);
     const detail = payload?.detail;
     const message = typeof detail === 'string' ? detail : detail?.message;
-    const missing = Array.isArray(detail?.missing_fields) ? ` Missing: ${detail.missing_fields.join(', ')}.` : '';
-    throw new Error(`${message || 'Failed to generate legal document.'}${missing}`);
+    throw new Error(message || 'Failed to generate legal document. Review the required details and retry.');
   }
   return res.json();
 }
@@ -280,7 +297,7 @@ export interface StructuredCaseProfile {
   bank_name?: string;
   police_station_name?: string;
   key_facts: Record<string, unknown>;
-  fact_metadata?: Record<string, { value: unknown; source: string; confidence: number; confirmed: boolean }>;
+  fact_metadata?: Record<string, { value: unknown; source: string; confidence?: number; confirmed?: boolean }>;
   evidence_checklist: EvidenceStatusItem[];
   legal_journey: LegalStageMilestone[];
   actions_completed?: Array<{ type: string; date: string; label: string }>;
@@ -295,7 +312,39 @@ export interface StructuredCaseProfile {
     pdf_download_url?: string;
     docx_download_url?: string;
   }>;
-  recommended_next_action?: { type: string; doc_type?: string; label: string };
+  provided_documents?: Array<{
+    id: string;
+    name: string;
+    file_type?: string;
+    uploaded_at?: string;
+    download_url: string;
+  }>;
+  legal_sources?: Array<{
+    act: string;
+    section: string;
+    title: string;
+    description: string;
+    relevance_reason?: string;
+    source_url?: string;
+    source_authority?: string;
+    document_type?: string;
+  }>;
+  next_action_plan?: {
+    action_id: string;
+    label: string;
+    description: string;
+    status: 'READY' | 'BLOCKED' | 'COMPLETED' | 'NOT_APPLICABLE';
+    doc_type?: string;
+  } | null;
+  recommended_next_action?: { type: string; doc_type?: string; label: string; open_confirmation_modal?: boolean };
+  document_request?: {
+    intent: 'USER_REQUESTED';
+    document_type?: string;
+    status: string;
+    missing_required_fields?: string[];
+    missing_optional_fields?: string[];
+    optional_skipped?: boolean;
+  } | null;
   rights_summary?: {
     what_this_means: string;
     possible_rights: string[];
@@ -312,7 +361,17 @@ export interface StructuredCaseProfile {
   // document CTA on it so the UI never claims a case is further along.
   readiness?: 'PRE_INTAKE' | 'UNDERSTANDING_CASE' | 'READY_FOR_LEGAL_GUIDANCE' | 'READY_FOR_ACTION' | 'READY_FOR_DOCUMENT';
   intake_missing_facts?: string[];
-  safety_status?: { is_safety_case: boolean; severity: string; triage_question?: string; guidance?: string } | null;
+  safety_status?: { is_safety_case: boolean; severity: string; immediate_danger?: boolean | null; triage_question?: string; guidance?: string } | null;
+  professional_help?: {
+    level: 'SELF_HELP_REASONABLE' | 'CONSIDER_LEGAL_HELP' | 'LEGAL_HELP_RECOMMENDED' | 'URGENT_LEGAL_HELP';
+    reason_codes: string[];
+    professional_types: string[];
+    urgency: 'ROUTINE' | 'PROMPT';
+    reassess_on: string[];
+    relevant_known_signals: string[];
+    unknown_relevant_signals: string[];
+    assessment_version: string;
+  } | null;
   missing_required_fields: string[];
   missing_document_fields: string[];
   created_at?: string;
@@ -325,7 +384,7 @@ export interface ChatMessageItem {
   text: string;
   timestamp?: string;
   quick_replies?: string[];
-  suggested_action?: { type: string; doc_type?: string; label: string };
+  suggested_action?: { type: string; doc_type?: string; label: string; open_confirmation_modal?: boolean };
   extracted_badge?: string;
 }
 
@@ -333,7 +392,7 @@ export interface ChatTurnResponse {
   reply_text: string;
   case_profile: StructuredCaseProfile;
   quick_replies: string[];
-  suggested_action?: { type: string; doc_type?: string; label: string };
+  suggested_action?: { type: string; doc_type?: string; label: string; open_confirmation_modal?: boolean };
   message_id: string;
   llm_provider: string;
   llm_model?: string;
@@ -431,6 +490,14 @@ export async function fetchChatCases(): Promise<StructuredCaseProfile[]> {
 export async function fetchChatCase(caseId: string): Promise<ChatSessionResponse> {
   const res = await apiFetch(`${API_BASE_URL}/chat/cases/${caseId}`);
   if (!res.ok) throw new Error('Failed to reopen this case');
+  return res.json();
+}
+
+export interface CaseSummaryResponse { text: string; cached: boolean }
+
+export async function generateCaseSummary(caseId: string): Promise<CaseSummaryResponse> {
+  const res = await apiFetch(`${API_BASE_URL}/chat/cases/${encodeURIComponent(caseId)}/summary`, { method: 'POST' });
+  if (!res.ok) throw new ApiError(await apiErrorMessage(res, 'Could not generate the case summary.'), res.status);
   return res.json();
 }
 

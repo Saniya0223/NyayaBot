@@ -1,0 +1,47 @@
+export const helpLevelLabels: Record<string, string> = {
+  SELF_HELP_REASONABLE: 'Self-help is reasonable at this stage',
+  CONSIDER_LEGAL_HELP: 'Consider professional legal advice',
+  LEGAL_HELP_RECOMMENDED: 'Professional legal advice recommended',
+  URGENT_LEGAL_HELP: 'Seek prompt professional legal advice',
+};
+
+export const helpReasonLabels: Record<string, string> = {
+  CURRENT_INFORMATION_LIMITED: 'The current information is limited',
+  EARLY_STAGE: 'The matter is at an early stage',
+  STANDARD_SELF_HELP_AVAILABLE: 'Ordinary next steps remain available',
+  FORMAL_LEGAL_NOTICE_RECEIVED: 'A formal legal notice was received',
+  COURT_OR_TRIBUNAL_NOTICE_RECEIVED: 'A court or tribunal communication was received',
+  FORMAL_PROCEEDING_STARTED: 'Formal proceedings have begun',
+  CRIMINAL_ALLEGATION: 'A criminal allegation involves you',
+  ARREST_OR_POLICE_RISK: 'An arrest or police risk was reported',
+  COMPLEX_FACTUAL_DISPUTE: 'Important facts are disputed',
+  MULTIPLE_PARTIES: 'Several significant parties are involved',
+  CROSS_JURISDICTION_COMPLEXITY: 'The matter crosses jurisdictions',
+  COUNTERPARTY_REPRESENTED: 'The other party has legal representation',
+  GRIEVANCE_FAILED: 'An earlier grievance was rejected',
+  REPEATED_ESCALATION_FAILED: 'Repeated attempts to resolve the matter failed',
+  SELLER_DISPUTES_TRANSACTION: 'The seller disputes the transaction',
+  FRAUD_OR_FORGERY_ALLEGED: 'Fraud or forgery is alleged',
+  EVICTION_PROCEEDING_STARTED: 'An eviction proceeding has begun',
+  PROPERTY_POSSESSION_AT_RISK: 'Possession of the property is at risk',
+  OWNERSHIP_DISPUTE: 'Ownership is disputed',
+  TERMINATION_OCCURRED: 'Employment was terminated',
+  RETALIATION_ALLEGED: 'Retaliation is alleged',
+  COMPLEX_CONTRACT_DISPUTE: 'A complex contract issue is involved',
+  IDENTITY_THEFT: 'Identity theft is involved',
+  ACCOUNT_FREEZE_COMPLICATION: 'There is an account-freeze complication',
+  BANK_CLAIM_REJECTED: 'The bank rejected the claim',
+  POLICE_CASE_COMPLICATION: 'There is a police-case complication',
+};
+
+export const helpTriggerLabels: Record<string, string> = {
+  FORMAL_NOTICE_RECEIVED: 'a formal notice arrives',
+  FORMAL_PROCEEDING_STARTED: 'formal proceedings begin',
+  GRIEVANCE_FAILED: 'the grievance fails',
+  BANK_REJECTED_CLAIM: 'the bank rejects the claim',
+  EVICTION_PROCEEDING_STARTED: 'an eviction proceeding begins',
+  TERMINATION_OCCURRED: 'employment is terminated',
+  COUNTERPARTY_LAWYER_INVOLVED: 'the other party gets legal representation',
+  VERIFIED_DEADLINE_IDENTIFIED: 'an important deadline is verified',
+  CASE_FACTS_BECAME_DISPUTED: 'key facts become disputed',
+};

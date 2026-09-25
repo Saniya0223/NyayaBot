@@ -32,8 +32,8 @@
 <div class="to-box">
   <strong>FROM:</strong><br>
   <strong>{{ complainant.name }}{% if tenant_status %} ({{ tenant_status }}){% elif is_former_tenant %} (Former Tenant){% else %} (Tenant){% endif %}</strong><br>
-  {{ complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}<br>
-  Phone: {{ complainant.phone or 'N/A' }}{% if complainant.email %} | Email: {{ complainant.email }}{% endif %}
+  {{ complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}{% if complainant.pin_code %} - {{ complainant.pin_code }}{% endif %}<br>
+  {% if complainant.phone %}Phone: {{ complainant.phone }}{% endif %}{% if complainant.phone and complainant.email %} | {% endif %}{% if complainant.email %}Email: {{ complainant.email }}{% endif %}
 </div>
 
 <div style="font-weight: bold; text-decoration: underline; margin: 15px 0;">
@@ -53,6 +53,8 @@
 <div class="numbered-para">
   3. <strong>STATEMENT OF GRIEVANCE:</strong> {{ incident_narrative }}{% if legal_grounds %}<br><strong>LEGAL GROUNDS:</strong> {{ legal_grounds }}{% endif %}
 </div>
+{% if agreement_date %}<p><strong>Agreement date:</strong> {{ agreement_date }}</p>{% endif %}
+{% if previous_requests %}<p><strong>Previous requests:</strong> {{ previous_requests }}</p>{% endif %}
 
 <div class="demand-box">
   <strong>DEMAND FOR REFUND:</strong><br>

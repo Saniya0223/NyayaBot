@@ -111,6 +111,80 @@ def test_chat_case_is_persisted_and_retrievable():
     assert all(not item["case_id"].startswith("demo-") for item in cases.json())
 
 
+def test_case_summary_is_on_demand_cached_and_owner_only(monkeypatch):
+    from types import SimpleNamespace
+    from app import main as main_module
+
+    owner = authenticated_client("SummaryOwner")
+    other = authenticated_client("SummaryOther")
+    started = owner.post("/api/v1/chat/message", json={
+        "message": "I paid Rs 25,000 for a defective phone from Example Seller."
+    })
+    assert started.status_code == 200
+    case_id = started.json()["case_profile"]["case_id"]
+
+    class FakeProvider:
+        def __init__(self):
+            self.status = SimpleNamespace(configured=True)
+            self.calls = 0
+
+        async def chat(self, context):
+            self.calls += 1
+            assert context.case_summary["category"] == "CONSUMER"
+            return "Situation\nThe user reported a phone dispute."
+
+    provider = FakeProvider()
+    monkeypatch.setattr(main_module, "get_llm_provider", lambda: provider)
+    assert provider.calls == 0
+    assert other.post(f"/api/v1/chat/cases/{case_id}/summary").status_code == 404
+    first = owner.post(f"/api/v1/chat/cases/{case_id}/summary")
+    assert first.status_code == 200, first.text
+    assert first.json()["cached"] is False
+    second = owner.post(f"/api/v1/chat/cases/{case_id}/summary")
+    assert second.status_code == 200
+    assert second.json()["cached"] is True
+    assert provider.calls == 1
+
+
+def test_explicit_salary_document_generates_from_understanding_case_with_optional_skipped():
+    auth_client = authenticated_client("ExplicitSalary")
+    started = auth_client.post("/api/v1/chat/message", json={"message": "My employer has not paid my salary for four months."})
+    assert started.status_code == 200
+    case_id = started.json()["case_profile"]["case_id"]
+    assert started.json()["case_profile"]["recommended_doc_type"] is None
+
+    requested = auth_client.post("/api/v1/chat/message", json={"case_id": case_id, "message": "create salary notice pdf"})
+    assert requested.status_code == 200
+    body = requested.json()
+    assert body["case_profile"]["readiness"] == "UNDERSTANDING_CASE"
+    assert body["case_profile"]["recommended_doc_type"] is None
+    assert body["suggested_action"]["type"] == "PREPARE_DOC"
+    assert body["suggested_action"]["intent"] == "USER_REQUESTED"
+    assert body["suggested_action"]["open_confirmation_modal"] is True
+    assert body["case_profile"]["documents"] == []
+    assert "queued" not in body["reply_text"].lower()
+
+    assessment = auth_client.get("/api/v1/documents/assessment", params={"case_id": case_id, "doc_type": "SALARY_DEMAND_NOTICE"})
+    assert assessment.status_code == 200
+    assert "employee_role" in assessment.json()["missing_optional_fields"]
+    assert not assessment.json()["ready_to_generate"]
+
+    created = auth_client.post("/api/v1/documents/generate", json={
+        "case_id": case_id, "doc_type": "SALARY_DEMAND_NOTICE",
+        "override_data": {
+            "complainant_name": "Example Employee", "opposite_party_name": "Example Employer",
+            "complainant_city": "Jaipur", "disputed_amount": 400000,
+        },
+    })
+    assert created.status_code == 200, created.text
+    assert "N/A" not in created.json()["content_html"]
+    assert auth_client.get(created.json()["pdf_download_url"]).content.startswith(b"%PDF")
+    assert auth_client.get(created.json()["docx_download_url"]).content.startswith(b"PK")
+    assert auth_client.post("/api/v1/documents/generate", json={
+        "case_id": case_id, "doc_type": "UNSUPPORTED_CONTRACT", "override_data": {},
+    }).status_code == 422
+
+
 def test_real_evidence_upload_extracts_candidates_and_requires_confirmation():
     auth_client = authenticated_client("Evidence")
     started = auth_client.post(
@@ -135,6 +209,8 @@ def test_real_evidence_upload_extracts_candidates_and_requires_confirmation():
     assert candidates["disputed_amount"] == 50000
     assert upload_profile["user_name"] is None
     assert any(item["id"] == "rental_agreement" and item["is_available"] for item in upload_profile["evidence_checklist"])
+    assert any(item["name"] == "rental-agreement.txt" for item in upload_profile["provided_documents"])
+    assert any(item["name"] == "rental-agreement.txt" for item in auth_client.get(f"/api/v1/chat/cases/{case_id}").json()["case_profile"]["provided_documents"])
 
     confirmed = auth_client.post(
         "/api/v1/chat/message",

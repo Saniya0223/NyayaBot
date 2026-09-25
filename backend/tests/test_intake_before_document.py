@@ -9,7 +9,9 @@ user was in danger, what happened, or when.
 import pytest
 
 from app.agents.conversation_agent import conversational_agent
+from app.config import settings
 from app.schemas.chat import ChatTurnRequest
+from app.schemas.fact_graph import FactGraphSchema, FinancialBreakdown, PartyInfo
 from app.services.case_readiness import (
     PRE_INTAKE,
     READY_FOR_ACTION,
@@ -17,6 +19,7 @@ from app.services.case_readiness import (
     UNDERSTANDING_CASE,
 )
 from app.services.llm_conversation import GeminiConversationService
+from app.services.doc_generator import doc_generator
 from app.services.safety_triage import assess_safety
 
 
@@ -157,6 +160,46 @@ def test_F_document_fields_requested_only_after_document_is_selected(service):
     # Only now do template fields appear, and only because a document applies.
     assert profile.recommended_doc_type is not None
     assert "user_name" in profile.missing_document_fields
+
+
+def test_ready_for_document_still_offers_action_and_generates_pdf(service, tmp_path, monkeypatch):
+    profile, _ = build(service, "my employer hasn't paid salary for two months")
+    assert_no_document(profile)
+
+    profile.user_name = "Example Employee"
+    profile.user_city = "Jaipur"
+    profile.user_state = "Rajasthan"
+    profile.opposite_party_name = "Example Employer"
+    profile.unpaid_months = ["July", "August"]
+    profile.key_facts["monthly_salary"] = 100000
+    profile.key_facts["hr_contacted"] = True
+    profile.key_facts["employment_proof_available"] = True
+    profile.disputed_amount = 200000
+    profile, _ = build(service, "Those details are correct", profile)
+
+    assert profile.readiness == READY_FOR_DOCUMENT
+    assert profile.is_ready_for_document is True
+    assert profile.missing_document_fields == []
+    assert profile.recommended_doc_type == "SALARY_DEMAND_NOTICE"
+    assert profile.recommended_next_action["type"] == "PREPARE_DOC"
+    assert profile.recommended_next_action["doc_type"] == "SALARY_DEMAND_NOTICE"
+
+    (tmp_path / "documents").mkdir()
+    monkeypatch.setattr(settings, "STORAGE_DIR", str(tmp_path))
+    facts = FactGraphSchema(
+        complainant=PartyInfo(name=profile.user_name, city=profile.user_city),
+        opposite_party=PartyInfo(name=profile.opposite_party_name),
+        incident_narrative="Two months of salary remain unpaid.",
+        financials=FinancialBreakdown(amount_paid=profile.disputed_amount),
+    )
+    document = doc_generator.generate_document(
+        case_id=profile.case_id,
+        doc_type=profile.recommended_next_action["doc_type"],
+        fact_graph=facts,
+    )
+    assert document.pdf_download_url is not None
+    pdf_path = tmp_path / "documents" / document.pdf_download_url.rsplit("/", 1)[-1]
+    assert pdf_path.read_bytes().startswith(b"%PDF")
 
 
 # ------------------------------------------------- G/H: non-safety categories

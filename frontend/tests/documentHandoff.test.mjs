@@ -1,7 +1,24 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { knownDocumentValues, routeDocumentAction } from '../src/lib/documentHandoff.ts';
+import { knownDocumentValues, openEligibleDocumentHandoff, routeDocumentAction } from '../src/lib/documentHandoff.ts';
+
+test('eligible chat handoff opens the confirmation form only with a backend signal', () => {
+  const opened = [];
+  const openModal = (type, label) => opened.push({ type, label });
+  assert.equal(openEligibleDocumentHandoff(undefined, 'SALARY_DEMAND_NOTICE', openModal), false);
+  assert.equal(openEligibleDocumentHandoff(
+    { type: 'PREPARE_DOC', doc_type: 'SALARY_DEMAND_NOTICE', label: 'Salary notice' },
+    undefined,
+    openModal,
+  ), false);
+  assert.equal(openEligibleDocumentHandoff(
+    { type: 'PREPARE_DOC', doc_type: 'SALARY_DEMAND_NOTICE', label: 'Salary notice', open_confirmation_modal: true },
+    undefined,
+    openModal,
+  ), true);
+  assert.deepEqual(opened, [{ type: 'SALARY_DEMAND_NOTICE', label: 'Salary notice' }]);
+});
 
 test('PREPARE_DOC opens the confirmation modal even when document fields are missing', () => {
   const opened = [];

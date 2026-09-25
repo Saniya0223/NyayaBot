@@ -1,5 +1,6 @@
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
+from app.schemas.professional_help import ProfessionalHelpAssessment
 
 class ChatMessage(BaseModel):
     id: Optional[str] = None
@@ -76,6 +77,9 @@ class StructuredCaseProfile(BaseModel):
     timeline: List[Dict[str, Any]] = Field(default_factory=list)
     deadlines: List[Dict[str, Any]] = Field(default_factory=list)
     documents: List[Dict[str, Any]] = Field(default_factory=list)
+    provided_documents: List[Dict[str, Any]] = Field(default_factory=list)
+    legal_sources: List[Dict[str, Any]] = Field(default_factory=list)
+    ai_summary_cache: Optional[Dict[str, str]] = None
     recommended_next_action: Optional[Dict[str, Any]] = None
     next_action_plan: Optional[NextActionPlan] = None
     rights_summary: Optional[Dict[str, Any]] = None  # {what_this_means, possible_rights: [], useful_evidence: [], legal_source}
@@ -96,8 +100,10 @@ class StructuredCaseProfile(BaseModel):
     # fields below, which are only computed once a document is appropriate.
     intake_missing_facts: List[str] = Field(default_factory=list)
     safety_status: Optional[Dict[str, Any]] = None
+    professional_help: Optional[ProfessionalHelpAssessment] = None
     missing_required_fields: List[str] = Field(default_factory=list)
     missing_document_fields: List[str] = Field(default_factory=list)
+    document_request: Optional[Dict[str, Any]] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -121,6 +127,11 @@ class ChatTurnResponse(BaseModel):
 class ChatSessionResponse(BaseModel):
     case_profile: StructuredCaseProfile
     messages: List[ChatMessage] = Field(default_factory=list)
+
+
+class CaseSummaryResponse(BaseModel):
+    text: str
+    cached: bool
 
 class DocumentUploadExtractionRequest(BaseModel):
     case_id: Optional[str] = None

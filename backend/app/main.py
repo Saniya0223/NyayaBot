@@ -11,10 +11,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.responses import JSONResponse
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.auth import get_current_user
 from app.auth_routes import router as auth_router
+from app.profile_routes import router as profile_router
 from app.agents.conversation_agent import conversational_agent
 from app.agents.intake_node import IntakeFactExtractor
 from app.agents.orchestrator import legal_orchestrator
@@ -29,6 +30,7 @@ from app.db.models import (
     EvidenceFileModel,
     FactGraphModel,
     GeneratedDocumentModel,
+    UserMemoryModel,
     UserModel,
 )
 from app.db.migrations import apply_additive_migrations
@@ -37,6 +39,7 @@ from app.schemas.case import CaseResponse, ClarificationAnswer, IntakeRequest
 from app.schemas.chat import (
     ChatMessage,
     ChatSessionResponse,
+    CaseSummaryResponse,
     ChatTurnRequest,
     ChatTurnResponse,
     DocumentUploadExtractionRequest,
@@ -44,6 +47,7 @@ from app.schemas.chat import (
 )
 from app.schemas.document import (
     DocumentDefinitionSchema,
+    DocumentAssessment,
     DocumentGenerateRequest,
     DocumentResponse,
     PortalFilingDossier,
@@ -52,11 +56,15 @@ from app.schemas.fact_graph import EvidenceItem, FactGraphSchema, FinancialBreak
 from app.services.doc_generator import doc_generator
 from app.services.document_registry import (
     list_document_definitions,
-    validate_document_fields,
 )
+from app.services.document_generation import assess_document_generation
+from app.services.professional_help import evaluate_professional_help
 from app.services.dossier_generator import DossierGenerator
 from app.services.upload_intelligence import extract_upload_text, validate_upload
 from app.services.llm_conversation import gemini_conversation_service
+from app.services.case_summary import generate_case_summary, summary_fingerprint, summary_ready
+from app.services.user_context import chat_user_context, explicit_memory_text
+from app.llm.contracts import LLMProviderError
 
 
 Base.metadata.create_all(bind=engine)
@@ -86,6 +94,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(auth_router)
+app.include_router(profile_router)
 
 
 @app.middleware("http")
@@ -116,7 +125,19 @@ logger.info(
 
 
 def _safe_profile(record: ChatCaseSessionModel) -> StructuredCaseProfile:
-    return StructuredCaseProfile.model_validate(record.profile_data)
+    profile = StructuredCaseProfile.model_validate(record.profile_data)
+    profile.professional_help = evaluate_professional_help(profile)
+    profile.provided_documents = [
+        {
+            "id": item.id,
+            "name": item.file_name,
+            "file_type": item.file_type,
+            "uploaded_at": item.uploaded_at.isoformat() if item.uploaded_at else None,
+            "download_url": f"/api/v1/evidence/{item.id}/download",
+        }
+        for item in sorted(record.case.evidence_files, key=lambda file: file.uploaded_at or datetime.min)
+    ] if record.case else []
+    return profile
 
 
 def _get_owned_case(db: Session, case_id: str, current_user: UserModel) -> CaseModel:
@@ -242,6 +263,7 @@ def _save_chat_session(
     *,
     is_demo: bool = False,
 ) -> None:
+    profile.professional_help = evaluate_professional_help(profile)
     record = db.query(ChatCaseSessionModel).filter(ChatCaseSessionModel.case_id == profile.case_id).first()
     if not record:
         record = ChatCaseSessionModel(
@@ -433,12 +455,23 @@ def toggle_timeline_event(
     return {"status": "success", "new_event_status": event.status}
 
 
-def _document_validation_data(facts: FactGraphSchema, overrides: dict) -> dict:
+def _document_validation_data(facts: FactGraphSchema, overrides: dict, user: UserModel | None = None) -> dict:
+    def personal(key: str, case_value: str | None, profile_value: str | None):
+        if key in overrides:
+            return overrides[key]
+        if case_value and case_value.strip().casefold() not in {"complainant", "city", "state"}:
+            return case_value
+        return profile_value
+
     return {
-        "complainant_name": overrides.get("complainant_name") or facts.complainant.name,
+        "complainant_name": personal("complainant_name", facts.complainant.name, user.full_name if user else None),
         "recipient_name": overrides.get("recipient_name") or facts.opposite_party.name,
         "opposite_party_name": overrides.get("opposite_party_name") or facts.opposite_party.name,
-        "complainant_city": overrides.get("complainant_city") or facts.complainant.city,
+        "complainant_city": personal("complainant_city", facts.complainant.city, user.city if user else None),
+        "complainant_address": personal("complainant_address", facts.complainant.address, user.full_address if user else None),
+        "complainant_state": personal("complainant_state", facts.complainant.state, user.state if user else None),
+        "complainant_pin_code": personal("complainant_pin_code", None, user.pin_code if user else None),
+        "complainant_phone": personal("complainant_phone", facts.complainant.phone, user.phone if user else None),
         "property_address": overrides.get("property_address") or facts.opposite_party.address,
         "disputed_amount": overrides.get("disputed_amount", facts.financials.amount_paid),
         "vacating_date": overrides.get("vacating_date") or facts.incident_date,
@@ -447,7 +480,79 @@ def _document_validation_data(facts: FactGraphSchema, overrides: dict) -> dict:
         "police_station_name": overrides.get("police_station_name") or facts.opposite_party.name,
         "bank_name": overrides.get("bank_name") or facts.opposite_party.name,
         "transaction_id": overrides.get("transaction_id"),
+        "opposite_party_address": overrides.get("opposite_party_address") or facts.opposite_party.address,
+        "recipient_address": overrides.get("recipient_address") or facts.opposite_party.address,
+        "landlord_address": overrides.get("landlord_address") or facts.opposite_party.address,
+        "employee_role": overrides.get("employee_role"),
+        "unpaid_months": overrides.get("unpaid_months"),
+        "order_number": overrides.get("order_number"),
+        "reference_number": overrides.get("reference_number"),
+        "agreement_date": overrides.get("agreement_date"),
+        "previous_requests": overrides.get("previous_requests"),
+        "accused_name": overrides.get("accused_name"),
+        "witnesses": overrides.get("witnesses"),
+        "fraudster_phone": overrides.get("fraudster_phone"),
+        "fraudster_upi_id": overrides.get("fraudster_upi_id"),
+        "cybercrime_acknowledgement": overrides.get("cybercrime_acknowledgement"),
+        "public_authority_address": overrides.get("public_authority_address"),
+        "period_of_information": overrides.get("period_of_information"),
     }
+
+
+def _document_context(db: Session, case_id: str, current_user: UserModel):
+    case = _get_owned_case(db, case_id, current_user)
+    chat_record = db.query(ChatCaseSessionModel).filter(
+        ChatCaseSessionModel.case_id == case_id,
+        ChatCaseSessionModel.user_id == current_user.id,
+        ChatCaseSessionModel.is_demo.is_(False),
+    ).first()
+    profile = _load_chat_profile(chat_record) if chat_record else None
+    if profile:
+        messages = _messages_for_session(chat_record)
+        narrative = "\n".join(message.text for message in messages if message.sender == "user") or profile.title
+        facts = _profile_to_fact_graph(profile, narrative)
+    elif case.fact_graph:
+        stored = case.fact_graph
+        facts = IntakeFactExtractor.extract_facts(stored.incident_narrative, {
+            "user_name": stored.complainant_data.get("name"),
+            "user_city": stored.complainant_data.get("city"),
+            "user_state": stored.complainant_data.get("state"),
+            "user_phone": stored.complainant_data.get("phone"),
+            "user_email": stored.complainant_data.get("email"),
+            "opposite_party_name": stored.opposite_party_data.get("name"),
+            "amount_paid": stored.financial_breakdown.get("amount_paid", 0),
+            "incident_date": case.cause_of_action_date,
+            "category": case.category,
+        })
+    else:
+        raise HTTPException(status_code=404, detail="Case facts not found")
+    return case, chat_record, profile, facts
+
+
+def _assess_case_document(profile, facts, doc_type, overrides, user=None):
+    values = _document_validation_data(facts, overrides, user)
+    if profile:
+        for field in ("employee_role", "unpaid_months", "order_number", "employer_address", "public_authority_address", "witnesses", "previous_requests"):
+            values[field] = overrides.get(field) or profile.key_facts.get(field) or getattr(profile, field, None)
+        values["order_number"] = values["order_number"] or profile.key_facts.get("order_reference_id")
+        values["employer_address"] = values["employer_address"] or profile.opposite_party_address
+        values["public_authority_address"] = values["public_authority_address"] or profile.opposite_party_address
+        values["transaction_id"] = overrides.get("transaction_id") or profile.transaction_id
+    safety = profile.safety_status if profile else None
+    safety_blocked = bool(safety and (
+        safety.get("immediate_danger") is True
+        or (not safety.get("triage_complete") and safety.get("immediate_danger") is not False)
+    ))
+    return assess_document_generation(doc_type, facts.category, values, safety_blocked=safety_blocked)
+
+
+@app.get("/api/v1/documents/assessment", response_model=DocumentAssessment)
+def document_assessment(
+    case_id: str, doc_type: str, db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    _, _, profile, facts = _document_context(db, case_id, current_user)
+    return _assess_case_document(profile, facts, doc_type, {}, current_user)
 
 
 @app.post("/api/v1/documents/generate", response_model=DocumentResponse)
@@ -456,53 +561,26 @@ def generate_document(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_user),
 ):
-    case = _get_owned_case(db, req.case_id, current_user)
-    chat_record = (
-        db.query(ChatCaseSessionModel)
-        .filter(
-            ChatCaseSessionModel.case_id == req.case_id,
-            ChatCaseSessionModel.user_id == current_user.id,
-            ChatCaseSessionModel.is_demo.is_(False),
-        )
-        .first()
-    )
-    profile = _load_chat_profile(chat_record) if chat_record else None
-    if profile:
-        messages = _messages_for_session(chat_record)
-        narrative = "\n".join(message.text for message in messages if message.sender == "user") or profile.title
-        fact_graph = _profile_to_fact_graph(profile, narrative)
-    elif case.fact_graph:
-        stored = case.fact_graph
-        fact_graph = IntakeFactExtractor.extract_facts(
-            stored.incident_narrative,
-            {
-                "user_name": stored.complainant_data.get("name"),
-                "user_city": stored.complainant_data.get("city"),
-                "user_state": stored.complainant_data.get("state"),
-                "user_phone": stored.complainant_data.get("phone"),
-                "user_email": stored.complainant_data.get("email"),
-                "opposite_party_name": stored.opposite_party_data.get("name"),
-                "amount_paid": stored.financial_breakdown.get("amount_paid", 0),
-                "incident_date": case.cause_of_action_date,
-                "category": case.category,
-            },
-        )
-    else:
-        raise HTTPException(status_code=404, detail="Case facts not found")
-
-    overrides = req.override_data or {}
-    missing = validate_document_fields(req.doc_type, _document_validation_data(fact_graph, overrides))
-    if missing:
+    case, chat_record, profile, fact_graph = _document_context(db, req.case_id, current_user)
+    overrides = {key: value for key, value in (req.override_data or {}).items() if key in {
+        field for definition in list_document_definitions()
+        for field in (*definition.required_fields, *definition.optional_fields)
+    }}
+    assessment = _assess_case_document(profile, fact_graph, req.doc_type, overrides, current_user)
+    if not assessment.ready_to_generate:
         raise HTTPException(
             status_code=422,
-            detail={"message": "Confirm the required facts before generating this document.", "missing_fields": missing},
+            detail={"message": "; ".join(assessment.blockers) or "Confirm the required facts before generating this document.", "missing_fields": assessment.missing_required_fields},
         )
     response = doc_generator.generate_document(
         case_id=case.id,
         doc_type=req.doc_type,
         fact_graph=fact_graph,
         appropriate_forum=case.appropriate_forum or "Competent authority",
-        custom_data=overrides,
+        custom_data={field.key: field.value for field in assessment.fields
+                     if field.value not in (None, "", []) or field.key in {
+                         "complainant_address", "complainant_state", "complainant_pin_code", "complainant_phone"
+                     }},
     )
     db.add(
         GeneratedDocumentModel(
@@ -517,6 +595,8 @@ def generate_document(
         )
     )
     if profile:
+        if profile.document_request and profile.document_request.get("document_type") == req.doc_type:
+            profile.document_request["status"] = "GENERATED"
         confirmed_override_fields = {
             "complainant_name": "user_name",
             "complainant_city": "user_city",
@@ -684,7 +764,19 @@ async def handle_chat_message(
     record = _get_owned_chat_record(db, req.case_id, current_user) if req.case_id else None
     existing_profile = _load_chat_profile(record) if record else None
     recent_messages = _messages_for_session(record) if record else []
-    response = await gemini_conversation_service.process_turn(req, existing_profile, recent_messages)
+    user_context = chat_user_context(db, current_user, req.message, req.case_id)
+    response = await gemini_conversation_service.process_turn(req, existing_profile, recent_messages, user_context=user_context)
+    memory_text = explicit_memory_text(req.message)
+    if memory_text and not (response.case_profile.safety_status or {}).get("is_safety_case"):
+        if db.query(UserMemoryModel).filter(UserMemoryModel.user_id == current_user.id).count() < 50:
+            db.add(UserMemoryModel(user_id=current_user.id, category="explicit", text=memory_text))
+            memory_note = {
+                "hindi": "मैंने इसे आपकी दीर्घकालीन स्मृति में सहेज लिया है। आप इसे प्रोफ़ाइल में हटा सकते हैं।",
+                "hinglish": "Maine ise long-term memory mein save kar liya hai. Aap Profile mein ise delete kar sakte hain.",
+            }.get(response.case_profile.language_style, "I've saved that to your long-term memory. You can delete it in Profile.")
+        else:
+            memory_note = "Your long-term memory is full. Delete an old memory in Profile before saving another."
+        response.reply_text = memory_note
     stored_messages = list(recent_messages)
     stored_messages.extend(
         [
@@ -718,6 +810,7 @@ def list_chat_cases(
 ):
     records = (
         db.query(ChatCaseSessionModel)
+        .options(selectinload(ChatCaseSessionModel.case).selectinload(CaseModel.evidence_files))
         .filter(
             ChatCaseSessionModel.user_id == current_user.id,
             ChatCaseSessionModel.is_demo.is_(False),
@@ -739,6 +832,38 @@ def get_chat_case(
         case_profile=_load_chat_profile(record),
         messages=_messages_for_session(record),
     )
+
+
+@app.post("/api/v1/chat/cases/{case_id}/summary", response_model=CaseSummaryResponse)
+async def generate_chat_case_summary(
+    case_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    """Generate only on explicit request; reuse a brief until case content changes."""
+    record = _get_owned_chat_record(db, case_id, current_user)
+    profile = _load_chat_profile(record)
+    if not summary_ready(profile):
+        raise HTTPException(status_code=422, detail="Add some case facts before generating a summary.")
+    fingerprint = summary_fingerprint(profile)
+    cached = profile.ai_summary_cache or {}
+    if cached.get("fingerprint") == fingerprint and cached.get("text"):
+        return CaseSummaryResponse(text=cached["text"], cached=True)
+
+    provider = get_llm_provider()
+    if not provider.status.configured:
+        raise HTTPException(status_code=503, detail="AI summary is unavailable until an AI provider is configured.")
+    try:
+        brief = await generate_case_summary(profile, provider)
+    except LLMProviderError as exc:
+        logger.warning("case_id=%s event=case_summary_provider_failed", case_id)
+        raise HTTPException(status_code=503, detail="AI summary is temporarily unavailable. Please try again.") from exc
+    if not brief:
+        raise HTTPException(status_code=503, detail="AI summary is temporarily unavailable. Please try again.")
+    profile.ai_summary_cache = {"fingerprint": fingerprint, "text": brief}
+    record.profile_data = profile.model_dump(mode="json")
+    db.commit()
+    return CaseSummaryResponse(text=brief, cached=False)
 
 
 @app.post("/api/v1/chat/cases/{case_id}/resolve", response_model=StructuredCaseProfile)
@@ -829,6 +954,13 @@ async def handle_evidence_file_upload(
             annexure_label=checklist_item.annexure_label if checklist_item else None,
         )
     )
+    profile.provided_documents.append({
+        "id": evidence_id,
+        "name": original_name,
+        "file_type": upload.content_type or extension.lstrip("."),
+        "uploaded_at": datetime.utcnow().isoformat(),
+        "download_url": f"/api/v1/evidence/{evidence_id}/download",
+    })
     profile.key_facts["last_upload"] = {
         "evidence_id": evidence_id,
         "file_name": original_name,

@@ -13,7 +13,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { API_BASE_URL, ChatMessageItem, fetchLLMStatus, LLMStatus, sendChatMessage, StructuredCaseProfile } from '@/lib/api';
-import { routeDocumentAction } from '@/lib/documentHandoff';
+import { openEligibleDocumentHandoff, routeDocumentAction } from '@/lib/documentHandoff';
 
 interface ChatInterfaceProps {
   activeProfile?: StructuredCaseProfile | null;
@@ -148,6 +148,11 @@ export default function ChatInterface({
           : 'This response used limited demo workflow rules.',
       }));
       onProfileUpdated(response.case_profile);
+      openEligibleDocumentHandoff(
+        response.suggested_action,
+        response.case_profile.recommended_doc_type,
+        onTriggerDocumentModal,
+      );
       setMessages((current) => [
         ...current,
         {

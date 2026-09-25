@@ -19,11 +19,29 @@ class UserModel(Base):
     phone = Column(String(20), nullable=True)
     city = Column(String(100), nullable=True)
     state = Column(String(100), nullable=True)
+    date_of_birth = Column(String(10), nullable=True)
+    pin_code = Column(String(6), nullable=True)
+    full_address = Column(String(500), nullable=True)
+    preferred_language = Column(String(20), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     cases = relationship("CaseModel", back_populates="user", cascade="all, delete-orphan")
     chat_cases = relationship("ChatCaseSessionModel", back_populates="user")
     auth_sessions = relationship("AuthSessionModel", back_populates="user", cascade="all, delete-orphan")
+    memories = relationship("UserMemoryModel", back_populates="user", cascade="all, delete-orphan")
+
+
+class UserMemoryModel(Base):
+    __tablename__ = "user_memories"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    category = Column(String(20), nullable=False)
+    text = Column(String(500), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = relationship("UserModel", back_populates="memories")
 
 
 class AuthSessionModel(Base):

@@ -4,6 +4,10 @@ from app.domains.contracts import (
     JurisdictionPolicy, JurisdictionRequirement, OfficialSourceReference, QuestionPriority,
     RagRoutingPolicy,
 )
+from app.schemas.professional_help import (
+    ProfessionalHelpLevel as HelpLevel, ProfessionalHelpPolicy, ProfessionalHelpReason as Reason,
+    ProfessionalHelpRule, ReassessTrigger as Trigger,
+)
 
 
 TENANCY_DOMAIN = DomainDefinition(
@@ -52,4 +56,12 @@ TENANCY_DOMAIN = DomainDefinition(
         official_sources=(OfficialSourceReference(title="Model Tenancy Act, 2021 (state adoption must be checked)", authority="Ministry of Housing and Urban Affairs", url="https://mohua.gov.in/upload/uploadfiles/files/Model-Tenancy-Act-English-02_06_2021.pdf"),),
     ),
     jurisdiction=JurisdictionPolicy(requirement=JurisdictionRequirement.REQUIRED_LATER, fact_key="user_state", rationale="Applicable tenancy rules and forum depend on the property State."),
+    professional_help=ProfessionalHelpPolicy(
+        rules=(
+            ProfessionalHelpRule(source="fact_true", key="eviction_proceeding_started", reason=Reason.EVICTION_PROCEEDING_STARTED, level=HelpLevel.LEGAL_HELP_RECOMMENDED),
+            ProfessionalHelpRule(source="fact_true", key="possession_at_risk", reason=Reason.PROPERTY_POSSESSION_AT_RISK, level=HelpLevel.LEGAL_HELP_RECOMMENDED),
+            ProfessionalHelpRule(source="fact_true", key="ownership_dispute", reason=Reason.OWNERSHIP_DISPUTE, level=HelpLevel.LEGAL_HELP_RECOMMENDED),
+        ),
+        reassess_on=(Trigger.EVICTION_PROCEEDING_STARTED, Trigger.FORMAL_NOTICE_RECEIVED, Trigger.FORMAL_PROCEEDING_STARTED, Trigger.GRIEVANCE_FAILED),
+    ),
 )

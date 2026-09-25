@@ -24,6 +24,14 @@ def apply_additive_migrations(engine: Engine) -> None:
             user_columns = {column["name"] for column in inspector.get_columns("users")}
             if "password_hash" not in user_columns:
                 connection.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR(512)"))
+            for column, sql_type in (
+                ("date_of_birth", "VARCHAR(10)"),
+                ("pin_code", "VARCHAR(6)"),
+                ("full_address", "VARCHAR(500)"),
+                ("preferred_language", "VARCHAR(20)"),
+            ):
+                if column not in user_columns:
+                    connection.execute(text(f"ALTER TABLE users ADD COLUMN {column} {sql_type}"))
 
         if "chat_case_sessions" in tables:
             chat_columns = {

@@ -37,11 +37,27 @@ def test_both_provider_prompts_use_domain_candidates_for_conversational_question
     assert "unavailable_facts" in GROQ_EXTRACTION_SYSTEM_PROMPT
 
 
+def test_provider_prompts_defer_professional_help_decision_to_backend():
+    assert GROQ_CHAT_SYSTEM_PROMPT == GEMINI_CHAT_SYSTEM_PROMPT
+    assert GROQ_EXTRACTION_SYSTEM_PROMPT == GEMINI_EXTRACTION_SYSTEM_PROMPT
+    assert "Do not independently decide whether a lawyer is needed" in GROQ_CHAT_SYSTEM_PROMPT
+    assert "professional_help_should_surface" in GROQ_CHAT_SYSTEM_PROMPT
+    assert "Immediate safety and urgent fraud reporting take priority" in GROQ_CHAT_SYSTEM_PROMPT
+    assert "false only when explicitly denied, and null otherwise" in GROQ_EXTRACTION_SYSTEM_PROMPT
+
+
+def test_summary_mode_is_identical_across_providers_and_keeps_chat_separate():
+    assert GROQ_CHAT_SYSTEM_PROMPT == GEMINI_CHAT_SYSTEM_PROMPT
+    assert "If response_mode is CASE_SUMMARY" in GROQ_CHAT_SYSTEM_PROMPT
+    assert "Do not infer completed events from planned workflow stages" in GROQ_CHAT_SYSTEM_PROMPT
+
+
 def test_both_chat_prompts_handoff_eligible_documents_instead_of_drafting_them():
     assert GROQ_CHAT_SYSTEM_PROMPT == GEMINI_CHAT_SYSTEM_PROMPT
     assert "recommended_next_action is PREPARE_DOC" in GROQ_CHAT_SYSTEM_PROMPT
     assert "Do not write or simulate the final notice" in GROQ_CHAT_SYSTEM_PROMPT
     assert "deterministic document" in GROQ_CHAT_SYSTEM_PROMPT
+    assert "Chat does not start or queue document generation" in GROQ_CHAT_SYSTEM_PROMPT
 
 
 def test_groq_status_unconfigured():

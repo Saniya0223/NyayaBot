@@ -34,8 +34,8 @@
 <div class="to-box">
   <strong>FROM:</strong><br>
   <strong>{{ complainant.name }}{% if employee_role %} ({{ employee_role }}){% endif %}</strong><br>
-  {{ complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}<br>
-  Phone: {{ complainant.phone or 'N/A' }} | Email: {{ complainant.email or 'N/A' }}
+  {{ complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}{% if complainant.pin_code %} - {{ complainant.pin_code }}{% endif %}<br>
+  {% if complainant.phone %}Phone: {{ complainant.phone }}{% endif %}{% if complainant.phone and complainant.email %} | {% endif %}{% if complainant.email %}Email: {{ complainant.email }}{% endif %}
 </div>
 
 <div style="font-weight: bold; text-decoration: underline; margin: 15px 0;">

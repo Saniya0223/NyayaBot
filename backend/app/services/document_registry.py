@@ -89,6 +89,13 @@ DOCUMENT_DEFINITIONS: Dict[str, DocumentDefinitionSchema] = {
     ),
 }
 
+# Personal sender details are optional and always reviewable; they do not affect
+# whether a document is eligible or whether required case facts are complete.
+for _definition in DOCUMENT_DEFINITIONS.values():
+    _definition.optional_fields.extend((
+        "complainant_address", "complainant_state", "complainant_pin_code", "complainant_phone",
+    ))
+
 
 def list_document_definitions() -> List[DocumentDefinitionSchema]:
     return list(DOCUMENT_DEFINITIONS.values())
@@ -107,7 +114,13 @@ def validate_document_fields(doc_type: str, data: Dict[str, Any]) -> List[str]:
     for field in definition.required_fields:
         value = data.get(field)
         is_placeholder = isinstance(value, str) and value.strip().lower() in placeholders
-        if value is None or value == "" or is_placeholder or (field == "disputed_amount" and float(value or 0) <= 0):
+        invalid_amount = False
+        if field == "disputed_amount":
+            try:
+                invalid_amount = float(value or 0) <= 0
+            except (TypeError, ValueError):
+                invalid_amount = True
+        if value is None or (isinstance(value, str) and not value.strip()) or is_placeholder or invalid_amount:
             missing.append(field)
     return missing
 

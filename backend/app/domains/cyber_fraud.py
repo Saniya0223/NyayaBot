@@ -3,6 +3,10 @@ from app.domains.contracts import (
     FactDefinition, FactStage, FactValueType, IssueTypeDefinition, JurisdictionPolicy,
     JurisdictionRequirement, OfficialSourceReference, QuestionPriority, RagRoutingPolicy,
 )
+from app.schemas.professional_help import (
+    ProfessionalHelpLevel as HelpLevel, ProfessionalHelpPolicy, ProfessionalHelpReason as Reason,
+    ProfessionalHelpRule, ProfessionalType, ReassessTrigger as Trigger,
+)
 
 
 CYBER_FRAUD_DOMAIN = DomainDefinition(
@@ -53,4 +57,14 @@ CYBER_FRAUD_DOMAIN = DomainDefinition(
         ),
     ),
     jurisdiction=JurisdictionPolicy(requirement=JurisdictionRequirement.OPTIONAL, fact_key="user_state", rationale="State can support later local escalation but is not required for urgent initial reporting."),
+    professional_help=ProfessionalHelpPolicy(
+        rules=(
+            ProfessionalHelpRule(source="fact_true", key="identity_theft", reason=Reason.IDENTITY_THEFT, level=HelpLevel.CONSIDER_LEGAL_HELP),
+            ProfessionalHelpRule(source="fact_true", key="account_freeze_complication", reason=Reason.ACCOUNT_FREEZE_COMPLICATION, level=HelpLevel.CONSIDER_LEGAL_HELP),
+            ProfessionalHelpRule(source="fact_true", key="bank_claim_rejected", reason=Reason.BANK_CLAIM_REJECTED, level=HelpLevel.CONSIDER_LEGAL_HELP),
+            ProfessionalHelpRule(source="fact_true", key="police_case_complication", reason=Reason.POLICE_CASE_COMPLICATION, level=HelpLevel.LEGAL_HELP_RECOMMENDED),
+        ),
+        reassess_on=(Trigger.BANK_REJECTED_CLAIM, Trigger.FORMAL_PROCEEDING_STARTED, Trigger.CASE_FACTS_BECAME_DISPUTED, Trigger.VERIFIED_DEADLINE_IDENTIFIED),
+        professional_types=(ProfessionalType.SPECIALIST_LEGAL_COUNSEL, ProfessionalType.LEGAL_AID),
+    ),
 )

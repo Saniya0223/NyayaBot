@@ -4,6 +4,10 @@ from app.domains.contracts import (
     JurisdictionPolicy, JurisdictionRequirement, OfficialSourceReference, QuestionPriority,
     RagRoutingPolicy,
 )
+from app.schemas.professional_help import (
+    ProfessionalHelpLevel as HelpLevel, ProfessionalHelpPolicy, ProfessionalHelpReason as Reason,
+    ProfessionalHelpRule, ReassessTrigger as Trigger,
+)
 
 
 CONSUMER_DOMAIN = DomainDefinition(
@@ -64,4 +68,11 @@ CONSUMER_DOMAIN = DomainDefinition(
         official_sources=(OfficialSourceReference(title="Consumer Protection Act, 2019", authority="India Code", url="https://www.indiacode.nic.in/handle/123456789/21423"),),
     ),
     jurisdiction=JurisdictionPolicy(requirement=JurisdictionRequirement.REQUIRED_LATER, fact_key="user_state", rationale="State may affect forum and procedure after the dispute is understood."),
+    professional_help=ProfessionalHelpPolicy(
+        rules=(
+            ProfessionalHelpRule(source="fact_true", key="seller_disputes_transaction", reason=Reason.SELLER_DISPUTES_TRANSACTION, level=HelpLevel.CONSIDER_LEGAL_HELP),
+            ProfessionalHelpRule(source="fact_true", key="fraud_or_forgery_alleged", reason=Reason.FRAUD_OR_FORGERY_ALLEGED, level=HelpLevel.CONSIDER_LEGAL_HELP),
+        ),
+        reassess_on=(Trigger.GRIEVANCE_FAILED, Trigger.FORMAL_NOTICE_RECEIVED, Trigger.FORMAL_PROCEEDING_STARTED, Trigger.CASE_FACTS_BECAME_DISPUTED),
+    ),
 )

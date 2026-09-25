@@ -4,7 +4,7 @@ from datetime import datetime
 from html.parser import HTMLParser
 
 from docx import Document
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 from xhtml2pdf import pisa
 
 from app.config import settings
@@ -30,7 +30,7 @@ class DocumentGenerator:
     """Render deterministic templates from confirmed facts into HTML, PDF, and DOCX."""
 
     def __init__(self):
-        self.env = Environment(loader=FileSystemLoader(settings.TEMPLATES_DIR))
+        self.env = Environment(loader=FileSystemLoader(settings.TEMPLATES_DIR), autoescape=select_autoescape(["html"]))
 
     def generate_document(
         self,
@@ -41,6 +41,8 @@ class DocumentGenerator:
         custom_data: dict = None,
     ) -> DocumentResponse:
         custom_data = custom_data or {}
+        if isinstance(custom_data.get("unpaid_months"), list):
+            custom_data = {**custom_data, "unpaid_months": ", ".join(custom_data["unpaid_months"])}
         now = datetime.now()
         date_today = now.strftime("%d-%m-%Y")
         notice_ref = f"NYA/{now.year}/{case_id[:8].upper()}"
@@ -56,7 +58,7 @@ class DocumentGenerator:
             "RTI_SEC6": ("rti_application_sec6.html", f"RTI Application Draft - {fact_graph.opposite_party.name}"),
         }
         if doc_type not in template_map:
-            doc_type = "GENERAL_COMPLAINT_LETTER"
+            raise ValueError(f"Unsupported document type: {doc_type}")
 
         template_name, doc_title = template_map[doc_type]
         complainant = fact_graph.complainant.model_dump()
@@ -65,7 +67,10 @@ class DocumentGenerator:
 
         complainant["name"] = custom_data.get("complainant_name") or complainant.get("name")
         complainant["city"] = custom_data.get("complainant_city") or complainant.get("city")
-        complainant["address"] = custom_data.get("complainant_address") or complainant.get("address")
+        complainant["address"] = custom_data.get("complainant_address", complainant.get("address"))
+        complainant["state"] = custom_data.get("complainant_state", complainant.get("state"))
+        complainant["phone"] = custom_data.get("complainant_phone", complainant.get("phone"))
+        complainant["pin_code"] = custom_data.get("complainant_pin_code")
         opposite_party["name"] = (
             custom_data.get("opposite_party_name")
             or custom_data.get("recipient_name")
@@ -75,11 +80,16 @@ class DocumentGenerator:
         )
         opposite_party["address"] = (
             custom_data.get("opposite_party_address")
+            or custom_data.get("employer_address")
             or custom_data.get("landlord_address")
             or custom_data.get("property_address")
+            or custom_data.get("recipient_address")
+            or custom_data.get("public_authority_address")
             or opposite_party.get("address")
         )
         opposite_party["city"] = custom_data.get("complainant_city") or opposite_party.get("city")
+        if opposite_party.get("name"):
+            doc_title = f"{doc_title.rsplit(' - ', 1)[0]} - {opposite_party['name']}"
 
         disputed_amount = custom_data.get("disputed_amount")
         if disputed_amount is not None:
@@ -108,7 +118,9 @@ class DocumentGenerator:
         pdf_path = os.path.join(settings.STORAGE_DIR, "documents", pdf_filename)
         with open(pdf_path, "wb") as pdf_file:
             pisa_status = pisa.CreatePDF(rendered_html, dest=pdf_file)
-        pdf_download_url = f"/api/v1/documents/download/{pdf_filename}" if not pisa_status.err else None
+        if pisa_status.err:
+            raise RuntimeError("PDF rendering failed; no document was generated.")
+        pdf_download_url = f"/api/v1/documents/download/{pdf_filename}"
 
         docx_filename = f"{doc_type.lower()}_{case_id[:8]}_{doc_id[:6]}.docx"
         docx_path = os.path.join(settings.STORAGE_DIR, "documents", docx_filename)

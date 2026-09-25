@@ -93,8 +93,8 @@
     <td style="width: 75%;">
       <strong>{{ complainant.name }}</strong><br>
       Residing at: {{ complainant.address or complainant.city }}<br>
-      City: {{ complainant.city }}{% if complainant.state %}, State: {{ complainant.state }}{% endif %}<br>
-      Contact: {{ complainant.phone or 'N/A' }} | Email: {{ complainant.email or 'N/A' }}
+      City: {{ complainant.city }}{% if complainant.state %}, State: {{ complainant.state }}{% endif %}{% if complainant.pin_code %}, PIN: {{ complainant.pin_code }}{% endif %}<br>
+      {% if complainant.phone %}Contact: {{ complainant.phone }}{% endif %}{% if complainant.phone and complainant.email %} | {% endif %}{% if complainant.email %}Email: {{ complainant.email }}{% endif %}
     </td>
     <td style="width: 25%; text-align: right; font-weight: bold;">
       ... COMPLAINANT
@@ -110,7 +110,7 @@
       <strong>{{ opposite_party.name }}</strong><br>
       Having office at: {{ opposite_party.address or 'Principal Office' }}<br>
       City: {{ opposite_party.city }}{% if opposite_party.state %}, State: {{ opposite_party.state }}{% endif %}<br>
-      Email: {{ opposite_party.email or 'N/A' }}
+      {% if opposite_party.email %}Email: {{ opposite_party.email }}{% endif %}
     </td>
     <td style="width: 25%; text-align: right; font-weight: bold;">
       ... OPPOSITE PARTY
@@ -139,6 +139,8 @@
 <div class="numbered-para">
   4. <strong>FACTS OF THE CASE:</strong> {{ incident_narrative }}
 </div>
+{% if order_number %}<p><strong>Order reference:</strong> {{ order_number }}</p>{% endif %}
+{% if previous_requests %}<p><strong>Previous requests:</strong> {{ previous_requests }}</p>{% endif %}
 
 <div class="numbered-para">
   5. <strong>LEGAL GROUNDS:</strong> {{ legal_grounds or 'That despite communication and opportunity to resolve the issue, the Opposite Party has failed and neglected to redress the grievance, thereby giving rise to actionable claims under the Consumer Protection Act, 2019.' }}

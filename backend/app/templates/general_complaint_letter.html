@@ -14,12 +14,13 @@
   <div class="header"><strong>GENERAL COMPLAINT LETTER</strong></div>
   <p><strong>Date:</strong> {{ date_today }}</p>
   <div class="box"><strong>To:</strong><br>{{ opposite_party.name }}<br>{{ opposite_party.address or '' }}</div>
-  <div class="box"><strong>From:</strong><br>{{ complainant.name }}<br>{{ complainant.address or '' }}<br>{{ complainant.city or '' }}{% if complainant.state %}, {{ complainant.state }}{% endif %}</div>
+  <div class="box"><strong>From:</strong><br>{{ complainant.name }}<br>{{ complainant.address or '' }}<br>{{ complainant.city or '' }}{% if complainant.state %}, {{ complainant.state }}{% endif %}{% if complainant.pin_code %} - {{ complainant.pin_code }}{% endif %}</div>
   <p><strong>Subject: {{ complaint_subject or subject or doc_title or 'Written complaint and request for appropriate action' }}</strong></p>
   <p>Sir / Madam,</p>
   <p>I am submitting this written complaint concerning the following facts:</p>
   <p>{{ incident_narrative }}</p>
   {% if incident_date %}<p><strong>Relevant date:</strong> {{ incident_date }}</p>{% endif %}
+  {% if reference_number %}<p><strong>Reference number:</strong> {{ reference_number }}</p>{% endif %}
   
   {% if relief_requested or action_requested or relief_sought %}
   <p><strong>Action requested:</strong> {{ relief_requested or action_requested or relief_sought }}</p>

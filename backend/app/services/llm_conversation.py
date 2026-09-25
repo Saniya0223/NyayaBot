@@ -44,6 +44,9 @@ from app.schemas.chat import (
     StructuredCaseProfile,
 )
 from app.services.document_registry import DOCUMENT_DEFINITIONS, select_document_for_workflow
+from app.services.document_generation import assess_document_generation, resolve_requested_document
+from app.services.professional_help import SIGNAL_FACT_KEYS, asks_about_legal_help, evaluate_professional_help
+from app.schemas.professional_help import ProfessionalHelpLevel
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -108,6 +111,7 @@ class GeminiConversationService:
         req: ChatTurnRequest,
         existing_profile: Optional[StructuredCaseProfile],
         recent_messages: Iterable[ChatMessage],
+        user_context: Optional[dict[str, Any]] = None,
     ) -> ChatTurnResponse:
         history = self._recent_history(recent_messages)
 
@@ -135,11 +139,25 @@ class GeminiConversationService:
         if self._safety_route_required(safety, existing_profile):
             return self._process_safety_turn(req, existing_profile, safety, style)
 
+        if (existing_profile and existing_profile.document_request
+                and existing_profile.document_request.get("document_type")
+                and existing_profile.document_request.get("status") in {"OPTIONAL_FIELDS_AVAILABLE", "NEEDS_REQUIRED_FIELDS", "READY_TO_GENERATE"}
+                and self._is_optional_skip(req.message)):
+            doc_type = existing_profile.document_request["document_type"]
+            response = self._document_request_response(existing_profile, req.message, style, hint=doc_type)
+            if existing_profile.document_request:
+                existing_profile.document_request["optional_skipped"] = True
+            self.workflow_agent._touch(existing_profile)
+            return self._tag_response(response, self._provider_mode)
+
+        pending_document_request = bool(existing_profile and existing_profile.document_request and existing_profile.document_request.get("status") == "SAFETY_PAUSED")
+        previous_help_level = existing_profile.professional_help.level if existing_profile and existing_profile.professional_help else None
         if not self.provider.status.configured:
             fallback = self.workflow_agent.process_turn(req, existing_profile)
             fallback.case_profile.language_style = style.language
             fallback.case_profile.script_style = style.script
             self._refresh_workflow(fallback.case_profile, safety, req.message)
+            fallback.case_profile.professional_help = evaluate_professional_help(fallback.case_profile)
             # The legacy workflow response is composed before readiness is
             # recomputed. Keep the response envelope in sync when the refresh
             # correctly removes a premature document action.
@@ -147,18 +165,25 @@ class GeminiConversationService:
             if fallback.suggested_action is None:
                 fallback.quick_replies = []
             prefix = self._limited_demo_prefix(style)
-            fallback.reply_text = prefix + self._localized_fallback_reply(
-                fallback.case_profile,
-                fallback.reply_text,
-                style,
-            )
+            if self._is_document_handoff_request(req.message) or pending_document_request:
+                handoff = self._document_request_response(
+                    fallback.case_profile, req.message, style,
+                    hint=(existing_profile.document_request.get("document_type") if pending_document_request else None),
+                )
+                fallback.reply_text = handoff.reply_text
+                fallback.suggested_action = handoff.suggested_action
+            else:
+                fallback.reply_text = (
+                    self._fallback_professional_help(fallback.case_profile, style)
+                    if asks_about_legal_help(req.message)
+                    else self._localized_fallback_reply(fallback.case_profile, fallback.reply_text, style)
+                )
+            fallback.reply_text = prefix + fallback.reply_text
             return self._tag_response(fallback, "limited_demo")
 
         profile = existing_profile
 
         try:
-            if profile and self._is_document_request(req.message):
-                profile.key_facts["document_intake_active"] = True
             if profile and (
                 profile.key_facts.get("pending_conflict")
                 or profile.key_facts.get("pending_document_extraction")
@@ -175,6 +200,7 @@ class GeminiConversationService:
                     language_style=style.language,
                     script_style=style.script,
                     domain_catalog=domain_registry.extraction_catalog(),
+                    document_catalog=[{"id": item.id, "name": item.name} for item in DOCUMENT_DEFINITIONS.values()],
                 )
             )
 
@@ -195,32 +221,27 @@ class GeminiConversationService:
             self.workflow_agent._mark_evidence(profile, extraction.evidence_detected)
             self.workflow_agent._assess_risk(req.message, profile)
             self._refresh_workflow(profile, safety, req.message)
+            profile.professional_help = evaluate_professional_help(profile)
+            help_question = asks_about_legal_help(req.message)
+            help_level = profile.professional_help.level
+            help_should_surface = help_question or (
+                help_level in {ProfessionalHelpLevel.LEGAL_HELP_RECOMMENDED, ProfessionalHelpLevel.URGENT_LEGAL_HELP}
+                and help_level != previous_help_level
+            )
 
-            # The workflow has already decided whether a document action exists.
-            # A request to prepare that document hands off to the confirmation
-            # form; the chat model must never render the final document body.
-            action = profile.recommended_next_action
-            if (
-                not conflict
-                and action
-                and action.get("type") == "PREPARE_DOC"
-                and self._is_document_handoff_request(req.message)
-            ):
-                profile.key_facts.pop("document_intake_active", None)
+            if not conflict and (self._is_document_handoff_request(req.message) or extraction.document_request or pending_document_request):
+                hint = extraction.document_request or (existing_profile.document_request.get("document_type") if pending_document_request else None)
                 self.workflow_agent._touch(profile)
-                return self._tag_response(
-                    ChatTurnResponse(
-                        reply_text=self._document_handoff_reply(style, bool(profile.missing_document_fields)),
-                        case_profile=profile,
-                        quick_replies=[],
-                        suggested_action=action,
-                        message_id=str(uuid.uuid4()),
-                    ),
-                    self._provider_mode,
-                )
+                return self._tag_response(self._document_request_response(profile, req.message, style, hint=hint), self._provider_mode)
 
             workflow_state = self._workflow_summary(profile)
             legal_sources = self._verified_sources(profile, req.message, workflow_state)
+            # The workspace reuses citations already selected for this answer.
+            # Generic domain source links are not case-specific provisions.
+            profile.legal_sources = [
+                source for source in legal_sources
+                if source.get("act") and source.get("section")
+            ]
             # Ordinary follow-ups come only from the ranked domain context.
             # Document fields are supplied separately after the user selects a document.
             missing_for_response: list[str] = []
@@ -242,6 +263,10 @@ class GeminiConversationService:
                     safety=safety.to_dict() if safety.is_safety_case else None,
                     readiness=profile.readiness,
                     domain_context=domain_registry.compact_context(profile),
+                    professional_help=profile.professional_help,
+                    professional_help_should_surface=help_should_surface,
+                    professional_help_question=help_question,
+                    user_context=user_context or {},
                 )
             )
             self.workflow_agent._touch(profile)
@@ -262,12 +287,20 @@ class GeminiConversationService:
             )
             if profile is None:
                 fallback = self.workflow_agent.process_turn(req, existing_profile)
-                fallback.reply_text = self._temporary_failure_prefix() + fallback.reply_text
+                fallback.case_profile.professional_help = evaluate_professional_help(fallback.case_profile)
+                fallback.reply_text = self._temporary_failure_prefix() + (
+                    self._fallback_professional_help(fallback.case_profile, style)
+                    if asks_about_legal_help(req.message) else fallback.reply_text
+                )
                 return self._tag_response(fallback, "limited_demo")
 
             self._refresh_workflow(profile)
+            profile.professional_help = evaluate_professional_help(profile)
             response = ChatTurnResponse(
-                reply_text=self._temporary_failure_prefix() + self._safe_next_prompt(profile),
+                reply_text=self._temporary_failure_prefix() + (
+                    self._fallback_professional_help(profile, style)
+                    if asks_about_legal_help(req.message) else self._safe_next_prompt(profile)
+                ),
                 case_profile=profile,
                 quick_replies=[f"Try {self._provider_title} again"],
                 suggested_action=profile.recommended_next_action,
@@ -362,6 +395,8 @@ class GeminiConversationService:
         profile.script_style = style.script
         profile.risk_level = RED if safety.safety_level == RED else AMBER
         profile.safety_notice = safety.guidance
+        if self._is_document_handoff_request(req.message):
+            profile.document_request = {"intent": "USER_REQUESTED", "status": "SAFETY_PAUSED", "message": req.message}
         profile.key_facts["safety_context"] = safety.safety_context
         profile.key_facts["safety_contexts"] = list(safety.contexts)
 
@@ -544,6 +579,31 @@ class GeminiConversationService:
             else "जो हुआ उसे थोड़ा और बताइए, और यह कब हुआ?"
         )
 
+    @staticmethod
+    def _fallback_professional_help(profile: StructuredCaseProfile, style: LanguageScript) -> str:
+        """Conservative local answer when the configured provider is unavailable."""
+        level = profile.professional_help.level if profile.professional_help else ProfessionalHelpLevel.SELF_HELP_REASONABLE
+        if style.language == "hindi" and style.script == "devanagari":
+            return {
+                ProfessionalHelpLevel.SELF_HELP_REASONABLE: "अभी ज्ञात तथ्यों के आधार पर सामान्य अगले कदम खुद उठाना उचित लग सकता है। स्थिति बदले तो कानूनी सलाह पर फिर विचार करें।",
+                ProfessionalHelpLevel.CONSIDER_LEGAL_HELP: "अभी ज्ञात तथ्यों के आधार पर किसी वकील या कानूनी सहायता सेवा से बात करना उपयोगी हो सकता है।",
+                ProfessionalHelpLevel.LEGAL_HELP_RECOMMENDED: "अभी ज्ञात तथ्यों के आधार पर अगला महत्वपूर्ण कदम उठाने से पहले मामले के अनुसार कानूनी सलाह लेना उचित होगा।",
+                ProfessionalHelpLevel.URGENT_LEGAL_HELP: "अभी ज्ञात कानूनी जोखिम के कारण जल्द कानूनी सलाह लेना महत्वपूर्ण है। तत्काल शारीरिक सुरक्षा पहले आती है।",
+            }[level]
+        if style.language == "hinglish":
+            return {
+                ProfessionalHelpLevel.SELF_HELP_REASONABLE: "Abhi jo facts pata hain, unke hisaab se normal next step khud lena reasonable lagta hai. Situation badle to legal advice phir consider karein.",
+                ProfessionalHelpLevel.CONSIDER_LEGAL_HELP: "Abhi jo facts pata hain, unke hisaab se vakil ya legal aid se baat karna useful ho sakta hai.",
+                ProfessionalHelpLevel.LEGAL_HELP_RECOMMENDED: "Abhi jo facts pata hain, unke hisaab se agla important step lene se pehle case-specific legal advice lena sensible hoga.",
+                ProfessionalHelpLevel.URGENT_LEGAL_HELP: "Abhi jo legal risk pata hai, uske liye jaldi legal advice lena important hai. Immediate physical safety pehle aati hai.",
+            }[level]
+        return {
+            ProfessionalHelpLevel.SELF_HELP_REASONABLE: "Based on what is currently known, taking the ordinary next step yourself appears reasonable at this stage. Reconsider legal advice if the situation changes.",
+            ProfessionalHelpLevel.CONSIDER_LEGAL_HELP: "Based on what is currently known, speaking with an advocate or legal-aid service could be useful at this stage.",
+            ProfessionalHelpLevel.LEGAL_HELP_RECOMMENDED: "Based on what is currently known, case-specific legal advice would be prudent before the next significant step.",
+            ProfessionalHelpLevel.URGENT_LEGAL_HELP: "The currently known legal risk makes prompt legal advice important. Immediate physical safety still comes first.",
+        }[level]
+
     def _apply_extraction(
         self,
         profile: StructuredCaseProfile,
@@ -578,7 +638,7 @@ class GeminiConversationService:
         for extracted_field, candidate in facts.items():
             field = alias_to_key.get(extracted_field, extracted_field)
             confidence = confidence_by_field.get(extracted_field, extraction.classification.confidence)
-            if confidence < 0.55:
+            if confidence < (0.80 if field in SIGNAL_FACT_KEYS else 0.55):
                 continue
             if candidate is None or candidate == "" or candidate == []:
                 continue
@@ -717,25 +777,23 @@ class GeminiConversationService:
         # only, and no longer carries document-template requirements.
         profile.missing_required_fields = list(profile.intake_missing_facts)
 
+        if not document_routing_allowed(profile, safety, profile.readiness):
+            # Neither the UI nor the chat model should see a document candidate
+            # before the readiness/safety gate permits a document action.
+            profile.recommended_doc_type = None
+            profile.recommended_doc_label = None
+            profile.missing_document_fields = []
+            profile.is_ready_for_document = False
+            profile.recommended_next_action = None
+            profile.key_facts.pop("document_intake_active", None)
+            return
+
         candidate_doc_type = select_document_for_workflow(
             profile.category, profile.current_stage_key
         )
         candidate_doc_label = workflow.get("default_doc_label") or (
             DOCUMENT_DEFINITIONS.get(candidate_doc_type).name if candidate_doc_type and candidate_doc_type in DOCUMENT_DEFINITIONS else None
         )
-
-        if not document_routing_allowed(profile, safety, profile.readiness):
-            # Still understanding case or in guidance stage: store candidate
-            # document metadata for the conversational roadmap but do NOT expose
-            # a recommended_next_action – that would render a premature document
-            # button in the UI even before we understand the case.
-            profile.recommended_doc_type = candidate_doc_type
-            profile.recommended_doc_label = candidate_doc_label
-            profile.missing_document_fields = self._missing_document_fields(profile)
-            profile.is_ready_for_document = False
-            profile.recommended_next_action = None
-            return
-
         profile.recommended_doc_type = candidate_doc_type
         profile.recommended_doc_label = candidate_doc_label
         # Template fields are computed only now, once a document is warranted.
@@ -748,7 +806,49 @@ class GeminiConversationService:
             "type": "PREPARE_DOC",
             "doc_type": profile.recommended_doc_type,
             "label": profile.recommended_doc_label,
+            "intent": "SYSTEM_SUGGESTED",
         }
+
+    def _document_request_response(
+        self, profile: StructuredCaseProfile, message: str, style: LanguageScript,
+        hint: Optional[str] = None,
+    ) -> ChatTurnResponse:
+        original_message = profile.document_request.get("message", message) if profile.document_request and profile.document_request.get("status") == "SAFETY_PAUSED" else message
+        doc_type, error = resolve_requested_document(original_message, profile.category, hint)
+        if not doc_type:
+            profile.document_request = {"intent": "USER_REQUESTED", "status": "BLOCKED", "message": original_message}
+            unsupported = bool(error and "not supported" in error)
+            if style.script == "devanagari":
+                reply = "यह दस्तावेज़ इस मामले के लिए उपलब्ध नहीं है। कृपया समर्थित दस्तावेज़ का नाम बताइए।" if unsupported else "कृपया बताइए कि उपलब्ध दस्तावेज़ों में से कौन-सा बनाना चाहते हैं।"
+            elif style.language == "hinglish":
+                reply = "Yeh document is case ke liye available nahi hai. Kripya supported document ka naam batayein." if unsupported else "Kaunsa supported document taiyar karna chahenge?"
+            else:
+                reply = error or "Please name the document you want."
+            return ChatTurnResponse(reply_text=reply, case_profile=profile, suggested_action=None, message_id=str(uuid.uuid4()))
+        definition = DOCUMENT_DEFINITIONS[doc_type]
+        values: dict[str, Any] = {}
+        aliases = {"complainant_name": "user_name", "complainant_city": "user_city", "recipient_name": "opposite_party_name"}
+        for field in (*definition.required_fields, *definition.optional_fields):
+            if field == "incident_narrative":
+                values[field] = profile.key_facts.get("issue_description") or profile.title
+            else:
+                present, value = read_profile_fact(profile, aliases.get(field, field))
+                if present:
+                    values[field] = value
+        assessment = assess_document_generation(doc_type, profile.category, values)
+        profile.document_request = {
+            "intent": "USER_REQUESTED", "document_type": doc_type, "status": assessment.status,
+            "missing_required_fields": assessment.missing_required_fields,
+            "missing_optional_fields": assessment.missing_optional_fields,
+            "optional_skipped": bool(profile.document_request and profile.document_request.get("optional_skipped")),
+        }
+        action = {"type": "PREPARE_DOC", "doc_type": doc_type, "label": definition.name,
+                  "intent": "USER_REQUESTED", "open_confirmation_modal": True}
+        return ChatTurnResponse(
+            reply_text=self._document_handoff_reply(style, bool(assessment.missing_required_fields)),
+            case_profile=profile, quick_replies=[], suggested_action=action,
+            message_id=str(uuid.uuid4()),
+        )
 
     @staticmethod
     def _safety_first_reply(safety: SafetyAssessment) -> str:
@@ -894,7 +994,7 @@ class GeminiConversationService:
                 **{
                     key: value
                     for key, value in profile.key_facts.items()
-                    if key not in {"last_question_group", "last_upload"}
+                    if key not in {"last_question_group", "last_upload", "pending_document_request"}
                 },
             },
             "evidence_available": [item.id for item in profile.evidence_checklist if item.is_available],
@@ -906,6 +1006,7 @@ class GeminiConversationService:
             "script_style": profile.script_style,
             "readiness": profile.readiness,
             "missing_document_fields": profile.missing_document_fields,
+            "document_request": profile.document_request,
             "document_intake_active": bool(profile.key_facts.get("document_intake_active")),
         }
 
@@ -923,6 +1024,7 @@ class GeminiConversationService:
             "recommended_document": profile.recommended_doc_type,
             "recommended_document_label": profile.recommended_doc_label,
             "recommended_next_action": profile.recommended_next_action,
+            "document_request": profile.document_request,
         }
 
     @staticmethod
@@ -975,18 +1077,18 @@ class GeminiConversationService:
         return response
 
     @staticmethod
-    def _is_document_request(message: str) -> bool:
-        lowered = message.casefold()
-        return any(term in lowered for term in ["prepare", "draft", "create the letter", "make the letter"])
-
-    @staticmethod
     def _is_document_handoff_request(message: str) -> bool:
         lowered = message.casefold()
         if re.search(r"\b(?:don't|do not|not|never|can't)\s+(?:prepare|generate|create|draft|make|write)\b", lowered):
             return False
         action_words = re.search(
-            r"\b(?:prepare|generate|create|draft|make|write|banao|bana|banado|taiyar|likho)\b"
+            r"\b(?:prepare|generate|create|draft|make|write|use|download|banao|bana|banado|taiyar|likho)\b"
             r"|तैयार|बनाओ|बनाइ|बनाना|लिख",
+            lowered,
+        )
+        request_phrase = re.search(r"\b(?:give|send|share)\s+(?:me\s+)?(?:the\s+|my\s+)?", lowered)
+        status_phrase = re.search(
+            r"\b(?:when|where)\b.{0,80}\b(?:appear|available|ready|link|download)\b",
             lowered,
         )
         document_words = re.search(
@@ -994,7 +1096,14 @@ class GeminiConversationService:
             r"|नोटिस|दस्तावेज|पत्र|शिकायत|आवेदन|पीडीएफ",
             lowered,
         )
-        return bool(action_words and document_words)
+        return bool(document_words and (action_words or request_phrase or status_phrase))
+
+    @staticmethod
+    def _is_optional_skip(message: str) -> bool:
+        return bool(re.fullmatch(
+            r"\s*(?:skip|leave it|i don't know|i do not know|i don't have that|i do not have that|generate without it|bina iske banao|nahi pata|छोड़ दो|पता नहीं)\s*[.!]?\s*",
+            message.casefold(),
+        ))
 
     @staticmethod
     def _document_handoff_reply(style: LanguageScript, has_missing_details: bool) -> str:

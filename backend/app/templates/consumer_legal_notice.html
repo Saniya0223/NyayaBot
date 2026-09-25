@@ -117,7 +117,7 @@
   <strong>FROM / COMPLAINANT:</strong><br>
   <strong>{{ complainant.name }}</strong><br>
   {% if complainant.address %}{{ complainant.address }}<br>{% endif %}
-  {{ complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}<br>
+  {{ complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}{% if complainant.pin_code %} - {{ complainant.pin_code }}{% endif %}<br>
   {% if complainant.phone %}Phone: {{ complainant.phone }}<br>{% endif %}
   {% if complainant.email %}Email: {{ complainant.email }}{% endif %}
 </div>
@@ -141,6 +141,7 @@
 <div class="numbered-para">
   3. <strong>STATEMENT OF GRIEVANCE:</strong> {{ incident_narrative }}
 </div>
+{% if order_number %}<p class="para"><strong>Order reference:</strong> {{ order_number }}</p>{% endif %}
 
 <div class="numbered-para">
   4. <strong>LEGAL GROUNDS:</strong> {{ legal_grounds or 'The aforesaid failure to redress the grievance gives rise to actionable claims under the Consumer Protection Act, 2019 in accordance with the stated facts.' }}

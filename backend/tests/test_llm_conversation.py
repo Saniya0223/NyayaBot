@@ -22,6 +22,8 @@ class FakeGeminiProvider(LLMProvider):
         self.fail = fail
         self.extraction_context = None
         self.response_context = None
+        self.extraction_calls = 0
+        self.chat_calls = 0
 
     @property
     def status(self) -> ProviderStatus:
@@ -34,6 +36,7 @@ class FakeGeminiProvider(LLMProvider):
         )
 
     async def extract_case_updates(self, context: LLMExtractionContext) -> CaseExtraction:
+        self.extraction_calls += 1
         self.extraction_context = context
         if self.fail:
             raise LLMProviderError("test failure")
@@ -43,6 +46,7 @@ class FakeGeminiProvider(LLMProvider):
         return self.extraction.classification
 
     async def chat(self, context: LLMResponseContext) -> str:
+        self.chat_calls += 1
         self.response_context = context
         return "Theek hai — maine aapke validated facts aur current legal step ko update kar diya hai."
 
@@ -63,6 +67,61 @@ class SequencedFakeProvider(FakeGeminiProvider):
     async def chat(self, context: LLMResponseContext) -> str:
         self.response_contexts.append(context)
         return "I have noted the facts and can explain the current workflow step."
+
+
+def test_direct_lawyer_question_uses_structured_assessment_without_extra_call():
+    from app.schemas.professional_help import ProfessionalHelpLevel
+
+    provider = FakeGeminiProvider(CaseExtraction(
+        user_intent="Asks about legal advice",
+        classification=IssueClassification(category="CONSUMER", issue_type="DEFECTIVE_PRODUCT", confidence=0.95),
+    ))
+    service = GeminiConversationService(provider=provider, workflow_agent=ConversationalLegalAgent())
+    profile = service.workflow_agent._init_case_profile("Delayed delivery", category_override="CONSUMER")
+    result = asyncio.run(service.process_turn(ChatTurnRequest(message="Do I need a lawyer?"), profile, []))
+
+    assert provider.response_context.professional_help_question is True
+    assert provider.response_context.professional_help_should_surface is True
+    assert provider.response_context.professional_help.level == ProfessionalHelpLevel.SELF_HELP_REASONABLE
+    assert result.case_profile.professional_help == provider.response_context.professional_help
+    assert provider.extraction_calls == 1
+    assert provider.chat_calls == 1
+
+
+def test_known_proceeding_changes_help_context_without_changing_document_action():
+    from app.schemas.professional_help import ProfessionalHelpLevel, ProfessionalHelpReason
+
+    provider = FakeGeminiProvider(CaseExtraction(
+        user_intent="Reports formal case",
+        classification=IssueClassification(category="CONSUMER", issue_type="DEFECTIVE_PRODUCT", confidence=0.95),
+        facts=ExtractedCaseFacts(formal_proceeding_started=True),
+    ))
+    service = GeminiConversationService(provider=provider, workflow_agent=ConversationalLegalAgent())
+    profile = service.workflow_agent._init_case_profile("Delayed delivery", category_override="CONSUMER")
+    result = asyncio.run(service.process_turn(ChatTurnRequest(message="Formal proceedings started"), profile, []))
+
+    assessment = provider.response_context.professional_help
+    assert assessment.level == ProfessionalHelpLevel.LEGAL_HELP_RECOMMENDED
+    assert ProfessionalHelpReason.FORMAL_PROCEEDING_STARTED in assessment.reason_codes
+    assert provider.response_context.professional_help_should_surface is True
+    assert result.suggested_action == result.case_profile.recommended_next_action
+
+
+def test_low_confidence_professional_help_signal_is_not_used():
+    from app.llm.contracts import FieldConfidence
+    from app.schemas.professional_help import ProfessionalHelpLevel
+
+    provider = FakeGeminiProvider(CaseExtraction(
+        user_intent="Asks for guidance",
+        classification=IssueClassification(category="CONSUMER", issue_type="DEFECTIVE_PRODUCT", confidence=0.95),
+        facts=ExtractedCaseFacts(formal_proceeding_started=True),
+        confidence_by_field=[FieldConfidence(field="formal_proceeding_started", confidence=0.79)],
+    ))
+    service = GeminiConversationService(provider=provider, workflow_agent=ConversationalLegalAgent())
+    profile = service.workflow_agent._init_case_profile("Delayed delivery", category_override="CONSUMER")
+    response = asyncio.run(service.process_turn(ChatTurnRequest(message="What next?"), profile, []))
+    assert response.case_profile.professional_help.level == ProfessionalHelpLevel.SELF_HELP_REASONABLE
+    assert "formal_proceeding_started" not in response.case_profile.key_facts
 
 
 def test_eligible_document_request_uses_prepare_action_without_model_draft():
@@ -92,8 +151,10 @@ def test_eligible_document_request_uses_prepare_action_without_model_draft():
 
     assert provider.extraction_context is not None
     assert provider.response_context is None
-    assert response.suggested_action == response.case_profile.recommended_next_action
+    assert response.case_profile.recommended_next_action is not None
+    assert response.suggested_action["doc_type"] == response.case_profile.recommended_next_action["doc_type"]
     assert response.suggested_action["type"] == "PREPARE_DOC"
+    assert response.suggested_action["open_confirmation_modal"] is True
     assert not response.case_profile.key_facts.get("document_intake_active")
     assert len(response.reply_text) < 250
     assert "PDF" in response.reply_text
@@ -105,7 +166,7 @@ def test_eligible_document_request_uses_prepare_action_without_model_draft():
     assert ordinary.suggested_action == ordinary.case_profile.recommended_next_action
 
 
-def test_document_words_without_prepare_action_remain_ordinary_chat():
+def test_document_request_without_prepare_action_never_claims_a_pdf_is_queued():
     provider = FakeGeminiProvider(
         CaseExtraction(
             user_intent="Asks about a notice",
@@ -117,7 +178,142 @@ def test_document_words_without_prepare_action_remain_ordinary_chat():
     response = asyncio.run(service.process_turn(ChatTurnRequest(message="prepare the notice"), None, []))
 
     assert response.suggested_action is None
+    assert response.case_profile.recommended_doc_type is None
+    assert provider.response_context is None
+    assert "document" in response.reply_text.lower()
+    assert response.case_profile.document_request["status"] == "BLOCKED"
+
+
+def test_document_explanation_without_prepare_action_remains_ordinary_chat():
+    provider = FakeGeminiProvider(
+        CaseExtraction(
+            user_intent="Asks what a notice is",
+            classification=IssueClassification(category="GENERAL", issue_type="GENERAL", confidence=0.9),
+        )
+    )
+    service = GeminiConversationService(provider=provider, workflow_agent=ConversationalLegalAgent())
+
+    response = asyncio.run(service.process_turn(ChatTurnRequest(message="What is a legal notice?"), None, []))
+
+    assert response.suggested_action is None
     assert provider.response_context is not None
+
+
+def test_salary_notice_request_bypasses_proactive_case_readiness_without_promising_pdf():
+    provider = FakeGeminiProvider(
+        CaseExtraction(
+            user_intent="Create a salary notice PDF",
+            classification=IssueClassification(category="EMPLOYMENT", issue_type="UNPAID_DELAYED_SALARY", confidence=0.95),
+        )
+    )
+    agent = ConversationalLegalAgent()
+    service = GeminiConversationService(provider=provider, workflow_agent=agent)
+    profile = agent._init_case_profile("Four months of salary are unpaid", category_override="EMPLOYMENT")
+    profile.user_name = "Example Employee"
+    profile.user_city = "Jaipur"
+    profile.user_state = "Rajasthan"
+    profile.opposite_party_name = "Example Employer"
+    profile.unpaid_months = ["four months"]
+    profile.disputed_amount = 400000
+    profile.key_facts["employee_role"] = "Software Engineer"
+    service._refresh_workflow(profile)
+    assert profile.readiness == "UNDERSTANDING_CASE"
+    assert profile.recommended_next_action is None
+    assert {"monthly_salary", "hr_contacted", "employment_proof_available"} <= set(profile.intake_missing_facts)
+
+    response = asyncio.run(service.process_turn(ChatTurnRequest(message="create notice pdf"), profile, []))
+
+    assert provider.response_context is None
+    assert response.suggested_action["type"] == "PREPARE_DOC"
+    assert response.suggested_action["intent"] == "USER_REQUESTED"
+    assert response.suggested_action["open_confirmation_modal"] is True
+    assert response.case_profile.document_request["status"] in {"READY_TO_GENERATE", "OPTIONAL_FIELDS_AVAILABLE"}
+    assert response.case_profile.recommended_doc_type is None
+    assert response.case_profile.missing_document_fields == []
+    assert "queued" not in response.reply_text.lower()
+    assert response.case_profile.readiness == "UNDERSTANDING_CASE"
+
+    skipped = asyncio.run(service.process_turn(ChatTurnRequest(message="skip"), response.case_profile, []))
+    assert skipped.suggested_action["open_confirmation_modal"] is True
+    assert skipped.case_profile.document_request["optional_skipped"] is True
+    assert skipped.case_profile.readiness == "UNDERSTANDING_CASE"
+
+
+def test_salary_pdf_request_opens_confirmation_without_unrelated_followups():
+    classification = IssueClassification(
+        category="EMPLOYMENT", issue_type="UNPAID_DELAYED_SALARY", confidence=0.95,
+    )
+
+    def extraction(**facts) -> CaseExtraction:
+        return CaseExtraction(
+            user_intent="Continue salary notice request",
+            classification=classification,
+            facts=ExtractedCaseFacts(**facts),
+        )
+
+    provider = SequencedFakeProvider([
+        extraction(),
+        extraction(user_state="Rajasthan"),
+        extraction(monthly_salary=100000),
+        extraction(hr_contacted=True),
+        extraction(employment_proof_available=True),
+    ])
+    agent = ConversationalLegalAgent()
+    service = GeminiConversationService(provider=provider, workflow_agent=agent)
+    profile = agent._init_case_profile("Four months of unpaid salary", category_override="EMPLOYMENT")
+    profile.user_name = "Example Employee"
+    profile.user_city = "Jaipur"
+    profile.opposite_party_name = "Example Employer"
+    profile.unpaid_months = ["four months"]
+    profile.disputed_amount = 400000
+    profile.key_facts["employee_role"] = "Software Engineer"
+
+    response = asyncio.run(service.process_turn(ChatTurnRequest(message="create notice pdf"), profile, []))
+    assert provider.response_contexts == []
+    assert response.case_profile.readiness == "UNDERSTANDING_CASE"
+    assert response.suggested_action["type"] == "PREPARE_DOC"
+    assert response.suggested_action["doc_type"] == "SALARY_DEMAND_NOTICE"
+    assert response.suggested_action["open_confirmation_modal"] is True
+    assert response.case_profile.document_request["missing_required_fields"] == []
+
+
+def test_immediate_danger_pauses_and_preserves_explicit_document_request():
+    provider = FakeGeminiProvider(CaseExtraction(
+        user_intent="Document request during threat",
+        classification=IssueClassification(category="EMPLOYMENT", issue_type="UNPAID_DELAYED_SALARY", confidence=0.95),
+    ))
+    agent = ConversationalLegalAgent()
+    service = GeminiConversationService(provider=provider, workflow_agent=agent)
+    profile = agent._init_case_profile("My employer owes me salary", category_override="EMPLOYMENT")
+    response = asyncio.run(service.process_turn(ChatTurnRequest(
+        message="My employer is outside with a knife and says he will kill me; create salary notice pdf",
+    ), profile, []))
+    assert provider.extraction_context is None
+    assert response.suggested_action is None
+    assert response.case_profile.document_request["status"] == "SAFETY_PAUSED"
+    assert response.case_profile.document_request["intent"] == "USER_REQUESTED"
+
+    profile = response.case_profile
+    profile.key_facts["safety_triage_complete"] = True
+    profile.safety_status["immediate_danger"] = False
+    resumed = asyncio.run(service.process_turn(ChatTurnRequest(message="I am safe now"), profile, []))
+    assert resumed.suggested_action["type"] == "PREPARE_DOC"
+    assert resumed.suggested_action["doc_type"] == "SALARY_DEMAND_NOTICE"
+
+
+def test_structured_document_intent_routes_natural_request_without_keyword_tree():
+    provider = FakeGeminiProvider(CaseExtraction(
+        user_intent="Wants a salary demand letter",
+        document_request="SALARY_DEMAND_NOTICE",
+        classification=IssueClassification(category="EMPLOYMENT", issue_type="UNPAID_DELAYED_SALARY", confidence=0.95),
+    ))
+    agent = ConversationalLegalAgent()
+    service = GeminiConversationService(provider=provider, workflow_agent=agent)
+    profile = agent._init_case_profile("My employer owes me salary", category_override="EMPLOYMENT")
+    response = asyncio.run(service.process_turn(ChatTurnRequest(message="I need my salary demand"), profile, []))
+    assert response.suggested_action["doc_type"] == "SALARY_DEMAND_NOTICE"
+    assert response.suggested_action["intent"] == "USER_REQUESTED"
+    assert provider.response_context is None
 
 
 def tenancy_extraction(amount: float = 50000) -> CaseExtraction:
@@ -282,6 +478,8 @@ def test_gemini_turn_uses_recent_history_and_updated_workflow_context():
     assert provider.response_context.script_style == "roman"
     assert provider.response_context.domain_context["domain_id"] == "HOUSING_TENANT"
     assert provider.response_context.legal_sources
+    assert all(source.get("act") and source.get("section") for source in response.case_profile.legal_sources)
+    assert all(source in provider.response_context.legal_sources for source in response.case_profile.legal_sources)
     assert "document:user_name" not in provider.response_context.missing_information
     assert "user_name" in response.case_profile.missing_document_fields
 

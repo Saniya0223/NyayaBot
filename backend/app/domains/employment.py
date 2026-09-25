@@ -4,6 +4,10 @@ from app.domains.contracts import (
     JurisdictionPolicy, JurisdictionRequirement, OfficialSourceReference, QuestionPriority,
     RagRoutingPolicy,
 )
+from app.schemas.professional_help import (
+    ProfessionalHelpLevel as HelpLevel, ProfessionalHelpPolicy, ProfessionalHelpReason as Reason,
+    ProfessionalHelpRule, ReassessTrigger as Trigger,
+)
 
 
 EMPLOYMENT_DOMAIN = DomainDefinition(
@@ -51,4 +55,12 @@ EMPLOYMENT_DOMAIN = DomainDefinition(
         official_sources=(OfficialSourceReference(title="Code on Wages, 2019", authority="Ministry of Labour & Employment", url="https://labour.gov.in/sites/default/files/the_code_on_wages_2019_no._29_of_2019.pdf"),),
     ),
     jurisdiction=JurisdictionPolicy(requirement=JurisdictionRequirement.REQUIRED_LATER, fact_key="user_state", rationale="Applicable authority may depend on State, role, and establishment."),
+    professional_help=ProfessionalHelpPolicy(
+        rules=(
+            ProfessionalHelpRule(source="fact_true", key="termination_occurred", reason=Reason.TERMINATION_OCCURRED, level=HelpLevel.CONSIDER_LEGAL_HELP),
+            ProfessionalHelpRule(source="fact_true", key="retaliation_alleged", reason=Reason.RETALIATION_ALLEGED, level=HelpLevel.CONSIDER_LEGAL_HELP),
+            ProfessionalHelpRule(source="fact_true", key="complex_contract_dispute", reason=Reason.COMPLEX_CONTRACT_DISPUTE, level=HelpLevel.CONSIDER_LEGAL_HELP),
+        ),
+        reassess_on=(Trigger.TERMINATION_OCCURRED, Trigger.GRIEVANCE_FAILED, Trigger.FORMAL_NOTICE_RECEIVED, Trigger.FORMAL_PROCEEDING_STARTED),
+    ),
 )

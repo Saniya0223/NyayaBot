@@ -34,8 +34,8 @@
 <div class="to-box">
   <strong>FROM / APPLICANT:</strong><br>
   <strong>{{ complainant.name }}</strong><br>
-  {{ complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}<br>
-  Phone: {{ complainant.phone or 'N/A' }} | Email: {{ complainant.email or 'N/A' }}
+  {{ complainant.city }}{% if complainant.state %}, {{ complainant.state }}{% endif %}{% if complainant.pin_code %} - {{ complainant.pin_code }}{% endif %}<br>
+  {% if complainant.phone %}Phone: {{ complainant.phone }}{% endif %}{% if complainant.phone and complainant.email %} | {% endif %}{% if complainant.email %}Email: {{ complainant.email }}{% endif %}
 </div>
 
 <div style="font-weight: bold; text-decoration: underline; margin: 15px 0;">
@@ -51,6 +51,8 @@
 <div class="numbered-para">
   2. <strong>TRANSACTION / INCIDENT DETAILS:</strong> {{ incident_narrative }}
 </div>
+{% if fraudster_phone %}<p><strong>Reported phone number:</strong> {{ fraudster_phone }}</p>{% endif %}
+{% if fraudster_upi_id %}<p><strong>Reported UPI ID:</strong> {{ fraudster_upi_id }}</p>{% endif %}
 
 <div class="numbered-para">
   3. That a disputed sum of {% if financials and financials.amount_paid and financials.amount_paid > 0 %}<strong>₹{{ "{:,.2f}".format(financials.amount_paid) }}</strong>{% else %}funds{% endif %} was debited from the Complainant's account and transferred to the recipient/beneficiary account associated with the disputed/unauthorized transaction.
