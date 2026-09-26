@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local Mock Portal — Test Only</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, "Segoe UI", sans-serif; background: #f4f6f9; color: #1f2933; }
+  .banner { background: #b91c1c; color: #fff; text-align: center; font-weight: 800; letter-spacing: .04em; padding: 12px 16px; }
+  header { background: #1e3a5f; color: #fff; padding: 14px 24px; }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 2px 0 0; font-size: 13px; opacity: .8; }
+  main { max-width: 860px; margin: 20px auto; padding: 0 16px 40px; }
+  form { background: #fff; border: 1px solid #d5dbe3; border-radius: 8px; padding: 20px 24px; }
+  fieldset { border: 0; margin: 0 0 16px; padding: 0; }
+  legend { font-weight: 700; font-size: 16px; margin-bottom: 8px; color: #1e3a5f; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+  .full { grid-column: 1 / -1; }
+  label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 13px; }
+  input, select, textarea { font: inherit; padding: 8px 10px; border: 1px solid #b8c2cc; border-radius: 4px; background: #fff; }
+  textarea { min-height: 110px; resize: vertical; }
+  .check { flex-direction: row; align-items: center; gap: 8px; font-weight: 500; }
+  .actions { display: flex; gap: 12px; margin-top: 8px; }
+  button { font: inherit; font-weight: 700; padding: 10px 22px; border-radius: 4px; border: 1px solid #1e3a5f; cursor: pointer; }
+  #review-btn { background: #fff; color: #1e3a5f; }
+  #submit-btn { background: #1e3a5f; color: #fff; }
+  #notice { margin-top: 16px; padding: 12px 14px; border-radius: 6px; display: none; }
+  #notice.show { display: block; background: #fff7e6; border: 1px solid #f0b429; }
+  #review-list { margin: 6px 0 0; padding-left: 18px; }
+  @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="banner" id="mock-banner">LOCAL MOCK PORTAL — TEST ONLY — NO REAL SUBMISSION</div>
+<header>
+  <h1>Public Grievance Registration (Mock)</h1>
+  <p>Development target for NyayaBot Auto-Fill. This page is served by the local backend and sends nothing anywhere.</p>
+</header>
+<main>
+  <form id="grievance-form" novalidate>
+    <fieldset>
+      <legend>Complainant details</legend>
+      <div class="grid">
+        <label>Full Name <input name="full_name" autocomplete="off"></label>
+        <label>Email <input name="email" type="email" autocomplete="off"></label>
+        <label>Phone <input name="phone" type="tel" autocomplete="off"></label>
+        <label>State
+          <select name="state">
+            <option value="">Select state</option>
+            <option>Andhra Pradesh</option><option>Arunachal Pradesh</option><option>Assam</option>
+            <option>Bihar</option><option>Chhattisgarh</option><option>Delhi</option><option>Goa</option>
+            <option>Gujarat</option><option>Haryana</option><option>Himachal Pradesh</option>
+            <option>Jammu and Kashmir</option><option>Jharkhand</option><option>Karnataka</option>
+            <option>Kerala</option><option>Madhya Pradesh</option><option>Maharashtra</option>
+            <option>Manipur</option><option>Meghalaya</option><option>Mizoram</option><option>Nagaland</option>
+            <option>Odisha</option><option>Punjab</option><option>Rajasthan</option><option>Sikkim</option>
+            <option>Tamil Nadu</option><option>Telangana</option><option>Tripura</option>
+            <option>Uttar Pradesh</option><option>Uttarakhand</option><option>West Bengal</option>
+          </select>
+        </label>
+        <label>City / District <input name="city" autocomplete="off"></label>
+        <label>PIN Code <input name="pin_code" inputmode="numeric" maxlength="6" autocomplete="off"></label>
+        <label class="full">Address <textarea name="address" rows="2" style="min-height:60px"></textarea></label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Grievance details</legend>
+      <div class="grid">
+        <label>Complaint Category
+          <select name="complaint_category">
+            <option value="">Select category</option>
+            <option value="CONSUMER">Consumer complaint</option>
+            <option value="CYBER_FRAUD">Cyber fraud</option>
+            <option value="EMPLOYMENT">Employment / labour</option>
+            <option value="HOUSING_TENANT">Housing / tenancy</option>
+            <option value="POLICE_COMPLAINT">Police complaint</option>
+            <option value="GENERAL">Other / general</option>
+          </select>
+        </label>
+        <label>Amount involved (Rs) <input name="amount" inputmode="decimal" autocomplete="off"></label>
+        <label class="full">Transaction / reference number <input name="transaction_ref" autocomplete="off"></label>
+        <label class="full">Complaint Description <textarea name="description"></textarea></label>
+        <label class="full">Supporting document <input name="supporting_document" type="file"></label>
+        <label class="full check"><input name="confirm" type="checkbox"> I confirm the details above are true to the best of my knowledge.</label>
+      </div>
+    </fieldset>
+    <div class="actions">
+      <button type="button" id="review-btn">Review</button>
+      <button type="submit" id="submit-btn">Submit complaint</button>
+    </div>
+    <div id="notice" role="status"></div>
+  </form>
+</main>
+<script>
+  // Test-only page: nothing here makes a network request.
+  window.mockSubmitAttempts = 0;
+  const form = document.getElementById("grievance-form");
+  const notice = document.getElementById("notice");
+  document.getElementById("review-btn").addEventListener("click", () => {
+    const rows = [...form.querySelectorAll("input, select, textarea")]
+      .filter(el => el.type !== "file")
+      .map(el => {
+        const label = el.closest("label").childNodes[0].textContent.trim() || el.name;
+        const filled = el.type === "checkbox" ? el.checked : Boolean(el.value);
+        return `<li>${label}: ${filled ? "filled" : "empty"}</li>`;
+      }).join("");
+    notice.innerHTML = `<strong>Review (mock)</strong><ul id="review-list">${rows}</ul>`;
+    notice.className = "show";
+  });
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    window.mockSubmitAttempts += 1;
+    notice.innerHTML = "<strong>Mock portal:</strong> nothing was submitted. This page is for local testing only.";
+    notice.className = "show";
+  });
+</script>
+</body>
+</html>

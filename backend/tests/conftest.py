@@ -7,6 +7,9 @@ from pathlib import Path
 # a local backend/.env exists. Provider behavior is covered with explicit fakes.
 os.environ["GEMINI_API_KEY"] = ""
 os.environ["GROQ_API_KEY"] = ""
+# OCR.space is always mocked in tests; an unroutable endpoint guards against leaks.
+os.environ["OCR_SPACE_API_KEY"] = ""
+os.environ["OCR_SPACE_ENDPOINT"] = "http://127.0.0.1:9/ocr-disabled-in-tests"
 os.environ["AUTH_COOKIE_SECURE"] = "false"
 _TEST_DATABASE_DIR = Path(tempfile.mkdtemp(prefix="nyayabot-tests-"))
 os.environ["DATABASE_URL"] = f"sqlite:///{(_TEST_DATABASE_DIR / 'test.db').as_posix()}"

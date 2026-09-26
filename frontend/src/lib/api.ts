@@ -312,13 +312,7 @@ export interface StructuredCaseProfile {
     pdf_download_url?: string;
     docx_download_url?: string;
   }>;
-  provided_documents?: Array<{
-    id: string;
-    name: string;
-    file_type?: string;
-    uploaded_at?: string;
-    download_url: string;
-  }>;
+  provided_documents?: ProvidedDocument[];
   legal_sources?: Array<{
     act: string;
     section: string;
@@ -479,6 +473,82 @@ export async function fetchStatutes(): Promise<Record<string, StatutoryCitation[
 export interface ChatSessionResponse {
   case_profile: StructuredCaseProfile;
   messages: ChatMessageItem[];
+}
+
+export type EvidenceProcessingStatus = 'NOT_PROCESSED' | 'UPLOADED' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+
+/** An uploaded ("Provided by you") file and its processing state. Never a generated document. */
+export interface ProvidedDocument {
+  id: string;
+  name: string;
+  file_type?: string;
+  uploaded_at?: string;
+  download_url: string;
+  processing_status?: EvidenceProcessingStatus;
+  error_code?: string | null;
+  error_message?: string | null;
+  retryable?: boolean;
+  analysis_status?: 'COMPLETED' | 'LIMITED' | 'FAILED' | 'SKIPPED' | null;
+  analysis_mode?: 'llm' | 'rule_based' | null;
+  page_count?: number | null;
+  has_readable_text?: boolean | null;
+  methods?: string[];
+  direct_pages?: number;
+  ocr_pages?: number;
+  failed_pages?: number[];
+  findings_count?: number;
+  candidate_count?: number;
+  conflict_count?: number;
+  review_status?: 'NONE' | 'PENDING' | 'OFFERED';
+}
+
+export interface EvidenceSourceRef {
+  evidence_id: string;
+  file_name: string;
+  page_number: number | null;
+  method: string;
+}
+
+export interface EvidenceDetail extends ProvidedDocument {
+  pages: Array<{
+    page_number: number | null;
+    method: string;
+    status: string;
+    error_code?: string | null;
+    has_readable_text: boolean;
+    text: string;
+  }>;
+  warnings: string[];
+  analysis: {
+    mode: string | null;
+    document_type: string | null;
+    summary: string;
+    findings: Array<{ id: string; type: string; value: string; statement: string; clarity: string; ocr_derived: boolean; source: EvidenceSourceRef | null }>;
+    candidate_facts: Record<string, { value: unknown; source: EvidenceSourceRef | null }>;
+    corroborated: Array<{ field: string; value: unknown; source: EvidenceSourceRef | null }>;
+    conflicts: Array<{ field: string; current_value: unknown; evidence_value: unknown; current_confirmed: boolean; source: EvidenceSourceRef | null }>;
+    deadlines: Array<{ text: string; source: EvidenceSourceRef | null }>;
+    notes: string[];
+    unanalyzed_pages: number[];
+  } | null;
+}
+
+export async function fetchEvidence(evidenceId: string): Promise<EvidenceDetail> {
+  const res = await apiFetch(`${API_BASE_URL}/evidence/${encodeURIComponent(evidenceId)}`);
+  if (!res.ok) throw new ApiError(await apiErrorMessage(res, 'Could not load this file.'), res.status);
+  return res.json();
+}
+
+export async function retryEvidence(evidenceId: string): Promise<ProvidedDocument> {
+  const res = await apiFetch(`${API_BASE_URL}/evidence/${encodeURIComponent(evidenceId)}/retry`, { method: 'POST' });
+  if (!res.ok) throw new ApiError(await apiErrorMessage(res, 'Could not retry processing.'), res.status);
+  return res.json();
+}
+
+export async function reviewEvidence(evidenceId: string): Promise<ChatTurnResponse> {
+  const res = await apiFetch(`${API_BASE_URL}/evidence/${encodeURIComponent(evidenceId)}/review`, { method: 'POST' });
+  if (!res.ok) throw new ApiError(await apiErrorMessage(res, 'Could not open these details for review.'), res.status);
+  return res.json();
 }
 
 export async function fetchChatCases(): Promise<StructuredCaseProfile[]> {

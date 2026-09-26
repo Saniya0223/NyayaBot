@@ -123,6 +123,21 @@ class CaseExtraction(BaseModel):
     document_request: Optional[str] = None  # Supported document ID, or null; backend validates.
 
 
+class EvidenceFinding(BaseModel):
+    """One piece of information found in supplied document text; never a confirmed fact."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal[
+        "party", "organization", "date", "amount", "address", "reference_number",
+        "statement", "clause", "obligation", "deadline", "other",
+    ]
+    value: str = Field(min_length=1, max_length=500)  # copied verbatim from the document text
+    statement: str = Field(default="", max_length=600)  # neutral: "The document states ..."
+    source_page: Optional[int] = None  # page marker the value came from; null if unpaginated
+    clarity: Literal["clear", "unclear"] = "clear"
+
+
 class DocumentAnalysis(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -133,6 +148,8 @@ class DocumentAnalysis(BaseModel):
     confidence_by_field: List[FieldConfidence] = Field(default_factory=list)
     explicit_deadlines: List[str] = Field(default_factory=list)
     confidence: float = Field(ge=0, le=1)
+    findings: List[EvidenceFinding] = Field(default_factory=list)
+    analysis_notes: List[str] = Field(default_factory=list)
 
 
 class LLMExtractionContext(BaseModel):
@@ -167,6 +184,9 @@ class LLMResponseContext(BaseModel):
     professional_help_question: bool = False
     user_context: Dict[str, Any] = Field(default_factory=dict)
     pending_resolution: Optional[Dict[str, Any]] = None
+    # Findings from this case's uploaded evidence (never other cases). Unverified
+    # document content, not confirmed facts; raw text only for pages the user asked about.
+    evidence: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ProviderStatus(BaseModel):

@@ -70,6 +70,25 @@ def apply_additive_migrations(engine: Engine) -> None:
                 )
             )
 
+        if "evidence_files" in tables:
+            # Evidence processing metadata; existing uploads keep NULLs and stay downloadable.
+            evidence_columns = {column["name"] for column in inspector.get_columns("evidence_files")}
+            for column, sql_type in (
+                ("file_size", "INTEGER"),
+                ("doc_type_hint", "VARCHAR(40)"),
+                ("user_excerpt", "TEXT"),
+                ("processing_status", "VARCHAR(20)"),
+                ("processing_error_code", "VARCHAR(40)"),
+                ("processing_started_at", "DATETIME"),
+                ("processing_completed_at", "DATETIME"),
+                ("page_count", "INTEGER"),
+                ("extraction_data", "JSON"),
+                ("analysis_status", "VARCHAR(20)"),
+                ("analysis_data", "JSON"),
+            ):
+                if column not in evidence_columns:
+                    connection.execute(text(f"ALTER TABLE evidence_files ADD COLUMN {column} {sql_type}"))
+
         if "cases" in tables:
             connection.execute(
                 text("CREATE INDEX IF NOT EXISTS ix_cases_user_id ON cases (user_id)")

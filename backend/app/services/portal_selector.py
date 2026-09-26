@@ -9,6 +9,7 @@ and *what* to accomplish.
 """
 
 from __future__ import annotations
+import os
 from dataclasses import dataclass, field
 
 
@@ -152,11 +153,34 @@ def select_portal(category: str | None) -> PortalTarget:
     return _PORTAL_MAP.get(key, _FALLBACK)
 
 
+MOCK_PORTAL_PATH = "/api/v1/browser/mock-portal"
+
+
+def mock_portal_enabled() -> bool:
+    """Development switch: route every Auto-Fill session to the local mock portal."""
+    return os.getenv("AUTOFILL_MOCK_PORTAL", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def mock_portal(base_url: str) -> PortalTarget:
+    """Local test-only portal served by this backend; filled by Playwright without an LLM."""
+    return PortalTarget(
+        url=base_url.rstrip("/") + MOCK_PORTAL_PATH,
+        label="Local Mock Portal (test only)",
+        task_template="Fill the local mock grievance form for {complainant_name}. Do NOT submit.",
+        notes="Test-only page. Nothing is sent anywhere.",
+    )
+
+
 def build_task(portal: PortalTarget, case_data: dict) -> str:
     """
     Interpolate case_data into the portal's task_template.
-    Missing keys are replaced with 'N/A' so the template never raises.
+    Missing keys are explicitly marked as unavailable; never invent a value.
     """
     from collections import defaultdict
-    safe = defaultdict(lambda: "N/A", {k: (v or "N/A") for k, v in case_data.items()})
-    return portal.task_template.format_map(safe)
+    missing = "[not provided; leave this field blank for the user]"
+    safe = defaultdict(lambda: missing, {k: (v or missing) for k, v in case_data.items()})
+    return (
+        portal.task_template.format_map(safe)
+        + "\nOnly use supplied values. Never invent names, dates, amounts, IDs or contact details. "
+        "Leave missing fields blank for manual completion. Never bypass login, CAPTCHA or OTP."
+    )

@@ -203,6 +203,16 @@ def test_real_evidence_upload_extracts_candidates_and_requires_confirmation():
     )
     assert uploaded.status_code == 200
     upload_profile = uploaded.json()["case_profile"]
+    # Upload only stores the original; extraction runs as a background task
+    # (the test client runs it before returning) and nothing is applied yet.
+    assert "pending_document_extraction" not in upload_profile["key_facts"]
+    evidence_id = upload_profile["key_facts"]["last_upload"]["evidence_id"]
+    processed = auth_client.get(f"/api/v1/evidence/{evidence_id}").json()
+    assert processed["processing_status"] == "COMPLETED"
+    assert processed["pages"][0]["method"] == "text_extraction"
+    reviewed = auth_client.post(f"/api/v1/evidence/{evidence_id}/review")
+    assert reviewed.status_code == 200
+    upload_profile = reviewed.json()["case_profile"]
     candidates = upload_profile["key_facts"]["pending_document_extraction"]["facts"]
     assert candidates["user_name"] == "Rahul Sharma"
     assert candidates["opposite_party_name"] == "Raj Verma"

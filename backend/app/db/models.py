@@ -145,6 +145,19 @@ class EvidenceFileModel(Base):
     file_path = Column(String(500), nullable=False)
     annexure_label = Column(String(20), nullable=True)  # e.g., Annexure A-1
     uploaded_at = Column(DateTime, default=datetime.utcnow)
+    # Processing state. The original file above is never modified or deleted by processing.
+    # NULL status means a record uploaded before evidence processing existed.
+    file_size = Column(Integer, nullable=True)
+    doc_type_hint = Column(String(40), nullable=True)
+    user_excerpt = Column(Text, nullable=True)
+    processing_status = Column(String(20), nullable=True)  # UPLOADED, PROCESSING, COMPLETED, FAILED
+    processing_error_code = Column(String(40), nullable=True)
+    processing_started_at = Column(DateTime, nullable=True)
+    processing_completed_at = Column(DateTime, nullable=True)
+    page_count = Column(Integer, nullable=True)
+    extraction_data = Column(JSON, nullable=True)  # page-level extracted text with method + status
+    analysis_status = Column(String(20), nullable=True)  # COMPLETED, LIMITED, FAILED, SKIPPED
+    analysis_data = Column(JSON, nullable=True)  # evidence-derived findings; never confirmed facts
 
     case = relationship("CaseModel", back_populates="evidence_files")
 

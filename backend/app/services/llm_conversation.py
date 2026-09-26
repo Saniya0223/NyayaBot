@@ -116,6 +116,7 @@ class GeminiConversationService:
         existing_profile: Optional[StructuredCaseProfile],
         recent_messages: Iterable[ChatMessage],
         user_context: Optional[dict[str, Any]] = None,
+        evidence_context: Optional[dict[str, Any]] = None,
     ) -> ChatTurnResponse:
         history = self._recent_history(recent_messages)
 
@@ -338,6 +339,7 @@ class GeminiConversationService:
                     professional_help_should_surface=help_should_surface,
                     professional_help_question=help_question,
                     user_context=user_context or {},
+                    evidence=evidence_context or {},
                     pending_resolution=(
                         {"status": resolution.status, "target_keys": pending.target_keys,
                          "allowed_choices": pending.allowed_choices}

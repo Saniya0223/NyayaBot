@@ -116,7 +116,15 @@ export default function HomeChatPage() {
           />
         </div>
         <div className={`${mobileView === 'workspace' ? 'flex' : 'hidden'} min-h-0 flex-col md:col-span-5 md:flex lg:col-span-4`}>
-          <CaseWorkspacePanel profile={profile} onTriggerDocumentModal={openDocument} />
+          <CaseWorkspacePanel
+            profile={profile}
+            onTriggerDocumentModal={openDocument}
+            onEvidenceReviewed={(response) => {
+              setProfile(response.case_profile);
+              setInjectedMessage({ text: response.reply_text, profile: response.case_profile, quick_replies: response.quick_replies });
+              setMobileView('chat');
+            }}
+          />
         </div>
       </div>
 

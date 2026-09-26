@@ -503,6 +503,9 @@ class ConversationalLegalAgent:
                         "confidence": 0.78,
                         "confirmed": True,
                     }
+                    evidence_source = (pending_upload.get("sources") or {}).get(field)
+                    if evidence_source:
+                        profile.fact_metadata[field]["evidence_source"] = evidence_source
                 else:
                     profile.key_facts[field] = value
             if pending_upload.get("facts", {}).get("response_outcome") == "REJECTED":

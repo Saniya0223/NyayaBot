@@ -1,3 +1,4 @@
+import asyncio
 import mimetypes
 import os
 import re
@@ -6,7 +7,7 @@ import logging
 from datetime import datetime
 from typing import List
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.responses import JSONResponse
@@ -17,6 +18,7 @@ from app.auth import get_current_user
 from app.auth_routes import router as auth_router
 from app.profile_routes import router as profile_router
 from app.browser_routes import router as browser_router
+from app.services.browser_runtime import browser_runtime_status
 from app.agents.conversation_agent import conversational_agent
 from app.agents.intake_node import IntakeFactExtractor
 from app.agents.orchestrator import legal_orchestrator
@@ -61,7 +63,15 @@ from app.services.document_registry import (
 from app.services.document_generation import assess_document_generation
 from app.services.professional_help import evaluate_professional_help
 from app.services.dossier_generator import DossierGenerator
-from app.services.upload_intelligence import extract_upload_text, validate_upload
+from app.services.upload_intelligence import MAX_UPLOAD_BYTES, sanitize_file_name, validate_upload
+from app.services.evidence_processing import (
+    build_review_turn,
+    evidence_chat_context,
+    evidence_detail,
+    evidence_summary,
+    process_evidence,
+    retry_stage,
+)
 from app.services.llm_conversation import gemini_conversation_service
 from app.services.case_summary import generate_case_summary, summary_fingerprint, summary_ready
 from app.services.user_context import CASE_HISTORY_LOOKUP, case_history_lookup_reply, chat_user_context, explicit_memory_text
@@ -99,6 +109,24 @@ app.include_router(profile_router)
 app.include_router(browser_router)
 
 
+@app.on_event("startup")
+async def log_auto_fill_browser_runtime() -> None:
+    """Optional Auto-Fill must never prevent the rest of NyayaBot from booting."""
+    try:
+        # Playwright's sync API refuses to run on the event-loop thread.
+        runtime = await asyncio.to_thread(browser_runtime_status)
+        logging.getLogger("uvicorn.error").info(
+            "Auto-Fill browser runtime: browser-use=%s Playwright=%s Chromium=%s",
+            runtime["browser_use"], runtime["playwright"], runtime["chromium"],
+        )
+        if not runtime["available"]:
+            logging.getLogger("uvicorn.error").warning(
+                "Auto-Fill unavailable: install requirements and run python -m playwright install chromium"
+            )
+    except Exception:
+        logging.getLogger("uvicorn.error").warning("Auto-Fill runtime diagnostic unavailable")
+
+
 @app.middleware("http")
 async def reject_untrusted_write_origins(request: Request, call_next):
     """Block browser cookie-authenticated writes from untrusted origins."""
@@ -130,13 +158,7 @@ def _safe_profile(record: ChatCaseSessionModel) -> StructuredCaseProfile:
     profile = StructuredCaseProfile.model_validate(record.profile_data)
     profile.professional_help = evaluate_professional_help(profile)
     profile.provided_documents = [
-        {
-            "id": item.id,
-            "name": item.file_name,
-            "file_type": item.file_type,
-            "uploaded_at": item.uploaded_at.isoformat() if item.uploaded_at else None,
-            "download_url": f"/api/v1/evidence/{item.id}/download",
-        }
+        evidence_summary(item)
         for item in sorted(record.case.evidence_files, key=lambda file: file.uploaded_at or datetime.min)
     ] if record.case else []
     return profile
@@ -767,7 +789,11 @@ async def handle_chat_message(
     existing_profile = _load_chat_profile(record) if record else None
     recent_messages = _messages_for_session(record) if record else []
     user_context = chat_user_context(db, current_user, req.message, req.case_id)
-    response = await gemini_conversation_service.process_turn(req, existing_profile, recent_messages, user_context=user_context)
+    # Evidence is case data: only the owned current case's evidence is ever included.
+    evidence_context = evidence_chat_context(db, record.case_id, req.message) if record else {}
+    response = await gemini_conversation_service.process_turn(
+        req, existing_profile, recent_messages, user_context=user_context, evidence_context=evidence_context,
+    )
     if user_context["intent"] == CASE_HISTORY_LOOKUP:
         response.reply_text = case_history_lookup_reply(user_context, response.case_profile.language_style)
     memory_text = explicit_memory_text(req.message)
@@ -913,6 +939,7 @@ async def handle_document_upload_extraction(
 
 @app.post("/api/v1/chat/upload-file", response_model=ChatTurnResponse)
 async def handle_evidence_file_upload(
+    background_tasks: BackgroundTasks,
     case_id: str = Form(...),
     doc_type: str = Form(...),
     upload: UploadFile = File(...),
@@ -920,11 +947,12 @@ async def handle_evidence_file_upload(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_user),
 ):
+    """Store the original, then extract and analyze it in the background."""
     record = _get_owned_chat_record(db, case_id, current_user)
     profile = _load_chat_profile(record)
 
-    original_name = os.path.basename(upload.filename or "evidence")
-    content = await upload.read()
+    original_name = sanitize_file_name(upload.filename)
+    content = await upload.read(MAX_UPLOAD_BYTES + 1)
     try:
         extension = validate_upload(original_name, content)
     except ValueError as exc:
@@ -933,11 +961,13 @@ async def handle_evidence_file_upload(
     evidence_id = str(uuid.uuid4())
     stored_name = f"{case_id[:8]}_{evidence_id}{extension}"
     storage_path = os.path.join(settings.STORAGE_DIR, "evidence", stored_name)
-    with open(storage_path, "wb") as handle:
-        handle.write(content)
+    try:
+        with open(storage_path, "wb") as handle:
+            handle.write(content)
+    except OSError as exc:
+        logger.error("case_id=%s event=evidence_storage_failed error_type=%s", case_id, type(exc).__name__)
+        raise HTTPException(status_code=500, detail="The file could not be stored. Nothing was attached; please try again.") from exc
 
-    extracted_text, extraction_mode = extract_upload_text(original_name, content)
-    combined_text = "\n".join(value for value in [extracted_text.strip(), excerpt.strip()] if value)[:50000]
     evidence_map = {
         "RENTAL_AGREEMENT": "rental_agreement",
         "SALARY_SLIP": "salary_slips",
@@ -948,38 +978,39 @@ async def handle_evidence_file_upload(
         (item for item in profile.evidence_checklist if item.id == evidence_map.get(doc_type)),
         None,
     )
-    db.add(
-        EvidenceFileModel(
-            id=evidence_id,
-            case_id=case_id,
-            file_name=original_name,
-            file_type=upload.content_type or extension.lstrip("."),
-            file_path=storage_path,
-            annexure_label=checklist_item.annexure_label if checklist_item else None,
-        )
+    evidence = EvidenceFileModel(
+        id=evidence_id,
+        case_id=case_id,
+        file_name=original_name,
+        file_type=upload.content_type or extension.lstrip("."),
+        file_path=storage_path,
+        annexure_label=checklist_item.annexure_label if checklist_item else None,
+        uploaded_at=datetime.utcnow(),
+        file_size=len(content),
+        doc_type_hint=doc_type[:40],
+        user_excerpt=excerpt.strip()[:12000] or None,
+        processing_status="UPLOADED",
     )
-    profile.provided_documents.append({
-        "id": evidence_id,
-        "name": original_name,
-        "file_type": upload.content_type or extension.lstrip("."),
-        "uploaded_at": datetime.utcnow().isoformat(),
-        "download_url": f"/api/v1/evidence/{evidence_id}/download",
-    })
+    db.add(evidence)
+    profile.provided_documents.append(evidence_summary(evidence))
     profile.key_facts["last_upload"] = {
         "evidence_id": evidence_id,
         "file_name": original_name,
         "stored_name": stored_name,
-        "extraction_mode": extraction_mode,
+        "extraction_mode": "background",
     }
-    response = await gemini_conversation_service.process_document_upload(
-        DocumentUploadExtractionRequest(
-            case_id=case_id,
-            doc_type=doc_type,
-            file_name=original_name,
-            simulated_content=combined_text or None,
-        ),
+    # Existing metadata step: evidence checklist and timeline only. No content is
+    # passed, so no facts are extracted here; findings arrive after processing.
+    response = conversational_agent.process_document_upload(
+        DocumentUploadExtractionRequest(case_id=case_id, doc_type=doc_type, file_name=original_name),
         profile,
     )
+    response.reply_text = (
+        f"I've attached {original_name} to your case and I'm reading it now. When it's processed you'll see "
+        "what I found under Provided by you. Nothing from the document is added to your case until you confirm it."
+    )
+    response.quick_replies = ["Continue my case"]
+    response = gemini_conversation_service._tag_response(response, gemini_conversation_service._provider_mode)
     messages = _messages_for_session(record)
     messages.append(
         ChatMessage(
@@ -990,12 +1021,103 @@ async def handle_evidence_file_upload(
         )
     )
     _save_chat_session(response.case_profile, messages, db, current_user.id)
-    logger.info(
-        "case_id=%s document_type=%s extraction_mode=%s event=evidence_file_processed",
-        case_id,
-        doc_type,
-        extraction_mode,
+    db.commit()
+    background_tasks.add_task(
+        process_evidence,
+        evidence_id,
+        provider=gemini_conversation_service.provider,
+        workflow_agent=conversational_agent,
     )
+    logger.info(
+        "case_id=%s evidence_id=%s document_type=%s file_type=%s event=evidence_uploaded",
+        case_id,
+        evidence_id,
+        doc_type,
+        extension.lstrip("."),
+    )
+    return response
+
+
+def _owned_evidence(db: Session, evidence_id: str, current_user: UserModel) -> EvidenceFileModel:
+    record = (
+        db.query(EvidenceFileModel)
+        .join(CaseModel, CaseModel.id == EvidenceFileModel.case_id)
+        .filter(
+            EvidenceFileModel.id == evidence_id,
+            CaseModel.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not record:
+        raise HTTPException(status_code=404, detail="Evidence file not found")
+    return record
+
+
+@app.get("/api/v1/evidence/{evidence_id}")
+def get_evidence(
+    evidence_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    """Processing status, page-level extracted text and evidence-derived findings."""
+    return evidence_detail(_owned_evidence(db, evidence_id, current_user))
+
+
+@app.post("/api/v1/evidence/{evidence_id}/retry")
+def retry_evidence_processing(
+    evidence_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    """Re-process the stored original; never creates a new evidence record."""
+    record = _owned_evidence(db, evidence_id, current_user)
+    stage = retry_stage(record)
+    if stage is None:
+        raise HTTPException(status_code=409, detail="This file is not in a state that can be retried.")
+    record.processing_status = "UPLOADED"
+    record.processing_error_code = None
+    record.processing_started_at = datetime.utcnow()
+    db.commit()
+    background_tasks.add_task(
+        process_evidence,
+        record.id,
+        provider=gemini_conversation_service.provider,
+        workflow_agent=conversational_agent,
+        stage=stage,
+    )
+    logger.info("evidence_id=%s stage=%s event=evidence_retry_requested", record.id, stage)
+    return evidence_summary(record)
+
+
+@app.post("/api/v1/evidence/{evidence_id}/review", response_model=ChatTurnResponse)
+def review_evidence_findings(
+    evidence_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    """Hand evidence candidates to the existing chat confirmation flow; nothing is applied here."""
+    evidence = _owned_evidence(db, evidence_id, current_user)
+    chat_record = _get_owned_chat_record(db, evidence.case_id, current_user)
+    analysis = evidence.analysis_data or {}
+    if evidence.processing_status != "COMPLETED" or not (analysis.get("candidate_facts") or analysis.get("conflicts")):
+        raise HTTPException(status_code=409, detail="There are no extracted details to review for this file.")
+    profile = _load_chat_profile(chat_record)
+    reply_text, quick_replies, pending = build_review_turn(evidence)
+    if pending:
+        profile.key_facts["pending_document_extraction"] = pending
+    response = ChatTurnResponse(
+        reply_text=reply_text,
+        case_profile=profile,
+        quick_replies=quick_replies,
+        message_id=str(uuid.uuid4()),
+    )
+    response = gemini_conversation_service._tag_response(response, gemini_conversation_service._provider_mode)
+    messages = _messages_for_session(chat_record)
+    messages.append(ChatMessage(id=response.message_id, sender="bot", text=reply_text, quick_replies=quick_replies))
+    evidence.analysis_data = {**analysis, "review": {"status": "OFFERED", "offered_at": datetime.utcnow().isoformat()}}
+    _save_chat_session(profile, messages, db, current_user.id)
+    db.commit()
     return response
 
 

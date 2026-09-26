@@ -24,6 +24,9 @@ interface BrowserSession {
   message: string;
   screenshot_b64: string | null;
   error: string | null;
+  error_code?: string | null;
+  pause_kind?: "review" | "sensitive" | null;
+  review_fields?: { label: string; status: "filled" | "missing" | "manual" }[];
   steps?: string[];
   cdp_port?: number | null;
   cdp_ready?: boolean;
@@ -42,7 +45,7 @@ const STATUS_LABELS: Record<SessionStatus, string> = {
   pending:   "⏳ Starting…",
   running:   "🤖 Agent is filling the form…",
   paused:    "👀 Your turn — review & interact",
-  approved:  "✅ Approved — submitting…",
+  approved:  "Review approved — submit manually",
   cancelled: "❌ Cancelled",
   done:      "✅ Done!",
   error:     "⚠️ Error",
@@ -66,12 +69,17 @@ function wsBase(): string {
 
 export default function BrowserAgentPanel({ caseId, onClose }: Props) {
   const [session, setSession]             = useState<BrowserSession | null>(null);
+  const sessionRef = useRef<BrowserSession | null>(null);
+  useEffect(() => { sessionRef.current = session; }, [session]);
   const [loading, setLoading]             = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError]                 = useState<string | null>(null);
   const [cdpConnected, setCdpConnected]   = useState(false);
   const [cdpError, setCdpError]           = useState<string | null>(null);
   const [liveMode, setLiveMode]           = useState(true);
+  const [hasFrame, setHasFrame]           = useState(false);
+  const [liveTimedOut, setLiveTimedOut]   = useState(false);
+  const frameSeenRef = useRef(false);
 
   const pollRef   = useRef<ReturnType<typeof setInterval> | null>(null);
   const wsRef     = useRef<WebSocket | null>(null);
@@ -109,6 +117,11 @@ export default function BrowserAgentPanel({ caseId, onClose }: Props) {
         const msg = JSON.parse(ev.data as string);
         if (msg.method === "Page.screencastFrame") {
           const { data, metadata, sessionId: frameSessionId } = msg.params;
+          if (!frameSeenRef.current && data) {
+            frameSeenRef.current = true;
+            setHasFrame(true);
+            setLiveTimedOut(false);
+          }
           const w = metadata?.deviceWidth ?? 1280;
           const h = metadata?.deviceHeight ?? 900;
           const canvas = canvasRef.current;
@@ -141,6 +154,8 @@ export default function BrowserAgentPanel({ caseId, onClose }: Props) {
 
     ws.onclose = () => {
       setCdpConnected(false);
+      frameSeenRef.current = false;
+      setHasFrame(false);
       wsRef.current = null;
     };
   }, []);
@@ -208,7 +223,12 @@ export default function BrowserAgentPanel({ caseId, onClose }: Props) {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail || `HTTP ${res.status}`);
+        const detail = body.detail;
+        throw new Error(
+          typeof detail === "string" ? detail
+          : typeof detail?.message === "string" ? detail.message
+          : `Auto-Fill request failed (HTTP ${res.status}).`
+        );
       }
       return res.json();
     },
@@ -232,11 +252,9 @@ export default function BrowserAgentPanel({ caseId, onClose }: Props) {
             }
           }
         } catch (err) {
-          if (err instanceof Error && err.message.includes("404")) {
-            setError("Session expired. Please start a new session.");
-            clearInterval(pollRef.current!);
-            pollRef.current = null;
-          }
+          setError(err instanceof Error ? err.message : "Could not check the browser session.");
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
         }
       }, POLL_INTERVAL_MS);
     },
@@ -247,6 +265,12 @@ export default function BrowserAgentPanel({ caseId, onClose }: Props) {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
       if (wsRef.current)   wsRef.current.close();
+      const active = sessionRef.current;
+      if (active && !["done", "cancelled", "error"].includes(active.status)) {
+        void fetch(`${API_BASE_URL}/browser/cancel/${active.session_id}`, {
+          method: "POST", credentials: "include", keepalive: true,
+        }).catch(() => {});
+      }
     };
   }, []);
 
@@ -279,13 +303,31 @@ export default function BrowserAgentPanel({ caseId, onClose }: Props) {
     finally { setActionLoading(false); }
   }, [session, apiFetch]);
 
+  const handleClose = useCallback(() => {
+    const active = sessionRef.current;
+    if (active && !["done", "cancelled", "error"].includes(active.status)) {
+      void fetch(`${API_BASE_URL}/browser/cancel/${active.session_id}`, {
+        method: "POST", credentials: "include", keepalive: true,
+      }).catch(() => {});
+    }
+    onClose();
+  }, [onClose]);
+
   // ── Derived state ───────────────────────────────────────────────────────────
 
   const isTerminal  = session && ["done", "cancelled", "error"].includes(session.status);
   const isPaused    = session?.status === "paused";
   const isRunning   = session?.status === "running";
   const isActive    = session && !isTerminal;
-  const canInteract = isPaused && cdpConnected;
+  const canInteract = (isPaused || session?.status === "approved") && cdpConnected;
+  const liveShowing = cdpConnected && hasFrame;
+
+  // No frame for a while: stop implying a live view and point to the new-tab link.
+  useEffect(() => {
+    if (!isActive || hasFrame) return;
+    const timer = setTimeout(() => setLiveTimedOut(true), 20000);
+    return () => clearTimeout(timer);
+  }, [isActive, hasFrame]);
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -316,7 +358,7 @@ export default function BrowserAgentPanel({ caseId, onClose }: Props) {
                 {liveMode ? "🎥 Live" : "📸 Screenshot"}
               </button>
             )}
-            <button style={styles.closeBtn} onClick={onClose} id="browser-panel-close">✕</button>
+            <button style={styles.closeBtn} onClick={handleClose} id="browser-panel-close">✕</button>
           </div>
         </div>
 
@@ -359,7 +401,7 @@ export default function BrowserAgentPanel({ caseId, onClose }: Props) {
               >
                 <span style={styles.statusDot}>●</span>
                 {STATUS_LABELS[session.status]}
-                {cdpConnected && (
+                {liveShowing && (
                   <span style={{ marginLeft: "auto", fontSize: "11px", color: "#22d3ee", fontWeight: 700 }}>
                     ⚡ Live
                   </span>
@@ -390,7 +432,7 @@ export default function BrowserAgentPanel({ caseId, onClose }: Props) {
                       style={{
                         ...styles.canvas,
                         cursor:  canInteract ? "crosshair" : "default",
-                        opacity: cdpConnected ? 1 : 0.35,
+                        opacity: liveShowing ? 1 : 0.35,
                       }}
                       tabIndex={canInteract ? 0 : -1}
                       onMouseDown={canInteract ? (e) => forwardMouse(e, "mousePressed")  : undefined}
@@ -398,11 +440,13 @@ export default function BrowserAgentPanel({ caseId, onClose }: Props) {
                       onMouseMove={canInteract ? (e) => forwardMouse(e, "mouseMoved")    : undefined}
                       onKeyDown  ={canInteract ? forwardKey : undefined}
                     />
-                    {!cdpConnected && isActive && (
+                    {!liveShowing && isActive && (
                       <div style={styles.canvasPlaceholder}>
-                        {cdpError
-                          ? <span style={{ color: "#fca5a5" }}>{cdpError}</span>
-                          : <><span style={{ fontSize: "2rem" }}>⏳</span><span>Connecting live browser view…</span></>
+                        {cdpError || liveTimedOut
+                          ? <span style={{ color: "#fca5a5" }}>
+                              Live preview unavailable. Open the government portal in a new tab to continue.
+                            </span>
+                          : <><span style={{ fontSize: "2rem" }}>⏳</span><span>Loading live browser view…</span></>
                         }
                       </div>
                     )}
@@ -430,8 +474,8 @@ export default function BrowserAgentPanel({ caseId, onClose }: Props) {
                 {/* No view yet */}
                 {isActive && !session.screenshot_b64 && !cdpConnected && !liveMode && (
                   <div style={styles.canvasPlaceholder}>
-                    🌐 Connected to <strong>{session.portal_label}</strong>.
-                    <span style={{ color: "#64748b" }}>Switch to 🎥 Live to see the browser.</span>
+                    {session.cdp_ready ? "Browser ready." : "Starting browser…"}
+                    <span style={{ color: "#64748b" }}>Switch to Live to see the browser when ready.</span>
                   </div>
                 )}
               </div>
@@ -445,6 +489,16 @@ export default function BrowserAgentPanel({ caseId, onClose }: Props) {
               )}
 
               {/* Steps log */}
+              {session.review_fields && session.review_fields.length > 0 && (
+                <div style={styles.stepsLog}>
+                  <div style={styles.stepsTitle}>Form review (values stay in the browser)</div>
+                  {session.review_fields.map((field, index) => (
+                    <div key={`${field.label}-${index}`} style={{ padding: "2px 0" }}>
+                      {field.label}: {field.status === "manual" ? "manual input required" : field.status}
+                    </div>
+                  ))}
+                </div>
+              )}
               {session.steps && session.steps.length > 0 && (
                 <div style={styles.stepsLog}>
                   <div style={styles.stepsTitle}>📋 Agent Activity Log</div>
@@ -473,7 +527,7 @@ export default function BrowserAgentPanel({ caseId, onClose }: Props) {
                       onClick={handleApprove}
                       disabled={actionLoading}
                     >
-                      {actionLoading ? "…" : "✅ Approve & Submit"}
+                      {actionLoading ? "…" : session.pause_kind === "sensitive" ? "Continue after manual step" : "Approve review"}
                     </button>
                     <button
                       id="browser-agent-cancel-btn"
@@ -496,7 +550,7 @@ export default function BrowserAgentPanel({ caseId, onClose }: Props) {
                   </button>
                 )}
                 {isTerminal && (
-                  <button id="browser-panel-done-btn" style={styles.startBtn} onClick={onClose}>
+                  <button id="browser-panel-done-btn" style={styles.startBtn} onClick={handleClose}>
                     Close
                   </button>
                 )}

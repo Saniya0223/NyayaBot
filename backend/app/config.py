@@ -31,6 +31,10 @@ class Settings(BaseModel):
     LLM_MODEL: str = os.getenv("LLM_MODEL", "openai/gpt-oss-120b").strip()
     LLM_RECENT_MESSAGE_LIMIT: int = int(os.getenv("LLM_RECENT_MESSAGE_LIMIT", "8"))
     LLM_TIMEOUT_SECONDS: float = float(os.getenv("LLM_TIMEOUT_SECONDS", "30"))
+    # OCR.space is used only for scanned PDF pages and images; the key never leaves the backend.
+    OCR_SPACE_API_KEY: str = os.getenv("OCR_SPACE_API_KEY", "")
+    OCR_SPACE_ENDPOINT: str = os.getenv("OCR_SPACE_ENDPOINT", "https://api.ocr.space/parse/image")
+    OCR_SPACE_TIMEOUT_SECONDS: float = float(os.getenv("OCR_SPACE_TIMEOUT_SECONDS", "45"))
     AUTH_SESSION_COOKIE_NAME: str = os.getenv("AUTH_SESSION_COOKIE_NAME", "nyayabot_session")
     AUTH_SESSION_TTL_HOURS: int = int(os.getenv("AUTH_SESSION_TTL_HOURS", "168"))
     AUTH_COOKIE_SECURE: bool = _env_bool("AUTH_COOKIE_SECURE", False)
