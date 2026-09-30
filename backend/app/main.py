@@ -1202,7 +1202,13 @@ def review_evidence_findings(
     )
     response = gemini_conversation_service._tag_response(response, gemini_conversation_service._provider_mode)
     messages = _messages_for_session(chat_record)
-    messages.append(ChatMessage(id=response.message_id, sender="bot", text=reply_text, quick_replies=quick_replies))
+    # Persist what the guard produced, not the pre-guard local. `_tag_response` above
+    # rewrites `response.reply_text`; appending `reply_text` here stored the unguarded
+    # version, so the user saw the guarded reply once and the unguarded one on reload.
+    messages.append(ChatMessage(
+        id=response.message_id, sender="bot",
+        text=response.reply_text, quick_replies=response.quick_replies,
+    ))
     evidence.analysis_data = {**analysis, "review": {"status": "OFFERED", "offered_at": datetime.utcnow().isoformat()}}
     _save_chat_session(profile, messages, db, current_user.id)
     db.commit()

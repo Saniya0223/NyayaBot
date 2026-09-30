@@ -268,10 +268,6 @@ def test_c2_recorded_case_law_citation_is_removed():
     "Hindustan Unilever v/s Ashok Kumar",
     "Indian Oil Corporation V. Consumer Protection Council",
 ])
-@pytest.mark.xfail(strict=True, reason="AGENT3 GAP C2-c1: CASE_NAME_RE carries no re.IGNORECASE "
-                                       "and requires a period on 'vs', so 'Vs.', 'VS.', 'V.', "
-                                       "bare 'vs' and 'v/s' all pass unguarded with no "
-                                       "disclosure appended")
 def test_case_law_rule_is_unconditional_across_separator_spellings(citation):
     """DoD #3 says the case-law rule is unconditional. It is conditional on the exact lowercase
     spellings `v.`, `vs.` and `versus`. `Vs.` is the commonest form in Indian consumer-forum
@@ -286,8 +282,6 @@ def test_case_law_rule_is_unconditional_across_separator_spellings(citation):
     "2021 SCC OnLine SC 456",
     "Civil Appeal No. 1234 of 2020",
 ])
-@pytest.mark.xfail(strict=True, reason="AGENT3 GAP C2-c2: REPORTER_RE covers neutral-citation "
-                                       "and appeal-number styles for neither shape")
 def test_case_law_rule_covers_other_indian_citation_styles(reporter):
     text = f"See {reporter}, decided by the Supreme Court, which is squarely on point.\n\nNext: send a notice."
     result = guard_reply(text, profile("CONSUMER"))
@@ -343,12 +337,6 @@ def test_c2_recorded_fabricated_section_is_removed_with_its_quoted_text():
     ("Section 20 of the Police Act, 1861 covers refusal to register an FIR.", "20"),
     ("Section 2(11) of the Code on Wages, 2019 defines your employer.", "2(11)"),
 ])
-@pytest.mark.xfail(strict=True, reason="AGENT3 GAP C2-a1: is_verified_section is consulted before "
-                                       "corpus_available, and the curated document-citation map "
-                                       "plus the RTI corpus are allowlisted globally by section "
-                                       "number alone, so a fabricated citation whose number "
-                                       "collides with one of them passes a corpus-less domain "
-                                       "with zero redactions")
 def test_no_section_number_is_verified_in_a_corpusless_domain(text, token):
     """Agent 2's own statement of the rule is 'no corpus for the domain -> every section number
     in it is unverifiable'. These four numbers are not. 20, 35, 73 and 173 are among the most
@@ -360,11 +348,7 @@ def test_no_section_number_is_verified_in_a_corpusless_domain(text, token):
 
 @pytest.mark.parametrize("text,token", [
     ("Eviction grounds are in Section 13 of the Rajasthan Rent Control Act, 1950.", "Section 13"),
-    ("Look at Section 43 of the Real Estate (Regulation and Development) Act, 2016.", "Section 43"),
 ])
-@pytest.mark.xfail(strict=True, reason="AGENT3 GAP C2-a2: _classify uses a named Act only to "
-                                       "*reject*, so naming the real applicable State Act makes "
-                                       "deletion strictly MORE likely than naming no Act at all")
 def test_naming_the_real_applicable_act_does_not_cause_deletion(token, text):
     """The perverse incentive. `Section 13 of the applicable rent law` is kept with a caveat;
     `Section 13 of the Rajasthan Rent Control Act, 1950` - the same section, correctly
@@ -417,10 +401,6 @@ def test_c4_isolated_legitimate_percentages_pass_byte_identical():
     ("If you win, the 12% GST charged on the cancelled booking is also refundable.", "12%"),
     ("The likelihood of recovery rises when the contract provides 2% per month interest.", "2%"),
 ])
-@pytest.mark.xfail(strict=True, reason="AGENT3 GAP C4-1: the +/-70 character outcome-word window "
-                                       "deletes a legitimate rate or quantum whenever an outcome "
-                                       "word shares the sentence, which is exactly where such "
-                                       "percentages naturally appear")
 def test_legitimate_percentage_survives_an_outcome_word_in_the_same_sentence(text, token):
     """§3 lock 10 reads 'percentages with no outcome word nearby'. In real legal prose the
     outcome word is *always* nearby: 'if you win, you get 12% GST back', 'a favourable order
@@ -432,9 +412,6 @@ def test_legitimate_percentage_survives_an_outcome_word_in_the_same_sentence(tex
     assert result.redactions == ()
 
 
-@pytest.mark.xfail(strict=True, reason="AGENT3 GAP C4-2: the same false positive in Devanagari, "
-                                       "where the Hindi word for 'probability' is also the "
-                                       "ordinary word used before a legitimate rate")
 def test_devanagari_interest_rate_survives_next_to_sambhavna():
     text = ("संभावना है कि 18% "
             "ब्याज मिलेगा।")
@@ -458,10 +435,6 @@ def test_h4_recorded_replies_keep_their_sections_and_gain_the_caveat():
     assert RUPEE + "85,000" in t2.text
 
 
-@pytest.mark.xfail(strict=True, reason="AGENT3 GAP H4-1: the model-law rules trigger on the bare "
-                                       "section NUMBER, so a reply that correctly cites the "
-                                       "State's own Rent Control Act is rewritten and given an "
-                                       "MTA-2021 caveat about an Act it never mentioned")
 def test_citing_the_state_act_does_not_trigger_the_model_law_rewrite():
     """`Aapko notice mein Rajasthan Rent Control Act ke Section 11 ka hawala dena chahiye` is
     correct advice. The guard replaces the whole sentence with 'confirm the equivalent provision
@@ -474,9 +447,6 @@ def test_citing_the_state_act_does_not_trigger_the_model_law_rewrite():
     assert "model_law_cite_instruction" not in result.rules()
 
 
-@pytest.mark.xfail(strict=True, reason="AGENT3 GAP H4-2: the constructed-authority rule's "
-                                       "sentence-level fallback deletes the procedural advice "
-                                       "outright, which §3 lock 11 forbids")
 def test_procedural_advice_survives_the_constructed_authority_rule():
     """Lock 11: 'Only a contact/website/address claim about a constructed named authority is
     touched - never the institution's name and never the procedural advice.' With no
@@ -520,10 +490,6 @@ def test_m7_never_touches_the_users_own_digits():
     ("The SBI fraud helpline is 9876543210 - call it now.", "9876543210"),
     ("Call the RBI Ombudsman helpline on 022-2260 3000.", "022-2260 3000"),
 ])
-@pytest.mark.xfail(strict=True, reason="AGENT3 GAP M7-1: the filter only knows the 1800 prefix "
-                                       "and bare 3-5 digit short codes, so a fabricated number "
-                                       "in the 1860 bank format, a fabricated 10-digit mobile, "
-                                       "or a fabricated STD landline all reach the user")
 def test_fabricated_helpline_in_a_non_1800_shape_is_removed(text, number):
     """Agent 2 documented two false negatives (the 19xx/20xx carve-out and 6+ digit codes).
     These three are a wider class it did not record. `1860-xxx-xxxx` is the single most common
@@ -534,8 +500,6 @@ def test_fabricated_helpline_in_a_non_1800_shape_is_removed(text, number):
     assert "helpline_unverified" in result.rules()
 
 
-@pytest.mark.xfail(strict=True, reason="AGENT3 GAP M7-2: the URL allowlist is http(s)-only, so a "
-                                       "fabricated official email address is not checked at all")
 def test_fabricated_official_email_address_is_removed():
     text = "Email the Banking Ombudsman at ombudsman.mumbai@rbi.org.in for escalation."
     result = guard_reply(text, profile("CYBER_FRAUD"))
@@ -561,9 +525,6 @@ def test_l1_all_three_recorded_forms_lose_rbi_and_keep_1930():
 
 # ============================================================ coverage / persistence
 
-@pytest.mark.xfail(strict=True, reason="AGENT3 GAP COV-1: main.py's evidence-review endpoint "
-                                       "guards response.reply_text but persists the stale "
-                                       "unguarded local, so the redaction is lost from history")
 def test_evidence_review_endpoint_persists_the_guarded_reply():
     """`review_evidence_findings` calls `_tag_response`, which rewrites `response.reply_text`,
     and then builds the stored `ChatMessage` from the *original* `reply_text` local. The user
@@ -578,3 +539,259 @@ def test_evidence_review_endpoint_persists_the_guarded_reply():
         "the persisted ChatMessage must be built from the guarded response, not the "
         "pre-guard local variable"
     )
+
+
+@pytest.mark.parametrize("text,token", [
+    ("Look at Section 43 of the Real Estate (Regulation and Development) Act, 2016.", "Section 43"),
+])
+def test_parenthesised_act_name_is_caveated_not_deleted(token, text):
+    """Split out of the C2-a2 reproducer in cycle 5 because it passes, but **not** because C2-a2
+    is fixed - the mechanism is unchanged and the Rajasthan case above still fails.
+
+    `ACT_NAME_RE` cannot match across the parenthetical in "Real Estate (Regulation and
+    Development) Act", so no Act attaches to the citation, it takes the act-less route, and
+    `_classify` returns "doubtful" - keep and caveat. That is the module's own rule 1 ("caveat on
+    doubt, never delete") reached by accident rather than by design. Locked so the accident cannot
+    silently become a deletion later; the blind spot itself is noted for S5-B.
+    """
+    result = guard_reply(text, profile("HOUSING_TENANT"))
+    assert token in result.text
+
+
+# ==================================================================================
+# Cycle 6 / Agent 3 - adversarial probes against set S5-B's output
+#
+# Everything below attacks Agent 2's cycle-6 fix, not cycle 4's guard. The three harm
+# classes stay separate, because they cost different things:
+#   * a fabrication reaching the user;
+#   * correct law or correct advice silently deleted (the user cannot detect this one);
+#   * a self-contradiction shipped (a caveat with no cause).
+# Byte-faithful throughout: the real U+2011 / U+202F / U+2248 code points, never a
+# retyped ASCII approximation, so a probe cannot pass here and fail in production.
+# ==================================================================================
+
+# ------------------------------------------------- C4-1 residue: the whole-line rule
+
+@pytest.mark.xfail(strict=True, reason="C4-1 residue: _OUTCOME_LINE_RE decides from a "
+                                      "90-character label window, which is _WINDOW under "
+                                      "another name")
+@pytest.mark.parametrize("text", [
+    "**Interest on a favourable order:** 18%",
+    "Interest you can claim on a favourable order: 18%",
+    "If you win, the recoverable interest is 18%.",
+    "GST charged on the service if you win: 12%",
+    "- Deposit you must pay to win the auction: 50%",
+    "Likelihood aside, the statutory interest rate is 9%",
+])
+def test_c4_a_rate_at_the_end_of_a_line_survives_an_outcome_word_in_its_label(text):
+    """Cycle 6 removed `_WINDOW` from the inline path but left `_OUTCOME_LINE_RE` untouched.
+
+    Its colon is optional (`:?`) and its label group is `[^:\n]{0,90}`, so the rule is not
+    "a `label: value` line" - it is "any line ending in a percentage whose preceding 90
+    characters contain an outcome word", and `_apply_outcome_probability` then tests that
+    label with `_OUTCOME_WORD_RE`. That is token co-occurrence inside a character window,
+    the exact mechanism this cycle exists to remove. Because the regex anchors the `%` at
+    end of line no measurand can ever follow the sign, so the step-1 veto cycle 6 added to
+    this branch can never fire and the branch has no assertion test at all. The whole line
+    goes, not just the number. Correct law, silently deleted.
+    """
+    result = guard_reply(text, profile("CONSUMER"))
+    assert result.text == text, f"correct rate deleted: {result.text!r}"
+    assert result.redactions == ()
+
+
+@pytest.mark.xfail(strict=True, reason="C4-2 residue: the same whole-line rule, in the "
+                                      "normal Hindi/Hinglish rate layout")
+@pytest.mark.parametrize("text", [
+    "Jeetne par milne wala byaj: 18%",
+    "\u091c\u0940\u0924\u0928\u0947 \u092a\u0930 \u092e\u093f\u0932\u0928\u0947 "
+    "\u0935\u093e\u0932\u093e \u092c\u094d\u092f\u093e\u091c: 18%",
+])
+def test_c4_a_devanagari_rate_survives_when_its_measurand_sits_in_the_label(text):
+    """C4-2's own reproducer passes only because `byaj` happens to follow the sign. Hindi
+    and Hinglish normally put the measurand in the label ("jeetne par milne wala byaj:
+    18%"), which puts it *before* the number - where cycle 6's lookahead-only measurand
+    test, correctly, refuses to look. The whole-line rule then deletes the line.
+    """
+    case = profile("CONSUMER", language_style="hindi", script_style="devanagari")
+    result = guard_reply(text, case)
+    assert "18%" in result.text, f"correct rate deleted: {result.text!r}"
+
+
+@pytest.mark.xfail(strict=True, reason="C4-1's double fault: a rate list loses two bullets "
+                                      "and gains a probability note it never earned")
+def test_c4_a_markdown_rate_list_keeps_every_rate_and_earns_no_probability_note():
+    """The double fault cycle 6 set out to close, reproduced on the shape the product
+    actually emits rates in. Two of four bullets are deleted and the reply is then told
+    "the strength of a case cannot be reduced to a number" although it made no probability
+    claim: correct law deleted *and* a self-contradiction shipped, in one reply.
+    """
+    text = (
+        "Here is what the law allows you to claim.\n"
+        "\n"
+        "- **Security deposit refundable:** 100%\n"
+        "- **Statutory interest if you win:** 18%\n"
+        "- **GST on the service you can recover on a favourable order:** 12%\n"
+        "- **Contractual penalty per month:** 2%\n"
+    )
+    result = guard_reply(text, profile("CONSUMER"))
+    assert "**Statutory interest if you win:** 18%" in result.text
+    assert "**GST on the service you can recover on a favourable order:** 12%" in result.text
+    assert "cannot be reduced to a number" not in result.text
+    assert result.redactions == ()
+
+
+# ------------------------------------------- C4 under-filter opened by removing _WINDOW
+
+@pytest.mark.xfail(strict=True, reason="C4 now under-filters: a fabricated win probability "
+                                      "in ordinary prose reaches the user")
+@pytest.mark.parametrize("text", [
+    "Rough chance of a favourable outcome: about 30% in your case.",
+    "Your chance of a favourable order is roughly 30% here.",
+    "Success rate in such matters is about 55% in my estimate.",
+    "Probability of recovery: 25% given the evidence you hold.",
+    "Realistically your chances of winning this are close to 60% today.",
+    "Based on what you have told me, the odds of success come to nearly 65% overall.",
+    "Win rate for these complaints in Jaipur is about 45% historically.",
+    "Aapke jeetne ki sambhavna is case mein takriban 30% hai.",
+    "\u0906\u092a\u0915\u0947 \u091c\u0940\u0924\u0928\u0947 \u0915\u0940 "
+    "\u0938\u0902\u092d\u093e\u0935\u0928\u093e \u0907\u0938 \u092e\u093e\u092e\u0932\u0947 "
+    "\u092e\u0947\u0902 \u0932\u0917\u092d\u0917 30% \u0939\u0948\u0964",
+])
+def test_c4_a_win_probability_in_ordinary_prose_is_still_removed(text):
+    """Removing the +/-70 window fixed the over-filter and opened the opposite fault. Three
+    predicates each cover one narrow shape: the `prob` group needs the noun immediately
+    after the sign, `_PROB_BEFORE_RE` needs it immediately before across nothing but a
+    copula within 40 characters, and `_OUTCOME_LINE_RE` needs the sign at end of line. A
+    probability noun sitting earlier in the same clause with ordinary words in between falls
+    through all three. This is C4's original harm class: a number the product does not
+    compute, presented to a user as their chance of winning. The Hinglish and Devanagari
+    cases are not a vocabulary gap - `sambhavna` is already in `_PROB_NOUN`; they fail
+    because "is case mein" is not in `_PROB_BRIDGE`.
+    """
+    result = guard_reply(text, profile("CONSUMER"))
+    assert "%" not in result.text, f"invented win probability survived: {result.text!r}"
+    assert "outcome_probability" in result.rules()
+
+
+@pytest.mark.xfail(strict=True, reason="the measurand-after veto is abusable: a quantity "
+                                      "noun after the sign makes a probability unkillable")
+@pytest.mark.parametrize("text", [
+    "I estimate a 65% refund chance in your matter.",
+    "There is a 40% refund chance if you file within the limitation period.",
+    "Your success rate here is 55% in value terms.",
+    "Odds of winning are about 60% on the deposit refund claim.",
+    "I would put your chance of winning at 45% on the amount claimed.",
+    "Your odds of a favourable order are 70% of the value at stake.",
+    "- **Tour" + NB_HYPHEN + "operator refund:** ~30" + NARROW_NBSP + "% refund chance, "
+    "mainly limited by the two" + NB_HYPHEN + "year limitation period.",
+])
+def test_c4_a_measurand_after_the_number_does_not_rescue_a_win_probability(text):
+    """The fix's premise is "a measurand after the sign means rate, keep". `_MEASURAND`
+    includes `value|amount|share|stake|price|cost|refund|fees|charges`, and
+    `_MEASURAND_AFTER_RE` allows three `of|the|on|in|a|an|as|ka|ki|ke` bridge tokens, so a
+    probability claim only has to be followed by a quantity noun within four words to
+    become unkillable. The last parameter is W1-06 t4's own invented line - real bytes -
+    with two words swapped: the fixture's spelling is removed, this one is not.
+    """
+    result = guard_reply(text, profile("CONSUMER"))
+    assert "%" not in result.text, f"invented win probability survived: {result.text!r}"
+
+
+# ------------------------------------------------------------- C2-a2 residue and widening
+
+@pytest.mark.xfail(strict=True, reason="C2-a2 residue: a real State rent Act whose name is "
+                                      "not '<State> Rent Control Act' is still deleted")
+@pytest.mark.parametrize("act", [
+    "Karnataka Rent Act, 1999",
+    "West Bengal Premises Tenancy Act, 1997",
+    "Madhya Pradesh Accommodation Control Act, 1961",
+    "Punjab Urban Rent Restriction Act, 1949",
+    "Himachal Pradesh Urban Rent Control Act, 1987",
+    "Odisha House Rent Control Act, 1967",
+    "Uttar Pradesh Urban Premises Tenancy Act, 2021",
+])
+def test_c2_a2_a_real_state_rent_act_outside_the_corpus_family_name_is_not_deleted(act):
+    """`_act_family` recognises only the literal "<State> Rent Control Act" naming style, so
+    it covers Delhi, Maharashtra, Rajasthan and Chhattisgarh and nothing else. Every Act
+    here is the operative rent statute of its State; the last one is Uttar Pradesh's
+    enactment of the Model Tenancy Act, i.e. exactly what HOUSING_TENANT's corpus is about.
+    `Karnataka Rent Act, 1999` is deleted by the guard rail itself - its family key `rent
+    act` is 8 characters, under the 10-character floor. The perverse incentive C2-a2 named
+    is narrowed to four States, not removed: naming the applicable Act is still more
+    dangerous than naming none, for most of India.
+    """
+    text = f"Eviction grounds are in Section 13 of the {act}."
+    result = guard_reply(text, tenancy_profile())
+    assert "Section 13" in result.text, f"correct State law deleted: {result.text!r}"
+
+
+@pytest.mark.xfail(strict=True, reason="build_allowlist's label split widened licensed(): a "
+                                      "fabricated State adoption of the MTA is now accepted")
+@pytest.mark.parametrize("act", [
+    "Rajasthan Model Tenancy Act, 2022",
+    "Jaipur Model Tenancy Act, 2024",
+    "Fictional Model Tenancy Act of Narnia",
+])
+def test_c2_a2_a_fabricated_state_model_tenancy_act_is_not_accepted_as_verified(act):
+    """Cycle 6's edit (a) registers each alternative of "Model Tenancy Act / State Rent
+    Control Acts" in `verified_pairs`, which puts the short key `model tenancy act` on the
+    **accept** path. `licensed()` compares Act names by substring containment, so any name
+    containing `model tenancy act` now rides on the corpus's sections 11/15/21/30 and the
+    citation is reported as verified with no statute rule at all. Before this cycle the
+    same sentence was stripped. Agent 2's code comment states "`licensed()` is not
+    loosened"; measured, it is - `licensed("11", ["rajasthan model tenancy act 2022"])`
+    goes False -> True. A1's own docstring rationale ("this is what stops Section 73 of the
+    Payment of Wages Act riding on Indian Contract Act s.73") is the rule being broken.
+    """
+    text = f"Section 11 of the {act} requires the deposit back within one month."
+    result = guard_reply(text, tenancy_profile())
+    assert any(rule.startswith("statute") for rule in result.rules()), (
+        f"fabricated Act accepted as verified: {result.rules()!r}")
+
+
+# ------------------------------------------------------- H4-2: _LOCATOR_RE over-matches
+
+@pytest.mark.xfail(strict=True, reason="_LOCATOR_RE's PIN alternative is any 6-digit run, so "
+                                      "a rupee amount deletes the advice around it")
+@pytest.mark.parametrize("text", [
+    "Confirm on the Jaipur Rent Authority website whether the 250000 deposit you paid "
+    "crosses the pecuniary limit.",
+    "Check the Jaipur Rent Authority website yourself; your claim of 120000 rupees may "
+    "need a different forum.",
+    "You should verify on the Rajasthan Rent Tribunal website whether the 300000 claim is "
+    "within its limit.",
+])
+def test_h4_2_a_six_digit_rupee_amount_is_not_a_locator(text):
+    r"""`_LOCATOR_RE`'s PIN-code alternative is `\b[1-9]\d{5}\b` - any six-digit run. Every
+    rupee figure from 1 lakh to 9.99 lakh reads as a locator, which is the ordinary range of
+    a rent deposit or a consumer claim. Branch 1b then deletes the sentence, and the
+    sentence it deletes is precisely the "go and confirm it yourself" advice that H4-2's fix
+    exists to protect. So the fix protects that advice only while the reply does not also
+    mention the user's own amount. Correct advice, silently deleted.
+    """
+    result = guard_reply(text, tenancy_profile())
+    assert result.text == text, f"correct advice deleted: {result.text!r}"
+    assert "constructed_authority_contact" not in result.rules()
+
+
+# ------------------------------------------- a passing lock, not a gap: byte-faithfulness
+
+def test_c2_recorded_case_law_is_removed_in_the_fixtures_own_bytes():
+    """`test_c2_recorded_case_law_citation_is_removed` above spells its tokens with ASCII
+    spaces, but W1-03 t3 writes them with U+202F, so three of its four `not in` assertions
+    are vacuous - they would hold whatever the guard did. The behaviour is genuinely locked
+    in `test_response_guard.py` (which folds the code points first); this test locks it here
+    too, in the fixture's own bytes, so the file does not depend on a retyped spelling.
+    Nothing is weakened: the original assertions stand untouched.
+    """
+    source = reply("W1-03-t3")
+    tokens = (f"(2020){NARROW_NBSP}6{NARROW_NBSP}SCC{NARROW_NBSP}123",
+              f"M.{NARROW_NBSP}S.{NARROW_NBSP}R.{NARROW_NBSP}Enterprises",
+              f"v.{NARROW_NBSP}State of Karnataka",
+              "M.S.R. Enterprises")
+    for token in tokens:
+        assert token in source, f"fixture drifted: {token!r}"
+    result = guard_reply(source, profile("EMPLOYMENT"))
+    for token in tokens:
+        assert token not in result.text, token

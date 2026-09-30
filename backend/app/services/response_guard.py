@@ -38,12 +38,13 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 from app.agents.rag_node import statutory_rag
 from app.domains import domain_registry
 from app.services.document_citations import DOCUMENT_CITATIONS
 from app.services.helplines import ATTRIBUTABLE_AUTHORITIES, HELPLINES, lookup as helpline_lookup
+from app.services.jurisdiction import STATE_VARIANTS
 from app.services.model_law_adoption import adoption_confirmed, is_model_law_document_type
 
 # --------------------------------------------------------------------- unicode
@@ -148,6 +149,70 @@ def _norm_act(value: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+_ACT_ALT_SPLIT_RE = re.compile(r"\s*/\s*|\s+or\s+", re.IGNORECASE)
+
+
+def _act_alternatives(value: str) -> list[str]:
+    """One corpus label may name a *family*, not one enactment.
+
+    HOUSING_TENANT's own label is ``Model Tenancy Act / State Rent Control Acts`` - a
+    disjunction. `_norm_act` replaces the ``/`` with a space, so the whole label collapsed
+    into the single meaningless string ``model tenancy act state rent control acts``, and no
+    containment test could ever see that the Rajasthan Rent Control Act *is* a State Rent
+    Control Act. The product's corpus says it covers this Act; the guard could not read its
+    own label. Split on the disjunction *before* normalising, and register each alternative
+    in its own right, so the accept path and the reject path read the label the same way.
+    """
+    return [name for name in (_norm_act(part) for part in _ACT_ALT_SPLIT_RE.split(value or ""))
+            if name]
+
+
+# "Model"/"State"/"Central", plus every State or UT surface form the product already knows.
+# Reusing `jurisdiction.STATE_VARIANTS` rather than restating the list: a second copy would
+# drift, and that table is already the product's single answer to "is this a State name".
+_ACT_QUALIFIER_RE = re.compile(
+    r"^(?:the\s+)?(?:model|state|states|central|union|government|govt)\s+"
+)
+_STATE_PREFIX_RE = re.compile(
+    r"^(?:"
+    + "|".join(sorted(
+        {re.escape(_norm_act(variant))
+         for variants in STATE_VARIANTS.values() for variant in variants},
+        key=len, reverse=True))
+    + r")\s+"
+)
+# 18xx, not just 19xx/20xx: the Indian Contract Act is of 1872 and the Police Act of 1861,
+# so a family key that kept a pre-1900 year would never reduce to its family at all.
+_ACT_YEAR_TAIL_RE = re.compile(r"\s*(?:18|19|20)\d{2}\s*$")
+_ACT_PLURAL_RE = re.compile(r"\b(acts|codes|rules|regulations|ordinances|sanhitas|adhiniyams)\b")
+
+
+def _act_family(name: str) -> str:
+    """Reduce an Act name to the *family* it belongs to, or ``""`` if that is not readable.
+
+    ``Rajasthan Rent Control Act, 1950`` and the corpus's own ``State Rent Control Acts``
+    both reduce to ``rent control act``. Strip a leading ``model|state|central|union``
+    qualifier or State/UT name, strip a trailing year, singularise the anchor noun.
+
+    Compared by **exact key equality**, never containment: containment on a reduced key is
+    how ``act`` would come to match every enactment ever written. For the same reason a key
+    shorter than two words or ten characters is refused outright.
+
+    Used on the **reject** side only (`_classify`'s last branch), where its only possible
+    effect is ``unverified -> doubtful``: it keeps more law and deletes less. It cannot turn
+    a reject into an accept, so it can never report a fabricated citation as verified.
+    """
+    key = _norm_act(name)
+    key = _ACT_QUALIFIER_RE.sub("", key)
+    key = _STATE_PREFIX_RE.sub("", key)
+    key = _ACT_YEAR_TAIL_RE.sub("", key)
+    key = _ACT_PLURAL_RE.sub(lambda match: match.group(1)[:-1], key)
+    key = re.sub(r"\s+", " ", key).strip()
+    if len(key) < 10 or len(key.split()) < 2:
+        return ""
+    return key
+
+
 # Anchor words that end (or begin) an Indian enactment's name.
 _ACT_ANCHOR = r"(?:Act|Sanhita|Adhiniyam|Nyaya|Code|Rules|Regulations|Ordinance|Notification|Circular)"
 ACT_NAME_RE = re.compile(
@@ -164,6 +229,8 @@ class CitationAllowlist:
     domain_id: str
     corpus_available: bool
     verified_sections: frozenset[str]
+    verified_pairs: frozenset[tuple[str, str]]
+    domain_sections: frozenset[str]
     act_names: tuple[str, ...]
     model_law_sections: frozenset[str]
     official_authorities: tuple[str, ...]
@@ -178,6 +245,39 @@ class CitationAllowlist:
         return bool(parts) and all(
             _section_variants(part) & self.verified_sections for part in parts
         )
+
+    def licensed(self, cited: str, named_acts: Sequence[str]) -> bool:
+        """What positively licenses a citation.
+
+        A bare number licenses nothing on its own - that was A1. Two routes:
+
+        * the reply **names an Act**: the (Act, section) pair must be one the product
+          vouches for. This is what stops "Section 73 of the Payment of Wages Act, 1936"
+          riding on Indian Contract Act s.73.
+        * the reply **names no Act**: the section must be licensed *for this domain* -
+          its own corpus, its own bound documents, or the domain-agnostic RTI application.
+          A corpus-less domain licenses only what its own documents already print, so
+          EMPLOYMENT accepts no bare statute number at all.
+
+        Note this only ever *accepts*. Rejection still runs through `_classify`, which
+        prefers a caveat over deletion, so widening the Act test cannot delete correct law.
+        """
+        parts = _cited_parts(cited)
+        if not parts:
+            return False
+        if named_acts:
+            for part in parts:
+                variants = _section_variants(part)
+                if not any(
+                    (known, section) in self.verified_pairs
+                    for named in named_acts
+                    for known in self.act_names
+                    if named in known or known in named
+                    for section in variants
+                ):
+                    return False
+            return True
+        return all(_section_variants(part) & self.domain_sections for part in parts)
 
     def is_model_law_section(self, cited: str) -> bool:
         return any(
@@ -242,6 +342,23 @@ def build_allowlist(profile: Any) -> CitationAllowlist:
     acts: list[str] = []
     model_law: set[str] = set()
 
+    # Sections licensed for THIS domain when the reply names no Act at all, and the
+    # (Act, section) pairs that license a citation that *does* name one. `sections` alone
+    # cannot do this job: flattened to bare numbers it loses the Act, so any domain's
+    # number collides with any other's - which is how "Section 73 of the Payment of Wages
+    # Act, 1936" was reported as verified on the strength of Indian Contract Act s.73.
+    pairs: set[tuple[str, str]] = set()
+    domain_sections: set[str] = set()
+
+    def _pair(act_name: str, found_sections: set[str]) -> None:
+        # A label that names a family ("Model Tenancy Act / State Rent Control Acts") is
+        # registered once per alternative, so the accept path reads the label exactly as
+        # `_classify` does. This only *splits* labels the corpus already carries - it adds
+        # no Act and no (act, section) pair whose section was not already in the corpus, so
+        # `licensed()` is not loosened and A1 is untouched.
+        for alternative in _act_alternatives(act_name):
+            pairs.update((alternative, section) for section in found_sections)
+
     # (a) this turn's retrieved provisions, as carried on the profile
     for source in getattr(profile, "legal_sources", None) or []:
         if not isinstance(source, dict):
@@ -252,6 +369,8 @@ def build_allowlist(profile: Any) -> CitationAllowlist:
             acts.append(act)
         found = _sections_from_string(section)
         sections |= found
+        domain_sections |= found
+        _pair(act, found)
         if is_model_law_document_type(str(source.get("document_type") or "")):
             model_law |= found
 
@@ -259,8 +378,10 @@ def build_allowlist(profile: Any) -> CitationAllowlist:
     for item in _corpus_items(corpus_ids):
         found = _sections_from_string(str(item.get("section") or ""))
         sections |= found
+        domain_sections |= found
         if item.get("act"):
             acts.append(str(item["act"]))
+            _pair(str(item["act"]), found)
         if is_model_law_document_type(str(item.get("document_type") or "")):
             model_law |= found
 
@@ -268,18 +389,32 @@ def build_allowlist(profile: Any) -> CitationAllowlist:
     # map: the product prints these provisions inside documents it generates, so deleting
     # one from the chat message that explains that same document is a contradiction we
     # must not ship. RTI_SEC6 is bound to no domain, which is why the global tier exists.
-    for citations in DOCUMENT_CITATIONS.values():
+    bound_documents = {
+        getattr(binding, "document_type", None)
+        for binding in (getattr(domain, "documents", ()) or ())
+    }
+    for doc_type, citations in DOCUMENT_CITATIONS.items():
         for citation in citations:
-            sections |= _sections_from_string(str(citation.get("section") or ""))
+            found = _sections_from_string(str(citation.get("section") or ""))
+            sections |= found
+            # Act-less acceptance is scoped to the documents THIS domain can actually
+            # generate, so the chat message explaining a generated notice keeps its own
+            # provisions without licensing every other domain's numbers too.
+            if doc_type in bound_documents:
+                domain_sections |= found
             if citation.get("act"):
                 acts.append(str(citation["act"]))
+                _pair(str(citation["act"]), found)
 
     # (d) the RTI corpus: no domain binds it, but the product generates an RTI application
     # from it, so its provisions are vouched for.
     for item in _corpus_items(["RTI"]):
-        sections |= _sections_from_string(str(item.get("section") or ""))
+        found = _sections_from_string(str(item.get("section") or ""))
+        sections |= found
+        domain_sections |= found
         if item.get("act"):
             acts.append(str(item["act"]))
+            _pair(str(item["act"]), found)
 
     authorities: list[str] = []
     urls: set[str] = {_norm_url(url) for url in _PRODUCT_URLS}
@@ -300,7 +435,11 @@ def build_allowlist(profile: Any) -> CitationAllowlist:
         domain_id=domain_id,
         corpus_available=bool(corpus_ids),
         verified_sections=frozenset(sections),
-        act_names=tuple(dict.fromkeys(_norm_act(act) for act in acts if act)),
+        verified_pairs=frozenset(pairs),
+        domain_sections=frozenset(domain_sections),
+        act_names=tuple(dict.fromkeys(
+            alternative for act in acts if act for alternative in _act_alternatives(act)
+        )),
         model_law_sections=frozenset(model_law),
         official_authorities=tuple(dict.fromkeys(authorities)),
         allowed_urls=frozenset(urls),
@@ -528,13 +667,27 @@ def _strip_fact_key_parentheticals(text: str, allow: CitationAllowlist,
 # ------------------------------------------------------------ rule: case law
 
 _CASE_PARTY = rf"[A-Z][\w&'\u2019./{DASH}]*"
+# The separator is matched case-insensitively, the party names are NOT. `re.IGNORECASE`
+# on the whole pattern would make _CASE_PARTY's leading [A-Z] meaningless and "apples vs
+# oranges" would read as a case name, so the flag is scoped to this group alone.
+# `Vs.` is the commonest Indian form; the period is optional because "Ram vs Shyam" and
+# the academic "Kesavananda Bharati v State of Kerala" are both ordinary usage.
+_CASE_SEPARATOR = r"(?i:v\.?|vs\.?|v/s|versus)"
 CASE_NAME_RE = re.compile(
-    rf"(?P<a>(?:{_CASE_PARTY}\s+){{0,6}}{_CASE_PARTY})\s+(?:v\.|vs\.|versus)\s+"
+    rf"(?P<a>(?:{_CASE_PARTY}\s+){{0,6}}{_CASE_PARTY})\s+{_CASE_SEPARATOR}\s+"
     rf"(?P<b>{_CASE_PARTY}(?:\s+(?:of\s+|the\s+)?[A-Za-z][\w&'\u2019./{DASH}]*){{0,6}})"
 )
 REPORTER_RE = re.compile(
     r"\(\s*(?:19|20)\d{2}\s*\)\s*\d{1,3}\s*(?:SCC|SCR|AIR|SCALE|SCJ|SCW|Bom|Del|Mad|Cal|Kar|All|Guj|Raj|Ker|Ori|Pat|P&H)\b"
-    r"|\b(?:AIR|SCC|SCR|SCALE)\s+(?:19|20)\d{2}\s+(?:SC|SCC)?\s*\d{1,4}\b",
+    r"|\b(?:AIR|SCC|SCR|SCALE)\s+(?:19|20)\d{2}\s+(?:SC|SCC)?\s*\d{1,4}\b"
+    # "2021 SCC OnLine SC 456" - the neutral-citation style, year first, no brackets.
+    r"|\b(?:19|20)\d{2}\s+SCC\s+OnLine\s+[A-Za-z]{2,4}\s+\d{1,5}\b"
+    # A cause title with no reporter is still a claim about a specific decided matter:
+    # "Civil Appeal No. 1234 of 2020", "SLP (C) No. 567/2019", "Writ Petition No. 89 of 2021".
+    r"|\b(?:Civil|Criminal|Crl\.?|C\.?|Company)\s*(?:Appeal|Revision|Misc(?:ellaneous)?)\s*"
+    r"(?:No\.?|Nos\.?)?\s*\d+\s*(?:of|/)\s*(?:19|20)\d{2}\b"
+    r"|\bS\.?L\.?P\.?\s*(?:\([CcRr]\)\s*)?(?:No\.?)?\s*\d+\s*(?:of|/)\s*(?:19|20)\d{2}\b"
+    r"|\bWrit\s+Petition\s*(?:\([A-Za-z]\)\s*)?(?:No\.?)?\s*\d+\s*(?:of|/)\s*(?:19|20)\d{2}\b",
     re.IGNORECASE,
 )
 _HONORIFICS = ("m/s", "messrs", "mr", "mrs", "ms", "smt", "shri", "sri", "dr", "the", "in re")
@@ -678,11 +831,12 @@ def _apply_statute(text: str, profile: Any, allow: CitationAllowlist,
         offset_shift = 0
         for match in list(CITATION_RE.finditer(part)):
             nums = match.group("nums")
-            if allow.is_verified_section(nums):
+            named = _named_acts(part, match.start(), match.end())
+            if allow.licensed(nums, named):
                 if allow.is_model_law_section(nums):
                     cited_model_law = True
                 continue
-            verdict = _classify(nums, part, match.start(), allow)
+            verdict = _classify(nums, part, match.start(), allow, named)
             if verdict == "doubtful":
                 needs_note = True
                 redactions.append(Redaction("statute_unconfirmed_caveated", _norm_section(nums)))
@@ -719,18 +873,70 @@ def _apply_statute(text: str, profile: Any, allow: CitationAllowlist,
     return _rejoin(parts, removed, text), needs_note, cited_model_law
 
 
-def _classify(nums: str, block: str, position: int, allow: CitationAllowlist) -> str:
+_ACT_CONNECTOR_RE = re.compile(r"[\s,]*(?:of|under|as\s+per|u/s)\s+(?:the\s+)?", re.IGNORECASE)
+_CITATION_LEAD_RE = re.compile(r"[\s,;:'\"(]*(?:sections?|secs?\.?|s\.|§)?[\s.]*\Z", re.IGNORECASE)
+
+
+def _named_acts(block: str, position: int, end: int | None = None) -> list[str]:
+    """The Act this citation actually belongs to - not every Act named nearby.
+
+    A plain +/-character window let a foreign Act name poison its neighbours: in
+    "Section 47 and Section 58 ... ; Section 9 of the Wages Code", the Wages Code sits
+    inside 47's and 58's window, so both correct corpus provisions were judged against it
+    and deleted. Attachment is syntactic instead. "Section 9 **of the** Wages Code" binds;
+    an Act named in a later clause does not. A citation with no Act attached returns an
+    empty list and takes the act-less route, which is domain-scoped.
+
+    One reading, shared by the accept path (`CitationAllowlist.licensed`) and the reject
+    path (`_classify`), so a citation cannot be judged against one set of names and then
+    explained against another.
+    """
+    if end is None:
+        end = position
+    # "Section 66D of the Information Technology Act, 2000" - the Act follows the citation.
+    after = block[end:end + 90]
+    connector = _ACT_CONNECTOR_RE.match(after)
+    if connector:
+        attached = ACT_NAME_RE.match(after[connector.end():])
+        if attached:
+            name = _norm_act(attached.group(0))
+            if len(name) > 6:
+                return [name]
+    # "Consumer Protection Act, 2019, Section 35" - the Act precedes it, closely.
+    before = block[max(0, position - 70):position]
+    candidates = list(ACT_NAME_RE.finditer(before))
+    if candidates:
+        last = candidates[-1]
+        if _CITATION_LEAD_RE.search(before[last.end():]):
+            name = _norm_act(last.group(0))
+            if len(name) > 6:
+                return [name]
+    return []
+
+
+def _classify(nums: str, block: str, position: int, allow: CitationAllowlist,
+              named: Sequence[str] | None = None) -> str:
     """``unverified`` (strip) or ``doubtful`` (keep + caveat). Never called for a match."""
     if not allow.corpus_available:
         # No corpus exists for this domain, so no section number in it can be verified.
         return "unverified"
-    window = block[max(0, position - 110): position + 90]
-    named = [_norm_act(item.group(0)) for item in ACT_NAME_RE.finditer(window)]
-    named = [name for name in named if len(name) > 6]
+    named = list(named) if named is not None else _named_acts(block, position)
     if not named:
         return "doubtful"
     for name in named:
         if any(name in known or known in name for known in allow.act_names):
+            return "doubtful"
+    # The named Act may still be a State variant of a *family* the corpus itself names.
+    # HOUSING_TENANT's label is "Model Tenancy Act / State Rent Control Acts", so the
+    # Rajasthan Rent Control Act is squarely inside what the product claims to cover; a
+    # string-containment test simply cannot see it. Reading that failure as *disproof*
+    # rather than as *no information* is what made naming the real applicable Act strictly
+    # more dangerous than naming none at all - the guard deleted the section and then told
+    # the user to go and check the very Act whose section it had just removed.
+    families = {family for family in map(_act_family, allow.act_names) if family}
+    for name in named:
+        family = _act_family(name)
+        if family and family in families:
             return "doubtful"
     # The reply names an Act that is in no allowlist for this domain.
     return "unverified"
@@ -745,9 +951,65 @@ _OUTCOME_WORD = (
 )
 _OUTCOME_WORD_RE = re.compile(_OUTCOME_WORD, re.IGNORECASE)
 _PERCENT_RE = re.compile(rf"(?:{APPROX}\s*)?\d{{1,3}}(?:\.\d+)?\s*%", re.IGNORECASE)
+
+# A percentage is a probability claim when a probability NOUN is *attached* to it: as the
+# word that follows it, as the word that precedes it across nothing but a copula, or as its
+# own line's label. "An outcome word somewhere within 70 characters" was never evidence of
+# anything - in real legal prose the outcome word is always nearby ("if you win, the 12% GST
+# is refundable too"), which is exactly why the window deleted correct rates. Attachment,
+# not proximity: the same lesson as `_named_acts`.
+# Order matters - the multi-word forms come first, or `chances?` eats "chance" and leaves
+# "of success" stranded behind the removal.
+_PROB_NOUN = (
+    r"(?:chance\s+of\s+success|success\s+rate|win\s+rate|chances?|odds"
+    r"|probabilit(?:y|ies)|likelihood|sambhavna|safalta"
+    r"|\u0938\u0902\u092d\u093e\u0935\u0928\u093e(?:\u0913\u0902)?"
+    r"|\u092e\u094c\u0915\u093e|\u092e\u094c\u0915\u0947"
+    r"|\u0905\u0935\u0938\u0930|\u0938\u092b\u0932\u0924\u093e)"
+)
+
+# A rate states what it is a rate *of*, and it states it AFTER the sign. The test is
+# lookahead-only on purpose: W1-06 t4's "- **Tour-operator refund:** ~30 % chance," puts a
+# measurand immediately *before* the number, so a look-behind measurand test would veto a
+# genuinely invented probability and break that fixture's redaction count.
+_MEASURAND = (
+    r"(?:per\s+(?:annum|month|year|quarter|week|day|unit|kg)|p\.\s?a\.|annually|monthly"
+    r"|yearly|quarterly|prati\s+(?:varsh|maah|mah)|sa?alana"
+    r"|stamp\s+duty|gst|tds|tcs|vat|cess|taxe?s?|duty|interest|byaj|refunds?|deposits?"
+    r"|discounts?|commissions?|penalt(?:y|ies)|fines?|advance|cashback|brokerage|rebate"
+    r"|surcharge|margin|mark\s?up|fees?|charges?|shares?|stake|hike|increase|escalation"
+    r"|rent|salary|wages?|amount|value|price|cost|premium|royalty|instal?ments?"
+    r"|\u092c\u094d\u092f\u093e\u091c|\u092a\u094d\u0930\u0924\u093f\s*\u0935\u0930\u094d\u0937"
+    r"|\u092a\u094d\u0930\u0924\u093f\s*\u092e\u093e\u0939|\u0935\u093e\u0930\u094d\u0937\u093f\u0915"
+    r"|\u092e\u093e\u0938\u093f\u0915|\u091c\u0940\u090f\u0938\u091f\u0940"
+    r"|\u091c\u092e\u093e|\u0935\u093e\u092a\u0938\u0940|\u0930\u093f\u092b\u0902\u0921"
+    r"|\u091f\u0948\u0915\u094d\u0938|\u0915\u093f\u0930\u093e\u092f\u093e|\u091b\u0942\u091f"
+    r"|\u091c\u0941\u0930\u094d\u092e\u093e\u0928\u093e)"
+)
+# `.match()`-ed at the character right after the `%`. The optional bridge carries the Hindi
+# genitive ("18 % ka byaj") and the English "of the" ("30 % of the refund").
+_MEASURAND_AFTER_RE = re.compile(
+    rf"\s*(?:(?:ka|ki|ke|of|as|on|in|the|a|an"
+    rf"|\u0915\u093e|\u0915\u0940|\u0915\u0947)\s+){{0,3}}{_MEASURAND}\b",
+    re.IGNORECASE,
+)
+
+# Hindi/Hinglish word order puts the probability noun first ("jeetne ki sambhavna 30 % hai"),
+# and "The probability is 30%." has nothing after the sign at all. Only a copula, an
+# approximator or punctuation may sit in the gap, and the gap is bounded, so a noun in an
+# earlier clause cannot reach across and claim the number.
+_PROB_BRIDGE = (
+    rf"(?:[\s:=~*_(\[\u2248{DASH}]"
+    rf"|\b(?:is|are|was|were|be|at|of|about|around|roughly|nearly|approximately|only|just"
+    rf"|maybe|perhaps|hai|hain|ki|ke|ka)\b"
+    rf"|\u0939\u0948\u0902?|\u0915\u093f|\u0932\u0917\u092d\u0917|\u0915\u0930\u0940\u092c)*"
+)
+_PROB_BEFORE_RE = re.compile(rf"\b{_PROB_NOUN}{_PROB_BRIDGE}\Z", re.IGNORECASE)
+_PROB_GAP = 40
+
 _PERCENT_PHRASE_RE = re.compile(
     rf"(?:{APPROX}\s*)?\d{{1,3}}(?:\.\d+)?\s*%"
-    rf"(?:\s*(?:chances?|odds|probability|likelihood|success\s+rate))?"
+    rf"(?P<prob>\s*{_PROB_NOUN})?"
     rf"(?:\s*[,;])?",
     re.IGNORECASE,
 )
@@ -756,15 +1018,37 @@ _OUTCOME_LINE_RE = re.compile(
     rf"(?:{APPROX}\s*)?\d{{1,3}}(?:\.\d+)?\s*%[\s*_.)\u0964]*$",
     re.IGNORECASE,
 )
-_WINDOW = 70
+
+
+def _percent_role(body: str, match: re.Match[str]) -> str:
+    """What this percentage asserts, read from its own grammar and nothing else.
+
+    ``"measurand"``   - it names what it is a percentage *of*, so it is a rate or a quantum
+                        and never a probability. Decided lookahead-only (see `_MEASURAND`).
+    ``"probability"`` - a probability noun is attached to it, after or immediately before.
+    ``"unknown"``     - neither reading applies. The module's rule 1 then governs: keep the
+                        text and record nothing.
+    """
+    after_pct = match.start() + match.group(0).index("%") + 1
+    if _MEASURAND_AFTER_RE.match(body, after_pct):
+        return "measurand"
+    if match.group("prob"):
+        return "probability"
+    before = _PROB_BEFORE_RE.search(body[:match.start()])
+    if before is not None and match.start() - before.start() <= _PROB_GAP:
+        return "probability"
+    return "unknown"
 
 
 def _apply_outcome_probability(text: str, redactions: list[Redaction]) -> tuple[str, bool]:
     """Remove a numeric win probability. Nothing in the product computes one.
 
-    The outcome-word list is the closed side of the rule; it is what keeps this from being
-    a blanket percentage ban. ``18% per annum``, ``12% GST``, ``100% refund``,
-    ``2% per month`` and ``50% deposit`` sit nowhere near an outcome word.
+    Rule 1 is code here, not a comment. A percentage is deleted only when a probability noun
+    is *attached* to it; a percentage that names its own measurand is kept unconditionally;
+    and a percentage that reads neither way is kept **and records no redaction**, so
+    `_outcome_note` can no longer be appended to a reply that made no probability claim.
+    The outcome-word list survives only as the cheap early-out below - its word set is a
+    strict superset of `_PROB_NOUN`, so it can only short-circuit text that would be kept.
     """
     if not _PERCENT_RE.search(text) or not _OUTCOME_WORD_RE.search(text):
         return text, False
@@ -779,15 +1063,21 @@ def _apply_outcome_probability(text: str, redactions: list[Redaction]) -> tuple[
             continue
         line_match = _OUTCOME_LINE_RE.match(body)
         if line_match and _OUTCOME_WORD_RE.search(line_match.group("label") or ""):
-            redactions.append(Redaction("outcome_probability", "whole_line"))
-            hit = True
-            continue
+            # A `label: value` line is already assertion-shaped - the label *is* the
+            # predicate - but a percentage that states its own unit still vetoes the
+            # deletion. `_OUTCOME_LINE_RE` anchors at end of line, so today nothing can
+            # follow the sign and this veto is defensive; it keeps the rule true if that
+            # anchor is ever loosened. It is deliberately *not* a test of the label, since
+            # W1-06 t4's own invented line is labelled "Tour-operator refund".
+            phrase = _PERCENT_PHRASE_RE.search(body)
+            if phrase is None or _percent_role(body, phrase) != "measurand":
+                redactions.append(Redaction("outcome_probability", "whole_line"))
+                hit = True
+                continue
 
         def replace(match: re.Match[str]) -> str:
             nonlocal hit
-            start, end = match.span()
-            context = body[max(0, start - _WINDOW): min(len(body), end + _WINDOW)]
-            if not _OUTCOME_WORD_RE.search(context):
+            if _percent_role(body, match) != "probability":
                 return match.group(0)
             redactions.append(Redaction("outcome_probability", "inline"))
             hit = True
@@ -835,7 +1125,55 @@ _IDENTIFIER_WORD_RE = re.compile(
     re.IGNORECASE,
 )
 _AMOUNT_RE = re.compile(r"(?:\u20b9|\bRs\.?|\bINR)\s*[\d,]+|\b\d{1,3}(?:,\d{2})*,\d{3}\b")
+# Phone-shaped contacts that are not 1800-toll-free. This is where M7's residue lived:
+# 1860-500-1234 is the commonest Indian *bank* helpline format and is the shape M7 was
+# originally found in. A fabricated bank fraud number is phishing-grade - a user who calls
+# it can lose money directly, and the product's authority is what persuaded them to call.
+# A phone number in a *bot-composed* reply is legitimate only if the registry knows it or
+# it belongs to the user or the case, so any other number in these shapes is dropped.
+# `1800` is excluded because _TOLLFREE_RE owns that prefix and runs first; matching it here
+# too would re-drop a number that rule deliberately kept.
+_CONTACT_NUMBER_RE = re.compile(
+    rf"(?<![\d{DASH}])(?:"
+    rf"18(?!00)\d{{2}}[{DASH}\s]?\d[\d{DASH}\s]{{4,12}}\d"     # 1860-500-1234, 1861-...
+    rf"|0\d{{2,4}}[{DASH}\s]\d[\d{DASH}\s]{{5,10}}\d"          # 022-2260 3000 (STD code)
+    rf"|[6-9]\d{{9}}"                                          # 10-digit Indian mobile
+    rf")(?!\d|{DASH_CLASS}\s*\d)"
+)
+# The product publishes no email registry, so every address the model composes is
+# unverifiable by construction - the same argument that makes case law unconditional.
+_EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b")
 _URL_RE = re.compile(r"https?://[^\s<>)\]\"'`]+")
+# Does this span *supply* a place, or does it tell the user to go and find one? A bare
+# hostname, a scheme-ful URL, a PIN code or a street-address shape is a locator the product
+# cannot verify. "Confirm the address on its official website" supplies none - it asserts no
+# location at all, so there is nothing to fabricate and nothing to delete. Lives here rather
+# than inside a single rule because it is the same test any fabricated-specificity rule needs.
+_LOCATOR_RE = re.compile(
+    r"https?://\S+"
+    r"|\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\.(?:gov|nic|org|com|net|edu|in|info)\b"
+    r"|\b[1-9]\d{5}\b"
+    r"|\b\d{1,4}[A-Za-z]?[,/]?\s+(?:[A-Z][\w'’]*\s+){0,3}"
+    r"(?:Road|Rd\.?|Marg|Street|St\.?|Nagar|Colony|Lane|Gali|Sector|Block|Chowk|Bhawan"
+    r"|Bhavan|Building|Floor|Complex|Circle|Path|Janpath|Cross|Layout|Vihar|Puram)\b",
+    re.IGNORECASE,
+)
+# Removing a contact mid-sentence leaves the preposition that introduced it stranded
+# ("Call the helpline at  immediately"). The callbacks emit this sentinel instead of an
+# empty string so one pass can consume the connector too; it is a private marker that
+# never survives `_resolve_gaps`, which every edited line goes through.
+_GAP = "\x00"
+_GAP_RE = re.compile(rf"[ \t]*(?:\b(?:at|on|to|via|through|par)\b[ \t]*)?{_GAP}")
+
+
+def _resolve_gaps(body: str) -> str:
+    """Drop the sentinel plus any connector left dangling, then close the seam."""
+    if _GAP not in body:
+        return body
+    out = _GAP_RE.sub("", body).replace(_GAP, "")
+    out = re.sub(r"[ \t]{2,}", " ", out)
+    out = re.sub(r"\s+([.,;:!?])", r"\1", out)
+    return out
 _ATTRIB_CONNECTOR = rf"(?:[\s{DASH}]*(?:designated|operated|run|ki|ka|ke|dwara|by|'s|\u2019s)?[\s{DASH}]*)"
 
 
@@ -865,9 +1203,28 @@ def _protected_digits(profile: Any, user_message: str) -> set[str]:
     return protected
 
 
+def _protected_text(profile: Any, user_message: str) -> str:
+    """Lowercased haystack of what the user or the case supplied, for the non-numeric
+    tokens `_protected_digits` cannot cover - an email address the user gave us is theirs,
+    and echoing it back is not a fabrication."""
+    parts: list[str] = [user_message or ""]
+    for attr in ("user_email", "opposite_party_email", "opposite_party_address"):
+        value = getattr(profile, attr, None)
+        if value:
+            parts.append(str(value))
+    key_facts = getattr(profile, "key_facts", None) or {}
+    if isinstance(key_facts, dict):
+        parts.extend(str(value) for value in key_facts.values() if isinstance(value, str))
+    for source in getattr(profile, "provided_documents", None) or []:
+        if isinstance(source, dict):
+            parts.extend(str(value) for value in source.values() if isinstance(value, str))
+    return " ".join(parts).casefold()
+
+
 def _apply_helplines(text: str, profile: Any, allow: CitationAllowlist,
                      user_message: str, redactions: list[Redaction]) -> tuple[str, bool]:
     protected = _protected_digits(profile, user_message)
+    protected_text = _protected_text(profile, user_message)
     hit = False
 
     # L1 first: correct a wrong operator on a real number, before any removal runs, so
@@ -886,13 +1243,42 @@ def _apply_helplines(text: str, profile: Any, allow: CitationAllowlist,
             return token
         redactions.append(Redaction("helpline_unverified", "toll_free"))
         hit = True
-        return ""
+        return _GAP
 
     lines: list[str] = []
     for line in text.splitlines(keepends=True):
         body = line.rstrip("\r\n")
         ending = line[len(body):]
         rebuilt = _TOLLFREE_RE.sub(drop_tollfree, body)
+
+        def drop_contact(match: re.Match[str]) -> str:
+            """Same four exemptions as the toll-free rule, on the same reasoning: the
+            registry vouches for it, the user owns it, it is an amount, or a nearby
+            identifier word says it is a reference rather than a number to call."""
+            nonlocal hit
+            token = match.group(0)
+            digits = re.sub(r"\D", "", token)
+            if helpline_lookup(token) or digits in protected:
+                return token
+            start, end = match.span()
+            if _AMOUNT_RE.search(rebuilt[max(0, start - 8): end + 2]):
+                return token
+            if _IDENTIFIER_WORD_RE.search(rebuilt[max(0, start - 25): end + 10]):
+                return token
+            redactions.append(Redaction("helpline_unverified", "contact_number"))
+            hit = True
+            return _GAP
+        rebuilt = _CONTACT_NUMBER_RE.sub(drop_contact, rebuilt)
+
+        def drop_email(match: re.Match[str]) -> str:
+            nonlocal hit
+            token = match.group(0)
+            if token.casefold() in protected_text:
+                return token
+            redactions.append(Redaction("email_unverified"))
+            hit = True
+            return _GAP
+        rebuilt = _EMAIL_RE.sub(drop_email, rebuilt)
 
         if _HELPLINE_ONLY_WORD_RE.search(rebuilt):
             def drop_shortcode(match: re.Match[str]) -> str:
@@ -926,6 +1312,7 @@ def _apply_helplines(text: str, profile: Any, allow: CitationAllowlist,
             return tail
         rebuilt = _URL_RE.sub(drop_url, rebuilt)
 
+        rebuilt = _resolve_gaps(rebuilt)
         if rebuilt != body:
             rebuilt = _cleanup_empty_brackets(rebuilt)
         if rebuilt != body and _is_blank_after_edit(rebuilt):
@@ -1018,12 +1405,16 @@ _WEB_CLAIM_RE = re.compile(r"\bwebsite\b|\bweb\s?site\b|\bportal\b|\bweb\s?page\
 _PARENTHETICAL_RE = re.compile(r"\(([^()\n]{5,300})\)")
 
 
-def _apply_model_law(text: str, profile: Any, allow: CitationAllowlist,
-                     redactions: list[Redaction]) -> str:
-    """Neutralise 'cite this in your notice' and constructed-authority website claims.
+def _apply_constructed_authority(text: str, profile: Any,
+                                 redactions: list[Redaction]) -> str:
+    """A fabricated contact for a constructed "<Place> Rent Authority".
 
-    The provisions themselves are never deleted - they are the product's only real tenancy
-    content. The caveat adds; it never removes.
+    Deliberately **not** gated on the model-law caveat. This rule is about an invented
+    authority contact and has nothing to do with whether a State has adopted the Model
+    Tenancy Act; gating it there made its firing depend on a section number in an unrelated
+    sentence, so identical advice survived or vanished for reasons the reply itself could
+    not explain. Only branch (2) below - the cite-instruction rewrite - is genuinely about
+    model-law adoption, and that stays gated.
     """
     out_lines: list[str] = []
     for line in text.splitlines(keepends=True):
@@ -1031,7 +1422,7 @@ def _apply_model_law(text: str, profile: Any, allow: CitationAllowlist,
         ending = line[len(body):]
         rebuilt = body
 
-        # (1) a constructed "<Place> Rent Authority" plus a claim about its website
+        # a constructed "<Place> Rent Authority" plus a claim about its website
         if _CONSTRUCTED_AUTHORITY_RE.search(rebuilt) and _WEB_CLAIM_RE.search(rebuilt):
             if not _URL_RE.search(rebuilt):
                 replaced = False
@@ -1046,16 +1437,44 @@ def _apply_model_law(text: str, profile: Any, allow: CitationAllowlist,
 
                 rebuilt = _PARENTHETICAL_RE.sub(swap, rebuilt)
                 if not replaced:
+                    # Rule 1 for the sentence fallback. Branch 1a above is assertion-shaped
+                    # already - a parenthetical is where the model puts the specific place it
+                    # invented, so the parenthetical *is* the locator. This fallback had no
+                    # locator signal at all, so it deleted the sentence on two tokens merely
+                    # co-occurring, taking sound advice ("confirm the address yourself") with
+                    # it. A sentence that supplies a locator is a fabrication and still goes;
+                    # a sentence that supplies none asserts no location, so nothing is removed
+                    # and nothing is recorded.
                     kept = [
                         sentence for sentence in _sentences(rebuilt)
                         if not (_WEB_CLAIM_RE.search(sentence)
-                                and _CONSTRUCTED_AUTHORITY_RE.search(sentence))
+                                and _CONSTRUCTED_AUTHORITY_RE.search(sentence)
+                                and _LOCATOR_RE.search(sentence))
                     ]
                     if len(kept) != len(_sentences(rebuilt)):
                         redactions.append(Redaction("constructed_authority_contact", "sentence"))
                         rebuilt = "".join(kept)
 
-        # (2) "cite the model-law section in your notice" -> a starting point instead
+        if rebuilt != body and _is_blank_after_edit(rebuilt):
+            continue
+        out_lines.append(rebuilt + ending)
+    return "".join(out_lines)
+
+
+def _apply_model_law(text: str, profile: Any, allow: CitationAllowlist,
+                     redactions: list[Redaction]) -> str:
+    """Neutralise "cite this model-law section in your notice".
+
+    The provisions themselves are never deleted - they are the product's only real tenancy
+    content. The caveat adds; it never removes.
+    """
+    out_lines: list[str] = []
+    for line in text.splitlines(keepends=True):
+        body = line.rstrip("\r\n")
+        ending = line[len(body):]
+        rebuilt = body
+
+        # "cite the model-law section in your notice" -> a starting point instead
         if _MODEL_LAW_CITE_VERB_RE.search(rebuilt):
             kept: list[str] = []
             changed = False
@@ -1110,6 +1529,8 @@ def guard_reply(reply: str, profile: Any, user_message: str = "") -> GuardResult
     text, statute_note, cited_model_law = _apply_statute(text, profile, allow, redactions)
     text, outcome_hit = _apply_outcome_probability(text, redactions)
     text, helpline_hit = _apply_helplines(text, profile, allow, user_message, redactions)
+    # Ungated: an invented authority contact is a fabrication whatever else the reply cites.
+    text = _apply_constructed_authority(text, profile, redactions)
 
     # H4: a model-law provision was cited and the State's adoption is not sourced.
     model_law_caveat = (
