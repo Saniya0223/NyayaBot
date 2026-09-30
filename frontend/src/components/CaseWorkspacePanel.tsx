@@ -72,6 +72,18 @@ function CaseWorkspaceContent({ profile, onTriggerDocumentModal, onEvidenceRevie
   const showHelp = profile?.professional_help && !(safety?.is_safety_case && (safety.immediate_danger !== false || !profile?.key_facts?.safety_triage_complete));
   const limit = 3;
 
+  // The backend names a case as soon as it knows enough, so show that name
+  // rather than gating on category alone - a case can be meaningfully titled
+  // before its workflow stage means anything to the user.
+  const PLACEHOLDER_TITLES = ['legal information request', 'new case', 'untitled case'];
+  const hasRealTitle = Boolean(
+    profile?.title && !PLACEHOLDER_TITLES.includes(profile.title.trim().toLowerCase())
+  );
+  const caseHeading = hasRealTitle ? profile!.title : 'Your case is taking shape';
+  const caseSubheading = hasRealTitle && profile?.current_stage_label
+    ? profile.current_stage_label
+    : 'Describe your situation to get started.';
+
   return (
     <aside className="soft-scrollbar h-full min-h-[620px] overflow-y-auto rounded-[26px] border border-[#dbe4de] bg-white p-4 paper-shadow sm:p-5" aria-label="Live case workspace">
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -81,8 +93,8 @@ function CaseWorkspaceContent({ profile, onTriggerDocumentModal, onEvidenceRevie
 
       <div className="rounded-2xl bg-[#174e3b] p-4 text-white">
         <span className="inline-flex rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-semibold text-[#e1eee6]">{profile ? caseTypeLabel(profile) : 'Case type not identified yet'}</span>
-        <h2 className="mt-3 text-base font-bold leading-6">{profile?.title && profile.category !== 'GENERAL' ? profile.title : 'Your case is taking shape'}</h2>
-        <p className="mt-1 text-[11px] text-[#d3e2da]">{profile?.current_stage_label && profile.category !== 'GENERAL' ? profile.current_stage_label : 'Describe your situation to get started.'}</p>
+        <h2 className="mt-3 text-base font-bold leading-6">{caseHeading}</h2>
+        <p className="mt-1 text-[11px] text-[#d3e2da]">{caseSubheading}</p>
       </div>
 
       {profile?.safety_notice ? <p className="mt-3 rounded-xl border border-[#efc2bb] bg-[#fff4f2] p-3 text-[11px] leading-5 text-[#853c32]">{profile.safety_notice}</p> : null}

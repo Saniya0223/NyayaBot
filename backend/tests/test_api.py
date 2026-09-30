@@ -146,18 +146,47 @@ def test_case_summary_is_on_demand_cached_and_owner_only(monkeypatch):
     assert provider.calls == 1
 
 
-def test_explicit_salary_document_generates_from_understanding_case_with_optional_skipped():
+def test_explicit_salary_document_waits_for_case_facts_then_generates_with_optional_skipped():
+    # Renamed and restructured (cycle 3, C3/S5b). The old name said the quiet
+    # part out loud: a case whose only content was "my employer has not paid my
+    # salary" got a confirmation modal on turn 2 with readiness
+    # UNDERSTANDING_CASE. That is finding C3 end-to-end, encoded as expected
+    # behaviour. The first half below is now the lock against it; the second
+    # half keeps every generator assertion verbatim, once the document is earned.
     auth_client = authenticated_client("ExplicitSalary")
     started = auth_client.post("/api/v1/chat/message", json={"message": "My employer has not paid my salary for four months."})
     assert started.status_code == 200
     case_id = started.json()["case_profile"]["case_id"]
     assert started.json()["case_profile"]["recommended_doc_type"] is None
 
-    requested = auth_client.post("/api/v1/chat/message", json={"case_id": case_id, "message": "create salary notice pdf"})
-    assert requested.status_code == 200
-    body = requested.json()
-    assert body["case_profile"]["readiness"] == "UNDERSTANDING_CASE"
-    assert body["case_profile"]["recommended_doc_type"] is None
+    too_early = auth_client.post("/api/v1/chat/message", json={"case_id": case_id, "message": "create salary notice pdf"})
+    assert too_early.status_code == 200
+    early_body = too_early.json()
+    assert early_body["suggested_action"] is None
+    assert early_body["case_profile"]["document_request"]["status"] == "NEEDS_CASE_FACTS"
+    assert early_body["case_profile"]["document_request"]["intent"] == "USER_REQUESTED"
+    # The refusal says what it is waiting for, in plain language, and leaks no
+    # internal field name (W1-02 t2 said "... ka naam (opposite_party_name)").
+    assert "_" not in early_body["reply_text"]
+    # Below READY_FOR_ACTION the generator endpoint refuses too, so the frontend
+    # cannot POST past the chat gate.
+    blocked = auth_client.post("/api/v1/documents/generate", json={
+        "case_id": case_id, "doc_type": "SALARY_DEMAND_NOTICE",
+        "override_data": {
+            "complainant_name": "Example Employee", "opposite_party_name": "Example Employer",
+            "complainant_city": "Jaipur", "disputed_amount": 400000,
+        },
+    })
+    assert blocked.status_code == 422
+
+    # Supply the fact the next action needs; the parked request resumes by
+    # itself, without the user asking a second time.
+    named = auth_client.post("/api/v1/chat/message", json={
+        "case_id": case_id, "message": "My employer is Example Employer Pvt Ltd and I am in Jaipur.",
+    })
+    assert named.status_code == 200
+    body = named.json()
+    assert body["case_profile"]["readiness"] in {"READY_FOR_ACTION", "READY_FOR_DOCUMENT"}
     assert body["suggested_action"]["type"] == "PREPARE_DOC"
     assert body["suggested_action"]["intent"] == "USER_REQUESTED"
     assert body["suggested_action"]["open_confirmation_modal"] is True

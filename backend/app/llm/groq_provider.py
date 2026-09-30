@@ -1,9 +1,15 @@
 import asyncio
 import json
 import logging
+import math
+import re
+import time
+from collections.abc import Mapping
+from datetime import timezone
+from email.utils import parsedate_to_datetime
 from typing import Any, Type, TypeVar
 
-from groq import AsyncGroq
+from groq import APIConnectionError, APIStatusError, APITimeoutError, AsyncGroq, RateLimitError
 from pydantic import BaseModel
 
 from app.config import settings
@@ -15,6 +21,7 @@ from app.llm.contracts import (
     LLMNotConfiguredError,
     LLMProvider,
     LLMProviderError,
+    LLMRateLimitedError,
     LLMResponseContext,
     ProviderStatus,
 )
@@ -22,6 +29,8 @@ from app.llm.contracts import (
 
 logger = logging.getLogger("uvicorn.error")
 CHAT_MAX_OUTPUT_TOKENS = 2048
+GROQ_MAX_NETWORK_ATTEMPTS = 2
+GROQ_TRANSIENT_RETRY_DELAY_SECONDS = 0.4
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 
@@ -80,6 +89,12 @@ Use a known fact naturally to show continuity, without repeating the whole case 
 After guidance, ask at most one high-value unresolved question if it materially helps. Never expose internal IDs, priorities,
 readiness labels, scoring, or field names. Only an explicitly gated action or document requires its own missing fields.
 Do not alter state, invent facts, cite laws not present in verified sources, promise outcomes, or fabricate deadlines.
+legal_sources_status is deterministic fact, not a suggestion: when corpus_available is false there is no
+verified statutory text for this case, so name an Act only as background and give no section number and no
+quoted provision text. case_law_available is always false: never cite a judgment, case name or law report.
+Never state a numeric probability, percentage or odds of winning; there is no such calculation.
+helpline_registry is the only source of helpline numbers and of the authority that operates each one. Give no
+other number, and never attribute a number to an authority the registry does not name for it.
 If verified sources are empty, clearly say the exact legal provision still needs verification instead of guessing.
 Never describe the Model Tenancy Act, 2021 as binding local law unless the supplied context confirms State adoption;
 identify it as model guidance and say the applicable State tenancy/rent law must be checked.
@@ -92,7 +107,9 @@ When "readiness" is PRE_INTAKE, greet briefly and invite the user to describe wh
 When "readiness" is UNDERSTANDING_CASE, continue naturally. If guidance_possible is true, give useful preliminary
 guidance before any follow-up. Otherwise use at most one relevant next_fact_candidate to clarify the issue.
 Do not request full name or address or propose preparing a document at this stage.
-This restriction is for proactive recommendations. If the backend supplies a validated USER_REQUESTED document state, the user may confirm required document details even while case readiness remains UNDERSTANDING_CASE.
+When "readiness" is READY_FOR_LEGAL_GUIDANCE, the issue is understood but the next practical step is not yet
+executable. Give substantive preliminary guidance, name the next practical step in prose, and ask at most one
+high-value question. Do not offer, name, or describe a document at this stage.
 Only when a recommended document or validated user-requested document is supplied may you explain that document or
 ask for its missing required fields. Never invent a document suggestion that is not supplied.
 When the supplied recommended_next_action is PREPARE_DOC, or a validated user-requested document action is supplied, and the user asks to prepare, create, generate, or draft
@@ -130,7 +147,7 @@ class GroqProvider(LLMProvider):
     def __init__(self, api_key: str | None = None, model: str | None = None):
         self.model = (model or settings.LLM_MODEL).strip()
         self._api_key = (api_key if api_key is not None else settings.GROQ_API_KEY).strip()
-        self._client = AsyncGroq(api_key=self._api_key) if self._api_key else None
+        self._client = AsyncGroq(api_key=self._api_key, max_retries=0) if self._api_key else None
 
     @property
     def status(self) -> ProviderStatus:
@@ -151,14 +168,16 @@ class GroqProvider(LLMProvider):
         prompt = self._json_prompt(
             "Extract the newest user turn using the recent conversation only for context.",
             {
-                "newest_user_message": context.user_message,
-                "recent_messages": context.recent_messages,
+                # The live intake path supplies shared catalogs. Keep them first
+                # in INPUT_DATA, without promoting any supplied data to system rules.
+                "domain_catalog": self._stable_catalog(context.domain_catalog),
+                "document_catalog": self._stable_catalog(context.document_catalog),
                 "existing_case_summary": context.case_summary,
                 "pending_interaction": context.pending_interaction.model_dump(mode="json") if context.pending_interaction else None,
                 "language_style": context.language_style,
                 "script_style": context.script_style,
-                "domain_catalog": context.domain_catalog,
-                "document_catalog": context.document_catalog,
+                "recent_messages": context.recent_messages,
+                "newest_user_message": context.user_message,
             },
         )
         return await self._generate_structured(prompt, EXTRACTION_SYSTEM_PROMPT, CaseExtraction)
@@ -171,9 +190,14 @@ class GroqProvider(LLMProvider):
         return await self._generate_structured(prompt, EXTRACTION_SYSTEM_PROMPT, IssueClassification)
 
     async def chat(self, context: LLMResponseContext) -> str:
+        # model_payload(), not model_dump(): it strips internal profile field names
+        # from next_fact_candidates (finding D1). Never call model_dump here.
+        payload = context.model_payload()
+        # Preserve every context field and keep the newest message at the end.
+        payload["user_message"] = payload.pop("user_message")
         prompt = self._json_prompt(
             "Respond to the newest user turn using this already validated state. Do not output JSON.",
-            context.model_dump(mode="json"),
+            payload,
         )
         messages = [
             {"role": "system", "content": CHAT_SYSTEM_PROMPT},
@@ -207,7 +231,7 @@ class GroqProvider(LLMProvider):
         full_system_prompt = (
             f"{system_prompt}\n\n"
             f"You MUST output valid JSON matching this schema:\n"
-            f"{json.dumps(schema.model_json_schema(), ensure_ascii=False)}"
+            f"{json.dumps(schema.model_json_schema(), ensure_ascii=False, sort_keys=True)}"
         )
         messages = [
             {"role": "system", "content": full_system_prompt},
@@ -247,7 +271,8 @@ class GroqProvider(LLMProvider):
         if response_format is not None:
             kwargs["response_format"] = response_format
 
-        for attempt in range(2):
+        for attempt in range(GROQ_MAX_NETWORK_ATTEMPTS):
+            retry_delay: float | None = None
             try:
                 response = await asyncio.wait_for(
                     self._client.chat.completions.create(**kwargs),
@@ -258,10 +283,37 @@ class GroqProvider(LLMProvider):
                     self.model,
                     operation,
                 )
+                self._log_usage(response, operation)
                 choice = response.choices[0]
                 return choice.message.content or ""
-            except asyncio.TimeoutError as exc:
+            except RateLimitError as exc:
+                metadata = self._rate_limit_metadata(exc)
+                wait_seconds = self._rate_limit_wait(metadata)
+                retry_once = (
+                    attempt == 0
+                    and wait_seconds is not None
+                    and wait_seconds <= settings.GROQ_RATE_LIMIT_MAX_RETRY_WAIT_SECONDS
+                )
+                logger.warning(
+                    "event=groq_rate_limit provider=groq operation=%s model=%s "
+                    "http_status=429 retry_after_seconds=%s remaining_tokens=%s "
+                    "token_reset_seconds=%s remaining_requests=%s request_reset_seconds=%s decision=%s",
+                    operation, self.model, metadata["retry_after_seconds"], metadata["remaining_tokens"],
+                    metadata["token_reset_seconds"], metadata["remaining_requests"],
+                    metadata["request_reset_seconds"], "retry_once" if retry_once else "no_retry",
+                )
+                if not retry_once:
+                    raise LLMRateLimitedError("Groq is temporarily rate limited") from exc
                 last_error = exc
+                retry_delay = wait_seconds
+            except (asyncio.TimeoutError, APIConnectionError) as exc:
+                last_error = exc
+                if attempt == 0:
+                    retry_delay = GROQ_TRANSIENT_RETRY_DELAY_SECONDS
+            except APIStatusError as exc:
+                last_error = exc
+                if attempt == 0 and (exc.status_code in {408, 409} or exc.status_code >= 500):
+                    retry_delay = GROQ_TRANSIENT_RETRY_DELAY_SECONDS
             except Exception as exc:
                 last_error = exc
 
@@ -272,12 +324,134 @@ class GroqProvider(LLMProvider):
                 attempt + 1,
                 type(last_error).__name__,
             )
-            if attempt == 0:
-                await asyncio.sleep(0.4)
+            if retry_delay is None:
+                break
+            await asyncio.sleep(retry_delay)
 
-        if isinstance(last_error, asyncio.TimeoutError):
+        if isinstance(last_error, (asyncio.TimeoutError, APITimeoutError)):
             raise LLMProviderError("Groq request timed out") from last_error
         raise LLMProviderError("Groq request failed") from last_error
+
+    @staticmethod
+    def _nonnegative_seconds(value: Any) -> float | None:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if math.isfinite(number) and number >= 0 else None
+
+    @classmethod
+    def _retry_after_seconds(cls, value: str | None) -> float | None:
+        seconds = cls._nonnegative_seconds(value)
+        if seconds is not None or value is None:
+            return seconds
+        try:
+            reset_at = parsedate_to_datetime(value)
+            if reset_at.tzinfo is None:
+                reset_at = reset_at.replace(tzinfo=timezone.utc)
+            return max(reset_at.timestamp() - time.time(), 0)
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+    @classmethod
+    def _reset_seconds(cls, value: str | None) -> float | None:
+        seconds = cls._nonnegative_seconds(value)
+        if seconds is not None or value is None:
+            return seconds
+        parts = re.findall(r"(\d+(?:\.\d+)?)(ms|d|h|m|s)", value)
+        if not parts or "".join(number + unit for number, unit in parts) != value:
+            return None
+        units = {"ms": 0.001, "s": 1, "m": 60, "h": 3600, "d": 86400}
+        return cls._nonnegative_seconds(sum(float(number) * units[unit] for number, unit in parts))
+
+    @classmethod
+    def _rate_limit_metadata(cls, error: RateLimitError) -> dict[str, int | float | None]:
+        headers = getattr(getattr(error, "response", None), "headers", None) or {}
+
+        def remaining(header: str) -> int | None:
+            try:
+                return int(headers.get(header))
+            except (TypeError, ValueError):
+                return None
+
+        return {
+            "retry_after_seconds": cls._retry_after_seconds(headers.get("retry-after")),
+            "remaining_tokens": remaining("x-ratelimit-remaining-tokens"),
+            "token_reset_seconds": cls._reset_seconds(headers.get("x-ratelimit-reset-tokens")),
+            "remaining_requests": remaining("x-ratelimit-remaining-requests"),
+            "request_reset_seconds": cls._reset_seconds(headers.get("x-ratelimit-reset-requests")),
+        }
+
+    @staticmethod
+    def _rate_limit_wait(metadata: dict[str, int | float | None]) -> float | None:
+        waits = []
+        if metadata["retry_after_seconds"] is not None:
+            waits.append(metadata["retry_after_seconds"])
+        for remaining_key, reset_key in (
+            ("remaining_tokens", "token_reset_seconds"),
+            ("remaining_requests", "request_reset_seconds"),
+        ):
+            remaining, reset = metadata[remaining_key], metadata[reset_key]
+            if remaining is not None and remaining <= 0 and reset is not None:
+                waits.append(reset)
+        # Never guess a cooldown when the provider supplies no usable timing.
+        return max(waits) if waits else None
+
+    @staticmethod
+    def _stable_catalog(catalog: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Canonicalize unordered catalog entries, preserving lists within each entry."""
+        entries = sorted(
+            json.dumps(entry, ensure_ascii=False, sort_keys=True, default=str)
+            for entry in catalog
+        )
+        return [json.loads(entry) for entry in entries]
+
+    @staticmethod
+    def _usage_field(value: Any, field: str) -> Any:
+        # Groq SDK models expose attributes; dicts also occur in adapters/mocks.
+        return value.get(field) if isinstance(value, Mapping) else getattr(value, field, None)
+
+    @classmethod
+    def _usage_metrics(cls, usage: Any) -> dict[str, int | float | None]:
+        def token_count(value: Any) -> int | None:
+            # Never interpolate arbitrary provider content into numeric telemetry.
+            return value if type(value) is int and value >= 0 else None
+
+        prompt_tokens = token_count(cls._usage_field(usage, "prompt_tokens"))
+        details = cls._usage_field(usage, "prompt_tokens_details")
+        cached_tokens = token_count(cls._usage_field(details, "cached_tokens"))
+        fresh_prompt_tokens = None
+        cache_hit_percent = None
+        if prompt_tokens is not None and cached_tokens is not None:
+            fresh_prompt_tokens = max(prompt_tokens - cached_tokens, 0)
+            cache_hit_percent = round(cached_tokens / prompt_tokens * 100, 2) if prompt_tokens > 0 else 0.0
+        return {
+            "prompt_tokens": prompt_tokens,
+            "cached_tokens": cached_tokens,
+            "fresh_prompt_tokens": fresh_prompt_tokens,
+            "completion_tokens": token_count(cls._usage_field(usage, "completion_tokens")),
+            "total_tokens": token_count(cls._usage_field(usage, "total_tokens")),
+            "cache_hit_percent": cache_hit_percent,
+        }
+
+    def _log_usage(self, response: Any, operation: str) -> None:
+        usage = self._usage_field(response, "usage")
+        if usage is None:
+            return
+        metrics = self._usage_metrics(usage)
+        logger.info(
+            "event=llm_usage provider=groq operation=%s model=%s "
+            "prompt_tokens=%s cached_tokens=%s fresh_prompt_tokens=%s "
+            "completion_tokens=%s total_tokens=%s cache_hit_percent=%s",
+            operation,
+            self.model,
+            metrics["prompt_tokens"],
+            metrics["cached_tokens"],
+            metrics["fresh_prompt_tokens"],
+            metrics["completion_tokens"],
+            metrics["total_tokens"],
+            metrics["cache_hit_percent"],
+        )
 
     @staticmethod
     def _json_prompt(instruction: str, payload: dict[str, Any]) -> str:

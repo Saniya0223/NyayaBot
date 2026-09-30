@@ -41,6 +41,7 @@ from app.db.session import Base, engine, get_db
 from app.schemas.case import CaseResponse, ClarificationAnswer, IntakeRequest
 from app.schemas.chat import (
     ChatMessage,
+    ChatRetryRequest,
     ChatSessionResponse,
     CaseSummaryResponse,
     ChatTurnRequest,
@@ -60,6 +61,7 @@ from app.services.doc_generator import doc_generator
 from app.services.document_registry import (
     list_document_definitions,
 )
+from app.services.case_readiness import PRE_INTAKE, READY_FOR_ACTION, readiness_at_least
 from app.services.document_generation import assess_document_generation
 from app.services.professional_help import evaluate_professional_help
 from app.services.dossier_generator import DossierGenerator
@@ -75,7 +77,11 @@ from app.services.evidence_processing import (
 from app.services.llm_conversation import gemini_conversation_service
 from app.services.case_summary import generate_case_summary, summary_fingerprint, summary_ready
 from app.services.user_context import CASE_HISTORY_LOOKUP, case_history_lookup_reply, chat_user_context, explicit_memory_text
-from app.llm.contracts import LLMProviderError
+from app.llm.contracts import LLMExtractionContext, LLMProviderError
+from app.services.chat_retry import (
+    RETRY_STATE_KEY, claim_retry, profile_fingerprint, release_claim,
+    reserve_completion, response_checkpoint,
+)
 
 
 Base.metadata.create_all(bind=engine)
@@ -286,6 +292,7 @@ def _save_chat_session(
     user_id: str | None,
     *,
     is_demo: bool = False,
+    retry_states: dict | None = None,
 ) -> None:
     profile.professional_help = evaluate_professional_help(profile)
     record = db.query(ChatCaseSessionModel).filter(ChatCaseSessionModel.case_id == profile.case_id).first()
@@ -300,8 +307,21 @@ def _save_chat_session(
         db.add(record)
     elif record.user_id != user_id or bool(record.is_demo) != is_demo:
         raise HTTPException(status_code=404, detail="Case not found")
+    retained_retry_states = {
+        message.get("id"): message[RETRY_STATE_KEY]
+        for message in (record.messages_data or []) if RETRY_STATE_KEY in message
+    }
     record.profile_data = profile.model_dump(mode="json")
-    record.messages_data = [message.model_dump(mode="json") for message in messages]
+    for message_id, checkpoint in (retry_states or {}).items():
+        retained_retry_states[message_id] = {
+            **checkpoint, "profile_fingerprint": profile_fingerprint(record.profile_data),
+        }
+    record.messages_data = [
+        {**message.model_dump(mode="json"), **(
+            {RETRY_STATE_KEY: retained_retry_states[message.id]}
+            if message.id in retained_retry_states else {}
+        )} for message in messages
+    ]
     record.updated_at = datetime.utcnow()
     narrative = "\n".join(message.text for message in messages if message.sender == "user") or profile.title
     _sync_profile_to_legacy_case(profile, narrative, db, user_id)
@@ -567,7 +587,18 @@ def _assess_case_document(profile, facts, doc_type, overrides, user=None):
         safety.get("immediate_danger") is True
         or (not safety.get("triage_complete") and safety.get("immediate_danger") is not False)
     ))
-    return assess_document_generation(doc_type, facts.category, values, safety_blocked=safety_blocked)
+    # C3 / S5b: the chat path is not the only way to reach the generator. A case
+    # that has not earned a document in conversation must not earn one by a
+    # direct POST either. `profile is None` keeps legacy/imported cases working
+    # exactly as before rather than failing closed on a state we cannot read.
+    readiness_blocked = bool(
+        profile is not None
+        and not readiness_at_least(profile.readiness or PRE_INTAKE, READY_FOR_ACTION)
+    )
+    return assess_document_generation(
+        doc_type, facts.category, values,
+        safety_blocked=safety_blocked, readiness_blocked=readiness_blocked,
+    )
 
 
 @app.get("/api/v1/documents/assessment", response_model=DocumentAssessment)
@@ -794,6 +825,7 @@ async def handle_chat_message(
     response = await gemini_conversation_service.process_turn(
         req, existing_profile, recent_messages, user_context=user_context, evidence_context=evidence_context,
     )
+    original_reply = response.reply_text
     if user_context["intent"] == CASE_HISTORY_LOOKUP:
         response.reply_text = case_history_lookup_reply(user_context, response.case_profile.language_style)
     memory_text = explicit_memory_text(req.message)
@@ -808,19 +840,26 @@ async def handle_chat_message(
             memory_note = "Your long-term memory is full. Delete an old memory in Profile before saving another."
         response.reply_text = memory_note
     stored_messages = list(recent_messages)
+    user_message_id = str(uuid.uuid4())
     stored_messages.extend(
         [
-            ChatMessage(id=str(uuid.uuid4()), sender="user", text=req.message),
+            ChatMessage(id=user_message_id, sender="user", text=req.message),
             ChatMessage(
                 id=response.message_id,
                 sender="bot",
                 text=response.reply_text,
                 quick_replies=response.quick_replies,
                 suggested_action=response.suggested_action,
+                retry_action=response.retry_action,
             ),
         ]
     )
-    _save_chat_session(response.case_profile, stored_messages, db, current_user.id)
+    retry_states = None
+    if response._retry_state is not None:
+        if response.reply_text != original_reply:
+            response._retry_state["reply_override"] = response.reply_text
+        retry_states = {response.message_id: response_checkpoint(response, user_message_id)}
+    _save_chat_session(response.case_profile, stored_messages, db, current_user.id, retry_states=retry_states)
     logger.info(
         "case_id=%s classification=%s workflow_stage=%s provider=%s model=%s mode=%s event=chat_processed",
         response.case_profile.case_id,
@@ -831,6 +870,55 @@ async def handle_chat_message(
         response.llm_mode,
     )
     return response
+
+
+@app.post("/api/v1/chat/retry", response_model=ChatTurnResponse)
+async def retry_chat_stage(
+    req: ChatRetryRequest, db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    record = _get_owned_chat_record(db, req.case_id, current_user)
+    checkpoint, claimed_at = claim_retry(db, record, req.message_id)
+    if claimed_at is None:
+        response = ChatTurnResponse.model_validate(checkpoint["completed_response"])
+        response.case_profile = _load_chat_profile(record)
+        return response
+    try:
+        profile = _load_chat_profile(record)
+        if checkpoint["stage"] == "EXTRACTION":
+            history = [ChatMessage(
+                sender="user" if item["role"] == "user" else "bot", text=item["content"],
+            ) for item in checkpoint["history"]]
+            response = await gemini_conversation_service.process_turn(
+                ChatTurnRequest(message=checkpoint["original_message"], case_id=profile.case_id),
+                profile, history, user_context=checkpoint["user_context"],
+                evidence_context=checkpoint["evidence_context"],
+                extraction_context_override=LLMExtractionContext.model_validate(checkpoint["extraction_context"]),
+            )
+        else:
+            response = await gemini_conversation_service.resume_response(profile, checkpoint)
+        if "reply_override" in checkpoint:
+            response.reply_text = checkpoint["reply_override"]
+        response.message_id = req.message_id
+        if response.retry_action:
+            response.retry_action.message_id = req.message_id
+        messages = _messages_for_session(record)
+        for index, message in enumerate(messages):
+            if message.id == req.message_id:
+                messages[index] = ChatMessage(
+                    id=req.message_id, sender="bot", text=response.reply_text,
+                    quick_replies=response.quick_replies, suggested_action=response.suggested_action,
+                    retry_action=response.retry_action,
+                )
+                break
+        reserve_completion(db, record, claimed_at)
+        _save_chat_session(response.case_profile, messages, db, current_user.id, retry_states={
+            req.message_id: response_checkpoint(response, checkpoint["user_message_id"], checkpoint),
+        })
+        return response
+    except Exception:
+        release_claim(db, record, req.message_id, claimed_at)
+        raise
 
 
 @app.get("/api/v1/chat/cases", response_model=List[StructuredCaseProfile])

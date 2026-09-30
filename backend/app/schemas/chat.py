@@ -1,6 +1,18 @@
 from typing import List, Optional, Dict, Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from app.schemas.professional_help import ProfessionalHelpAssessment
+
+class ChatRetryAction(BaseModel):
+    message_id: str
+    label: str
+
+
+class ChatRetryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    case_id: str
+    message_id: str
+
 
 class ChatMessage(BaseModel):
     id: Optional[str] = None
@@ -10,6 +22,7 @@ class ChatMessage(BaseModel):
     quick_replies: Optional[List[str]] = None
     suggested_action: Optional[Dict[str, Any]] = None  # e.g., {"type": "PREPARE_DOC", "doc_type": "...", "label": "..."}
     extracted_badge: Optional[str] = None
+    retry_action: Optional[ChatRetryAction] = None
 
 class EvidenceStatusItem(BaseModel):
     id: str
@@ -138,6 +151,9 @@ class ChatTurnResponse(BaseModel):
     llm_provider: str = "groq"
     llm_model: Optional[str] = None
     llm_mode: str = "limited_demo"  # "groq" | "gemini" | "limited_demo"
+    retry_action: Optional[ChatRetryAction] = None
+    # Operational checkpoint: not public API data and never a case fact.
+    _retry_state: Optional[Dict[str, Any]] = PrivateAttr(default=None)
 
 class ChatSessionResponse(BaseModel):
     case_profile: StructuredCaseProfile

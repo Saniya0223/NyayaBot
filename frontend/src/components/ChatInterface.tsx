@@ -12,7 +12,7 @@ import {
   Sparkles,
   UserRound,
 } from 'lucide-react';
-import { API_BASE_URL, ChatMessageItem, fetchLLMStatus, LLMStatus, sendChatMessage, StructuredCaseProfile } from '@/lib/api';
+import { API_BASE_URL, ChatMessageItem, fetchLLMStatus, LLMStatus, retryChatStage, sendChatMessage, StructuredCaseProfile } from '@/lib/api';
 import { openEligibleDocumentHandoff, routeDocumentAction } from '@/lib/documentHandoff';
 
 interface ChatInterfaceProps {
@@ -80,6 +80,7 @@ export default function ChatInterface({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const mountedRef = useRef(true);
   const messageSequence = useRef(0);
+  const requestInFlight = useRef(false);
 
   function handleNewCaseClick() {
     setMessages([]);
@@ -124,7 +125,8 @@ export default function ChatInterface({
 
   async function handleSend(textOverride?: string) {
     const text = (textOverride ?? inputText).trim();
-    if (!text || isSending) return;
+    if (!text || isSending || requestInFlight.current) return;
+    requestInFlight.current = true;
 
     messageSequence.current += 1;
     const userMessage: ChatMessageItem = { id: `user-${messageSequence.current}`, sender: 'user', text };
@@ -161,6 +163,7 @@ export default function ChatInterface({
           text: response.reply_text,
           quick_replies: response.quick_replies,
           suggested_action: response.suggested_action,
+          retry_action: response.retry_action,
         },
       ]);
     } catch (error: unknown) {
@@ -179,6 +182,42 @@ export default function ChatInterface({
         },
       ]);
     } finally {
+      requestInFlight.current = false;
+      if (mountedRef.current) setIsSending(false);
+    }
+  }
+
+  async function handleRetry(message: ChatMessageItem) {
+    if (!caseId || !message.retry_action || isSending || requestInFlight.current) return;
+    requestInFlight.current = true;
+    setSendError(null);
+    setIsSending(true);
+    try {
+      // This is a control action, never a new user message or history entry.
+      const response = await retryChatStage({ case_id: caseId, message_id: message.retry_action.message_id });
+      if (!mountedRef.current) return;
+      onProfileUpdated(response.case_profile);
+      setLLMStatus((current) => ({
+        provider: response.llm_provider,
+        model: response.llm_model || current?.model || 'unknown',
+        configured: response.llm_mode !== 'limited_demo',
+        mode: response.llm_mode,
+        message: response.llm_mode !== 'limited_demo'
+          ? `This response was generated through the backend ${response.llm_provider || 'AI'} API.`
+          : 'This response used limited demo workflow rules.',
+      }));
+      openEligibleDocumentHandoff(
+        response.suggested_action, response.case_profile.recommended_doc_type, onTriggerDocumentModal,
+      );
+      setMessages((current) => current.map((item) => item.id === message.id ? {
+        id: response.message_id, sender: 'bot', text: response.reply_text,
+        quick_replies: response.quick_replies, suggested_action: response.suggested_action,
+        retry_action: response.retry_action,
+      } : item));
+    } catch (error: unknown) {
+      if (mountedRef.current) setSendError(error instanceof Error ? error.message : 'Could not retry this turn.');
+    } finally {
+      requestInFlight.current = false;
       if (mountedRef.current) setIsSending(false);
     }
   }
@@ -328,11 +367,21 @@ export default function ChatInterface({
                     </div>
                     {!isUser && message.quick_replies?.length ? (
                       <div className="flex flex-wrap gap-2">
-                        {message.quick_replies.map((reply) => (
-                          <button key={reply} type="button" onClick={() => void handleSend(reply)} disabled={isSending} className="rounded-full border border-[#d8e2dc] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#526159] transition hover:border-[#9eb9aa] hover:bg-[#eef5f1] hover:text-[#174e3b] disabled:opacity-50">
-                            {reply}
-                          </button>
-                        ))}
+                        {message.quick_replies.map((reply) => {
+                          const retryControl = reply === message.retry_action?.label || /^Try (?:Groq|Gemini) again$/i.test(reply);
+                          return (
+                            <button
+                              key={reply}
+                              type="button"
+                              onClick={() => { if (retryControl) void handleRetry(message); else void handleSend(reply); }}
+                              disabled={isSending || (retryControl && !message.retry_action)}
+                              title={retryControl && !message.retry_action ? 'This older response has no saved retry stage. Send the original message again.' : undefined}
+                              className="rounded-full border border-[#d8e2dc] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#526159] transition hover:border-[#9eb9aa] hover:bg-[#eef5f1] hover:text-[#174e3b] disabled:opacity-50"
+                            >
+                              {reply}
+                            </button>
+                          );
+                        })}
                       </div>
                     ) : null}
                   </div>

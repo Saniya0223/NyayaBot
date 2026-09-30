@@ -163,6 +163,13 @@ class LLMExtractionContext(BaseModel):
     document_catalog: List[Dict[str, str]] = Field(default_factory=list)
 
 
+# Internal-only keys that must never reach a provider. `next_fact_candidates`
+# entries carry the profile field name in "key"; W1-02 t2 echoed
+# "(opposite_party_name)" straight into the reply. The backend binds the pending
+# interaction from index 0 of its own in-memory copy, so the model never needs it.
+REDACTED_CANDIDATE_KEYS: tuple[str, ...] = ("key",)
+
+
 class LLMResponseContext(BaseModel):
     user_message: str
     response_mode: Literal["CHAT", "CASE_SUMMARY"] = "CHAT"
@@ -187,6 +194,38 @@ class LLMResponseContext(BaseModel):
     # Findings from this case's uploaded evidence (never other cases). Unverified
     # document content, not confirmed facts; raw text only for pages the user asked about.
     evidence: Dict[str, Any] = Field(default_factory=dict)
+    # Deterministic provenance for legal_sources: whether a statute corpus exists
+    # for this domain at all, how many provisions were actually retrieved, and the
+    # standing fact that no case-law corpus exists anywhere in the product.
+    legal_sources_status: Dict[str, Any] = Field(default_factory=dict)
+    # Curated national helpline numbers with their operating authority. Present so a
+    # reply never has to reach for a plausible-looking number or a plausible operator.
+    helpline_registry: List[Dict[str, Any]] = Field(default_factory=list)
+
+    def model_payload(self) -> Dict[str, Any]:
+        """Serialise for a provider with internal field names removed.
+
+        The single serialisation entry point for every provider, so a new provider
+        cannot reintroduce the leak by calling ``model_dump`` directly. Rebuilds the
+        candidate list and each candidate dict rather than mutating in place:
+        ``llm_conversation._finish_chat_response`` reads
+        ``context.domain_context["next_fact_candidates"][0]["key"]`` *after* ``chat()``
+        returns and passes it to ``fact_candidate()``, so the source object must be
+        left intact.
+        """
+        payload = self.model_dump(mode="json")
+        domain_context = payload.get("domain_context")
+        if not isinstance(domain_context, dict):
+            return payload
+        candidates = domain_context.get("next_fact_candidates")
+        if not isinstance(candidates, list):
+            return payload
+        domain_context["next_fact_candidates"] = [
+            {k: v for k, v in entry.items() if k not in REDACTED_CANDIDATE_KEYS}
+            if isinstance(entry, dict) else entry
+            for entry in candidates
+        ]
+        return payload
 
 
 class ProviderStatus(BaseModel):
@@ -203,6 +242,10 @@ class LLMProviderError(RuntimeError):
 
 class LLMNotConfiguredError(LLMProviderError):
     pass
+
+
+class LLMRateLimitedError(LLMProviderError):
+    """The provider exhausted the bounded retry policy for this operation."""
 
 
 class LLMProvider(ABC):

@@ -31,6 +31,13 @@ TENANCY_DOMAIN = DomainDefinition(
         FactDefinition(key="opposite_party_name", value_type=FactValueType.TEXT, meaning="landlord or property manager involved", priority=QuestionPriority.ISSUE_IDENTIFICATION, required_for_understanding=False),
         FactDefinition(key="vacating_date", value_type=FactValueType.DATE, meaning="date the tenant left or expects to leave", priority=QuestionPriority.CORE_EVENT_FACTS),
         FactDefinition(key="landlord_reason", value_type=FactValueType.TEXT, meaning="reason given by the landlord", priority=QuestionPriority.CORE_EVENT_FACTS, not_applicable_allowed=True),
+        # H6. Tenancy had no money fact at all, so `compact_context` never
+        # listed the deposit figure as a candidate and the model had no
+        # structural cue that it was wanted - while the tenancy escalation
+        # action (`action_planner.py`) already required `disputed_amount`. The
+        # domain definition and the action planner disagreed. Non-required, so
+        # it does not re-pin tenancy cases.
+        FactDefinition(key="disputed_amount", value_type=FactValueType.MONEY, meaning="security deposit amount in dispute", priority=QuestionPriority.CORE_EVENT_FACTS, zero_is_unknown=True, required_for_understanding=False, aliases=("deposit_amount",)),
         FactDefinition(key="landlord_contacted", value_type=FactValueType.BOOLEAN, meaning="whether the landlord has been asked to resolve the issue", priority=QuestionPriority.ACTIONS_ALREADY_TAKEN),
         FactDefinition(key="rental_agreement_available", value_type=FactValueType.BOOLEAN, meaning="whether the rental or lease agreement is available", priority=QuestionPriority.EVIDENCE, evidence_related=True, evidence_type_id="rental_agreement", aliases=("rental_agreement_exists",)),
         FactDefinition(key="deposit_payment_proof_available", value_type=FactValueType.BOOLEAN, meaning="whether proof of deposit payment is available", priority=QuestionPriority.EVIDENCE, evidence_related=True, evidence_type_id="deposit_payment_proof"),

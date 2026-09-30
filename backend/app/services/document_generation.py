@@ -64,6 +64,7 @@ def resolve_requested_document(message: str, category: str, hint: str | None = N
 def assess_document_generation(
     doc_type: str, category: str, values: dict[str, Any], *,
     intent: str = "USER_REQUESTED", safety_blocked: bool = False,
+    readiness_blocked: bool = False,
 ) -> DocumentAssessment:
     definition = DOCUMENT_DEFINITIONS.get(doc_type)
     if not definition or category not in definition.applicable_workflows:
@@ -83,6 +84,11 @@ def assess_document_generation(
     missing_required = validate_document_fields(doc_type, values)
     missing_optional = [field.key for field in fields if not field.required and not values.get(field.key)]
     blockers = (["Immediate safety needs attention first."] if safety_blocked else [])
+    if readiness_blocked:
+        # C3 / S5b. Without this the frontend could POST straight to
+        # /api/v1/documents/generate and bypass every readiness check the chat
+        # path applies. The API is the last gate, so it carries one too.
+        blockers.append("The case still needs a few facts before this document can be prepared.")
     if missing_required:
         status = "NEEDS_REQUIRED_FIELDS"
     elif missing_optional:

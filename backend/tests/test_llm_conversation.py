@@ -199,7 +199,15 @@ def test_document_explanation_without_prepare_action_remains_ordinary_chat():
     assert provider.response_context is not None
 
 
-def test_salary_notice_request_bypasses_proactive_case_readiness_without_promising_pdf():
+def test_salary_notice_request_is_allowed_once_the_case_is_ready_without_promising_pdf():
+    # Renamed (cycle 3, H7+S5b): the old name - "bypasses proactive case
+    # readiness" - was the C3 bug written down as an expectation. This fixture
+    # knows the employer, the unpaid period, the amount, the role and the
+    # jurisdiction; EMPLOYMENT's next action requires only `opposite_party_name`
+    # (action_planner.py, `formal_demand_sent`), and every SALARY_DEMAND_NOTICE
+    # required field is present. The document is *earned* here, not bypassed.
+    # Every behavioural assertion below is unchanged; only the readiness and
+    # affordance expectations move.
     provider = FakeGeminiProvider(
         CaseExtraction(
             user_intent="Create a salary notice PDF",
@@ -217,8 +225,11 @@ def test_salary_notice_request_bypasses_proactive_case_readiness_without_promisi
     profile.disputed_amount = 400000
     profile.key_facts["employee_role"] = "Software Engineer"
     service._refresh_workflow(profile)
-    assert profile.readiness == "UNDERSTANDING_CASE"
-    assert profile.recommended_next_action is None
+    assert profile.readiness == "READY_FOR_DOCUMENT"
+    assert profile.recommended_next_action["type"] == "PREPARE_DOC"
+    assert profile.recommended_next_action["intent"] == "SYSTEM_SUGGESTED"
+    # Still outstanding, and still asked for - they are simply not *blocking*
+    # the next executable action, which is the whole of H7.
     assert {"monthly_salary", "hr_contacted", "employment_proof_available"} <= set(profile.intake_missing_facts)
 
     response = asyncio.run(service.process_turn(ChatTurnRequest(message="create notice pdf"), profile, []))
@@ -228,15 +239,15 @@ def test_salary_notice_request_bypasses_proactive_case_readiness_without_promisi
     assert response.suggested_action["intent"] == "USER_REQUESTED"
     assert response.suggested_action["open_confirmation_modal"] is True
     assert response.case_profile.document_request["status"] in {"READY_TO_GENERATE", "OPTIONAL_FIELDS_AVAILABLE"}
-    assert response.case_profile.recommended_doc_type is None
+    assert response.case_profile.recommended_doc_type == "SALARY_DEMAND_NOTICE"
     assert response.case_profile.missing_document_fields == []
     assert "queued" not in response.reply_text.lower()
-    assert response.case_profile.readiness == "UNDERSTANDING_CASE"
+    assert response.case_profile.readiness == "READY_FOR_DOCUMENT"
 
     skipped = asyncio.run(service.process_turn(ChatTurnRequest(message="skip"), response.case_profile, []))
     assert skipped.suggested_action["open_confirmation_modal"] is True
     assert skipped.case_profile.document_request["optional_skipped"] is True
-    assert skipped.case_profile.readiness == "UNDERSTANDING_CASE"
+    assert skipped.case_profile.readiness == "READY_FOR_DOCUMENT"
 
 
 def test_salary_pdf_request_opens_confirmation_without_unrelated_followups():
@@ -270,7 +281,12 @@ def test_salary_pdf_request_opens_confirmation_without_unrelated_followups():
 
     response = asyncio.run(service.process_turn(ChatTurnRequest(message="create notice pdf"), profile, []))
     assert provider.response_contexts == []
-    assert response.case_profile.readiness == "UNDERSTANDING_CASE"
+    # Cycle 3: the employer, period and amount are known and every notice field
+    # is present, so the case has earned the document (H7 + S5b). The fixture
+    # never sets `user_state`; M4's city -> state derivation supplies it from
+    # Jaipur, which is why jurisdiction no longer holds the case back.
+    assert response.case_profile.user_state == "Rajasthan"
+    assert response.case_profile.readiness == "READY_FOR_DOCUMENT"
     assert response.suggested_action["type"] == "PREPARE_DOC"
     assert response.suggested_action["doc_type"] == "SALARY_DEMAND_NOTICE"
     assert response.suggested_action["open_confirmation_modal"] is True
@@ -285,6 +301,10 @@ def test_immediate_danger_pauses_and_preserves_explicit_document_request():
     agent = ConversationalLegalAgent()
     service = GeminiConversationService(provider=provider, workflow_agent=agent)
     profile = agent._init_case_profile("My employer owes me salary", category_override="EMPLOYMENT")
+    # Cycle 3 / S5b: the resumed request must also clear the readiness gate, so
+    # the fixture gives the case the one fact its next action needs. This test
+    # locks the *safety pause and resume*, which is unchanged.
+    profile.opposite_party_name = "Example Employer"
     response = asyncio.run(service.process_turn(ChatTurnRequest(
         message="My employer is outside with a knife and says he will kill me; create salary notice pdf",
     ), profile, []))
@@ -310,6 +330,11 @@ def test_structured_document_intent_routes_natural_request_without_keyword_tree(
     agent = ConversationalLegalAgent()
     service = GeminiConversationService(provider=provider, workflow_agent=agent)
     profile = agent._init_case_profile("My employer owes me salary", category_override="EMPLOYMENT")
+    # Cycle 3 / S5b: a document affordance is now readiness-gated everywhere, so
+    # the fixture supplies the one fact EMPLOYMENT's next action requires. This
+    # test is about *structured intent routing*, not about the gate; without the
+    # employer name it would be measuring the gate instead.
+    profile.opposite_party_name = "Example Employer"
     response = asyncio.run(service.process_turn(ChatTurnRequest(message="I need my salary demand"), profile, []))
     assert response.suggested_action["doc_type"] == "SALARY_DEMAND_NOTICE"
     assert response.suggested_action["intent"] == "USER_REQUESTED"
@@ -400,9 +425,18 @@ def test_consumer_follow_up_context_supports_direct_guidance_without_reasking_kn
     assert facts["desired_outcome"] == "delivery"
     assert context.domain_context["issue_understood"] is True
     assert context.domain_context["guidance_possible"] is True
-    assert context.readiness == "UNDERSTANDING_CASE"
+    # Cycle 3 (H7): the seller is named, the product and timing are known and the
+    # seller has been contacted without a reply, so the consumer grievance letter
+    # is the next executable action. `incident_date`, `invoice_available` and
+    # `user_state` are still missing but are non-blocking for that action, which
+    # is exactly the distinction `compute_blocking_missing_facts` now makes.
+    assert context.readiness == "READY_FOR_ACTION"
     assert context.missing_information == []
-    assert response.case_profile.recommended_doc_type is None
+    assert response.case_profile.recommended_doc_type == "FORMAL_LEGAL_NOTICE"
+    # ...and it stops there: template fields are still outstanding, so the case
+    # is not promoted to READY_FOR_DOCUMENT.
+    assert response.case_profile.missing_document_fields
+    assert response.case_profile.readiness == "READY_FOR_ACTION"
     candidate_keys = {item["key"] for item in context.domain_context["next_fact_candidates"]}
     assert not candidate_keys & {
         "seller_contacted", "seller_response_received", "seller_response",

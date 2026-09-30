@@ -8,6 +8,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from xhtml2pdf import pisa
 
 from app.config import settings
+from app.services.document_citations import citations_for_document
 from app.schemas.document import DocumentResponse
 from app.schemas.fact_graph import FactGraphSchema
 
@@ -132,32 +133,6 @@ class DocumentGenerator:
             word_document.add_paragraph(line)
         word_document.save(docx_path)
 
-        citation_map = {
-            "FORMAL_LEGAL_NOTICE": [
-                {"act": "Consumer Protection Act, 2019", "section": "Section 2(11)", "title": "Deficiency in service"},
-                {"act": "Consumer Protection Act, 2019", "section": "Section 2(47)", "title": "Unfair trade practice"},
-            ],
-            "EDAAKHIL_COMPLAINT": [
-                {"act": "Consumer Protection Act, 2019", "section": "Section 35", "title": "Manner in which complaint shall be made"},
-            ],
-            "TENANT_DEMAND_NOTICE": [
-                {"act": "Indian Contract Act, 1872", "section": "Section 73", "title": "Compensation for breach of contract"},
-            ],
-            "SALARY_DEMAND_NOTICE": [
-                {"act": "Applicable employment and wage law", "section": "State/fact specific", "title": "Payment of earned wages"},
-            ],
-            "POLICE_COMPLAINT_BNSS": [
-                {"act": "Bharatiya Nagarik Suraksha Sanhita, 2023", "section": "Section 173", "title": "Information in cognizable cases"},
-            ],
-            "CYBERCRIME_BANK_FREEZE": [
-                {"act": "Information Technology Act, 2000", "section": "Section 66D", "title": "Cheating by personation using computer resource"},
-                {"act": "RBI/2017-18/15", "section": "Paragraphs 6-10", "title": "Customer liability for unauthorised electronic transactions"},
-            ],
-            "RTI_SEC6": [
-                {"act": "Right to Information Act, 2005", "section": "Section 6(1)", "title": "Request for obtaining information"},
-            ],
-        }
-
         annexures = [
             {"label": ev.annexure_label or f"Annexure A-{index + 1}", "name": ev.doc_name}
             for index, ev in enumerate(fact_graph.evidence_inventory)
@@ -170,7 +145,7 @@ class DocumentGenerator:
             content_html=rendered_html,
             pdf_download_url=pdf_download_url,
             docx_download_url=f"/api/v1/documents/download/{docx_filename}",
-            statutory_citations=citation_map.get(doc_type, []),
+            statutory_citations=citations_for_document(doc_type),
             annexures=annexures,
             created_at=datetime.utcnow().isoformat(),
         )

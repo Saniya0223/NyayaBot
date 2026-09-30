@@ -1,5 +1,5 @@
 import os
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 
@@ -31,6 +31,10 @@ class Settings(BaseModel):
     LLM_MODEL: str = os.getenv("LLM_MODEL", "openai/gpt-oss-120b").strip()
     LLM_RECENT_MESSAGE_LIMIT: int = int(os.getenv("LLM_RECENT_MESSAGE_LIMIT", "8"))
     LLM_TIMEOUT_SECONDS: float = float(os.getenv("LLM_TIMEOUT_SECONDS", "30"))
+    GROQ_RATE_LIMIT_MAX_RETRY_WAIT_SECONDS: float = Field(
+        default=float(os.getenv("GROQ_RATE_LIMIT_MAX_RETRY_WAIT_SECONDS", "1")),
+        ge=0, le=2, validate_default=True,
+    )
     # OCR.space is used only for scanned PDF pages and images; the key never leaves the backend.
     OCR_SPACE_API_KEY: str = os.getenv("OCR_SPACE_API_KEY", "")
     OCR_SPACE_ENDPOINT: str = os.getenv("OCR_SPACE_ENDPOINT", "https://api.ocr.space/parse/image")

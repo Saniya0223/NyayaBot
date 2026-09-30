@@ -132,8 +132,29 @@ def test_choice_needs_a_specific_option_and_clarifies_yes():
     assert result.case_profile.pending_interaction is None
 
 
-def test_document_confirmation_uses_only_supported_case_document():
+def _earned_tenancy_profile() -> StructuredCaseProfile:
+    """A tenancy case that has legitimately reached READY_FOR_ACTION.
+
+    Cycle 3 / S5b: in production a DOCUMENT_CONFIRMATION can only exist because
+    `document_offer()` read a PREPARE_DOC `recommended_next_action`, which
+    `_refresh_workflow` sets only once `document_routing_allowed` has passed.
+    Hand-constructing one on a factless profile builds a state the system cannot
+    reach, so the fixture is fixed rather than the gate. Mirrors the reference
+    shape in `test_live_flow_records_only_an_eligible_document_offer`.
+    """
     profile = profile_for()
+    profile.opposite_party_name = "Landlord"
+    profile.vacating_date = "1 September 2026"
+    profile.user_state = "Rajasthan"
+    profile.key_facts.update({
+        "landlord_reason": "No reason given", "landlord_contacted": True,
+        "rental_agreement_available": True, "deposit_payment_proof_available": True,
+    })
+    return profile
+
+
+def test_document_confirmation_uses_only_supported_case_document():
+    profile = _earned_tenancy_profile()
     profile.pending_interaction = PendingInteraction(
         type="DOCUMENT_CONFIRMATION", target_keys=["TENANT_DEMAND_NOTICE"],
         expected_answer_type="document", case_id=profile.case_id,
@@ -147,6 +168,7 @@ def test_document_confirmation_uses_only_supported_case_document():
     assert provider.extraction_calls == 1 and provider.chat_calls == 0
 
     employment = profile_for("EMPLOYMENT")
+    employment.opposite_party_name = "Example Employer"
     employment.pending_interaction = PendingInteraction(
         type="DOCUMENT_CONFIRMATION", target_keys=["SALARY_DEMAND_NOTICE"],
         expected_answer_type="document", case_id=employment.case_id,
@@ -154,7 +176,7 @@ def test_document_confirmation_uses_only_supported_case_document():
     salary = turn(GeminiConversationService(provider_for("EMPLOYMENT"), ConversationalLegalAgent()), "yes prepare it", employment)
     assert salary.case_profile.document_request["document_type"] == "SALARY_DEMAND_NOTICE"
 
-    declined = profile_for()
+    declined = _earned_tenancy_profile()
     declined.pending_interaction = PendingInteraction(
         type="DOCUMENT_CONFIRMATION", target_keys=["TENANT_DEMAND_NOTICE"],
         expected_answer_type="document", case_id=declined.case_id,
@@ -231,6 +253,13 @@ def test_live_flow_records_a_ranked_question_then_resolves_the_next_yes():
     profile = profile_for()
     profile.opposite_party_name = "Landlord"
     profile.vacating_date = "1 September 2026"
+    # Cycle 3 / H6: HOUSING_TENANT gained a `disputed_amount` fact (the domain
+    # had no money fact at all, while the tenancy escalation action already
+    # required one). It ranks as CORE_EVENT_FACTS, so it would otherwise be the
+    # first candidate. This test is about the ranked-question *mechanism*, not
+    # about which fact ranks first, so the fixture supplies the deposit figure
+    # any real tenancy case would have.
+    profile.disputed_amount = 50000
     profile.key_facts.update({
         "landlord_reason": "No reason given", "landlord_contacted": True,
         "rental_agreement_available": True,
@@ -246,7 +275,15 @@ def test_live_flow_records_a_ranked_question_then_resolves_the_next_yes():
     assert "deposit_payment_proof_available" not in {
         item["key"] for item in provider.response_context.domain_context["next_fact_candidates"]
     }
-    assert second.case_profile.pending_interaction is None
+    # The resolved fact pending is gone and is not re-asked. Cycle 3 (H7): that
+    # "yes" was the last fact the tenancy demand letter was waiting for, so the
+    # case now reaches READY_FOR_ACTION and the *next* pending is a legitimate
+    # document offer - the same state
+    # `test_live_flow_records_only_an_eligible_document_offer` asserts is
+    # correct. Before the ladder fix nothing could ever follow the fact pending.
+    assert second.case_profile.pending_interaction.type == "DOCUMENT_CONFIRMATION"
+    assert second.case_profile.pending_interaction.target_keys == ["TENANT_DEMAND_NOTICE"]
+    assert second.case_profile.readiness == "READY_FOR_ACTION"
 
 
 def test_live_flow_records_only_an_eligible_document_offer():

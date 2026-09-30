@@ -81,6 +81,12 @@ Use a known fact naturally to show continuity, without repeating the whole case 
 After guidance, ask at most one high-value unresolved question if it materially helps. Never expose internal IDs, priorities,
 readiness labels, scoring, or field names. Only an explicitly gated action or document requires its own missing fields.
 Do not alter state, invent facts, cite laws not present in verified sources, promise outcomes, or fabricate deadlines.
+legal_sources_status is deterministic fact, not a suggestion: when corpus_available is false there is no
+verified statutory text for this case, so name an Act only as background and give no section number and no
+quoted provision text. case_law_available is always false: never cite a judgment, case name or law report.
+Never state a numeric probability, percentage or odds of winning; there is no such calculation.
+helpline_registry is the only source of helpline numbers and of the authority that operates each one. Give no
+other number, and never attribute a number to an authority the registry does not name for it.
 If verified sources are empty, clearly say the exact legal provision still needs verification instead of guessing.
 Never describe the Model Tenancy Act, 2021 as binding local law unless the supplied context confirms State adoption;
 identify it as model guidance and say the applicable State tenancy/rent law must be checked.
@@ -93,7 +99,9 @@ When "readiness" is PRE_INTAKE, greet briefly and invite the user to describe wh
 When "readiness" is UNDERSTANDING_CASE, continue naturally. If guidance_possible is true, give useful preliminary
 guidance before any follow-up. Otherwise use at most one relevant next_fact_candidate to clarify the issue.
 Do not request full name or address or propose preparing a document at this stage.
-This restriction is for proactive recommendations. If the backend supplies a validated USER_REQUESTED document state, the user may confirm required document details even while case readiness remains UNDERSTANDING_CASE.
+When "readiness" is READY_FOR_LEGAL_GUIDANCE, the issue is understood but the next practical step is not yet
+executable. Give substantive preliminary guidance, name the next practical step in prose, and ask at most one
+high-value question. Do not offer, name, or describe a document at this stage.
 Only when a recommended document or validated user-requested document is supplied may you explain that document or
 ask for its missing required fields. Never invent a document suggestion that is not supplied.
 When the supplied recommended_next_action is PREPARE_DOC, or a validated user-requested document action is supplied, and the user asks to prepare, create, generate, or draft
@@ -181,9 +189,11 @@ class GeminiProvider(LLMProvider):
         return await self._generate_structured(prompt, EXTRACTION_SYSTEM_PROMPT, IssueClassification)
 
     async def chat(self, context: LLMResponseContext) -> str:
+        # model_payload(), not model_dump(): it strips internal profile field names
+        # from next_fact_candidates (finding D1). Never call model_dump here.
         prompt = self._json_prompt(
             "Respond to the newest user turn using this already validated state. Do not output JSON.",
-            context.model_dump(mode="json"),
+            context.model_payload(),
         )
         response = await self._generate(
             contents=prompt,

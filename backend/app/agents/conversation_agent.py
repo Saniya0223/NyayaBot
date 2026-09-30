@@ -16,7 +16,9 @@ from app.schemas.chat import (
     StructuredCaseProfile,
 )
 from app.services.action_planner import NextActionPlan, NextActionStatus, action_planner
+from app.services.case_readiness import crisis_document_block_active
 from app.services.document_registry import DOCUMENT_DEFINITIONS, select_document_for_workflow
+from app.services.fact_extraction import amount_from_text, backfill_facts
 from app.services.pii_masker import PIIMasker
 
 
@@ -180,43 +182,15 @@ class ConversationalLegalAgent:
             profile.safety_notice = None
 
     def _amount_from_text(self, text: str) -> Optional[float]:
-        lakh_match = re.search(
-            r"(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d{1,2})?)\s*(?:lakh|lac|lakhs|lacs|लाख)\b",
-            text,
-            re.IGNORECASE,
-        )
-        if lakh_match:
-            return float(lakh_match.group(1).replace(",", "")) * 100000.0
+        """Delegates to the shared structural parser (`fact_extraction`).
 
-        crore_match = re.search(
-            r"(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d{1,2})?)\s*(?:crore|cr|crores|करोड़)\b",
-            text,
-            re.IGNORECASE,
-        )
-        if crore_match:
-            return float(crore_match.group(1).replace(",", "")) * 10000000.0
-
-        match = re.search(
-            r"(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)|([\d,]+(?:\.\d{1,2})?)\s*(?:rupees|rs|inr|rupaye|रुपये|k\b)",
-            text,
-            re.IGNORECASE,
-        )
-        if match:
-            raw = (match.group(1) or match.group(2)).replace(",", "")
-            amount = float(raw)
-            if match.group(0).lower().strip().endswith("k"):
-                amount *= 1000
-            return amount
-        short = re.search(r"\b(\d+(?:\.\d+)?)\s*k\b", text, re.IGNORECASE)
-        if short:
-            return float(short.group(1)) * 1000
-        large_number = re.search(r"\b(\d{4,8})\b", text)
-        if large_number:
-            value = float(large_number.group(1))
-            if 1900 <= value <= 2100:
-                return None
-            return value
-        return None
+        The parser itself was never the defect: it reads both "Rs 85000" and
+        a bare "18499" correctly. It simply had one caller, on the one path a
+        live conversation never takes. It lives in the shared module now so
+        every path gets the same answer; this wrapper keeps the existing call
+        sites and their regression locks.
+        """
+        return amount_from_text(text)
 
     def _set_fact(self, profile: StructuredCaseProfile, field: str, value: Any, confidence: float = 0.9) -> None:
         profile.fact_metadata[field] = {
@@ -230,74 +204,12 @@ class ConversationalLegalAgent:
         lower = text.lower()
         last_group = profile.key_facts.get("last_question_group")
 
-        amount = self._amount_from_text(text)
-        if amount and profile.disputed_amount == 0:
-            profile.disputed_amount = amount
-            self._set_fact(profile, "disputed_amount", amount, 0.96)
-
-        city_states = {
-            "New Delhi": "Delhi", "Delhi": "Delhi", "Noida": "Uttar Pradesh",
-            "Gurugram": "Haryana", "Gurgaon": "Haryana", "Bengaluru": "Karnataka",
-            "Bangalore": "Karnataka", "Pune": "Maharashtra", "Mumbai": "Maharashtra",
-            "Hyderabad": "Telangana", "Chennai": "Tamil Nadu", "Kolkata": "West Bengal",
-            "Ahmedabad": "Gujarat", "Jaipur": "Rajasthan", "Lucknow": "Uttar Pradesh",
-            "Chandigarh": "Chandigarh",
-        }
-        for city, state in city_states.items():
-            if re.search(r"\b" + re.escape(city) + r"\b", text, re.IGNORECASE):
-                if not profile.user_city:
-                    profile.user_city, profile.user_state = city, state
-                    self._set_fact(profile, "jurisdiction", {"city": city, "state": state}, 0.96)
-                break
-
-        name_match = re.search(r"(?:my name is|i am|mera naam|मेरा नाम)\s+([A-Z][a-zA-Z\s]{2,35}?)(?:[\.,]|\band\b|$)", text, re.IGNORECASE)
-        if name_match and not profile.user_name:
-            profile.user_name = name_match.group(1).strip()
-            self._set_fact(profile, "user_name", profile.user_name, 0.92)
-
-        if not profile.opposite_party_name:
-            company = re.search(
-                r"\b([A-Z][a-zA-Z0-9\s&.\-]{1,40}?\s+(?:Pvt\.?\s+Ltd\.?|Private\s+Limited|Ltd\.?|LLP|Limited))\b",
-                text,
-            )
-            landlord = re.search(
-                r"landlord\s+(?:name\s+is|named|is)\s+([A-Z][a-zA-Z\s.\-]{2,35}?)(?:[\.,;]|\band\b|$)",
-                text,
-                re.IGNORECASE,
-            )
-            from_match = re.search(
-                r"\bfrom\s+([A-Z][a-zA-Z0-9\s&.\-]{1,35}?)(?:[\.,;]|\band\b|\s+regarding|$)",
-                text,
-            )
-            if company:
-                profile.opposite_party_name = company.group(1).strip()
-            elif landlord:
-                profile.opposite_party_name = landlord.group(1).strip()
-            elif from_match:
-                extracted_from = from_match.group(1).strip()
-                if not any(city in extracted_from for city in ["Delhi", "Noida", "Pune", "Mumbai", "Jaipur"]):
-                    profile.opposite_party_name = extracted_from
-            if not profile.opposite_party_name:
-                for brand in ["Amazon", "Flipkart", "Myntra", "Croma", "Swiggy", "Zomato", "Samsung", "Apple", "Paytm"]:
-                    if re.search(r"\b" + brand + r"\b", text, re.IGNORECASE):
-                        profile.opposite_party_name = brand
-                        break
-            if profile.opposite_party_name:
-                self._set_fact(profile, "opposite_party_name", profile.opposite_party_name, 0.9)
-
-        date_match = re.search(
-            rf"\b(?:\d{{1,2}}[-/.]\d{{1,2}}[-/.]\d{{2,4}}|\d{{1,2}}(?:st|nd|rd|th)?\s+(?:{MONTHS})(?:\s+\d{{2,4}})?)\b",
-            text,
-            re.IGNORECASE,
-        )
-        if date_match:
-            date_value = date_match.group(0).strip()
-            if profile.category == "HOUSING_TENANT" and any(term in lower for term in ["vacat", "moved out", "move out", "left", "handover"]):
-                profile.vacating_date = profile.vacating_date or date_value
-                self._set_fact(profile, "vacating_date", profile.vacating_date, 0.9)
-            elif not profile.incident_date:
-                profile.incident_date = date_value
-                self._set_fact(profile, "incident_date", profile.incident_date, 0.86)
+        # Structural extraction (amount, jurisdiction, party, dates,
+        # identifiers, bank, stated-unknown) is shared with the live and
+        # rate-limited paths. Only the loose category keyword heuristics
+        # below stay offline-only: promoting them to the live path would be
+        # a new false-positive source.
+        backfill_facts(text, profile)
 
         month_values = re.findall(rf"\b({MONTHS})\b", text, re.IGNORECASE)
         if profile.category == "EMPLOYMENT" and month_values:
@@ -308,46 +220,6 @@ class ConversationalLegalAgent:
         salary_match = re.search(r"(?:monthly salary|salary is|salary of)\s*(?:rs\.?|₹|inr)?\s*([\d,]+)", text, re.IGNORECASE)
         if salary_match:
             profile.key_facts["monthly_salary"] = float(salary_match.group(1).replace(",", ""))
-
-        transaction_match = re.search(
-            r"(?:transaction id|transaction ref|utr|rrn|reference number|ref no|disbursement reference|loan reference|disbursement ref|loan ref|reference)\s*(?:is|:|-)?\s*([A-Z0-9\-/]{6,40})",
-            text,
-            re.IGNORECASE,
-        )
-        if transaction_match:
-            profile.transaction_id = transaction_match.group(1)
-            self._set_fact(profile, "transaction_id", profile.transaction_id, 0.96)
-            profile.key_facts["loan_reference"] = transaction_match.group(1)
-
-        # Detect stated unknown facts (e.g. user does not have receiving bank or UTR)
-        stated_unknown = set(profile.key_facts.get("stated_unknown_facts", []))
-        if re.search(r"(?:don't have|do not have|don't know|do not know|genuinely don't know|cannot provide|can't provide|nahi pata|nahi hai)\s+.*?(?:utr|transaction id|payment id|receiving bank|bank details|bank name)", lower) or re.search(r"(?:genuinely don't know|don't know|do not know)\s+.*?(?:receiving bank|utr)", lower):
-            if any(term in lower for term in ["utr", "transaction", "payment"]):
-                stated_unknown.add("transaction_id")
-            if any(term in lower for term in ["bank", "receiving"]):
-                stated_unknown.add("bank_name")
-        if stated_unknown:
-            profile.key_facts["stated_unknown_facts"] = sorted(list(stated_unknown))
-            for f_key in stated_unknown:
-                if f_key in profile.fact_metadata:
-                    profile.fact_metadata[f_key]["stated_unknown"] = True
-                else:
-                    profile.fact_metadata[f_key] = {"stated_unknown": True, "source": "user_stated_unknown"}
-
-        for bank in ["State Bank of India", "SBI", "HDFC", "ICICI", "Axis Bank", "Kotak", "Paytm", "PhonePe", "Google Pay", "GPay"]:
-            if re.search(r"\b" + re.escape(bank) + r"\b", text, re.IGNORECASE):
-                # Only set bank_name if not referring to an existing unrelated personal account
-                if not any(term in lower for term in ["accounts don't end", "accounts do not end", "my hdfc and sbi"]):
-                    profile.bank_name = profile.bank_name or bank
-                    break
-
-        station_match = re.search(r"(?:police station|thana|sho at)\s+(?:is|:|-)?\s*([A-Z][a-zA-Z\s]{2,40}?)(?:[\.,]|$)", text, re.IGNORECASE)
-        if station_match:
-            profile.police_station_name = station_match.group(1).strip()
-
-        address_match = re.search(r"(?:property address is|rented property at|premises at)\s+(.{5,100}?)(?:[\.;]|$)", text, re.IGNORECASE)
-        if address_match:
-            profile.property_address = address_match.group(1).strip()
 
         yes_answer = (
             lower.strip() in {"yes", "yes, both", "yes both", "haan", "haan, dono", "i have both"}
@@ -577,11 +449,24 @@ class ConversationalLegalAgent:
             plan = action_planner.plan_next_action(profile, self._workflow_for_category(profile.category))
             profile.next_action_plan = plan
             document_type = plan.doc_type or select_document_for_workflow(profile.category, profile.current_stage_key)
-            action = {"type": "PREPARE_DOC", "doc_type": document_type, "label": plan.label or "Prepare next complaint draft"}
+            # This branch emits its own PREPARE_DOC action and its own "complaint
+            # draft" sentence without consulting the document gate. On the
+            # service path `_refresh_workflow` re-syncs it away, but when the
+            # agent is driven directly it is a fourth ungated affordance, so the
+            # post-crisis cooling-off window is applied here too.
+            crisis_cooldown = crisis_document_block_active(profile.key_facts)
+            action = (
+                None if crisis_cooldown
+                else {"type": "PREPARE_DOC", "doc_type": document_type, "label": plan.label or "Prepare next complaint draft"}
+            )
             return ChatTurnResponse(
                 reply_text=(
                     "I recorded the refusal or non-response. The next route depends on the forum and facts shown in your case workspace. "
-                    "A formal complaint draft may now be appropriate; professional review is recommended for a court or tribunal filing."
+                    + (
+                        "We can look at the options together whenever you feel ready."
+                        if crisis_cooldown
+                        else "A formal complaint draft may now be appropriate; professional review is recommended for a court or tribunal filing."
+                    )
                 ),
                 case_profile=profile,
                 quick_replies=["Show my legal journey", "What evidence should I attach?"],

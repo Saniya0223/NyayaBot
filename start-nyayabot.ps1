@@ -1,3 +1,17 @@
+<#
+    Starts the NyayaBot backend and frontend in two visible terminals.
+
+    Dependencies are never installed here: backend\.venv and node_modules are
+    expected to exist already, so startup stays fast and predictable.
+
+    Use -Force to stop anything already holding port 8000 or 3000 before
+    starting. Without it, an occupied port is reported and nothing is started.
+#>
+[CmdletBinding()]
+param(
+    [switch]$Force
+)
+
 $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -19,6 +33,46 @@ if (-not (Test-Path -LiteralPath $frontendPackage -PathType Leaf)) {
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     Write-Error "npm was not found in PATH. Install Node.js once before using this launcher."
     exit 1
+}
+
+# A leftover uvicorn or next process keeps the port, so the new terminal dies
+# immediately with an "address already in use" error scrolled off screen. The
+# project notes list duplicate uvicorn processes as a recurring failure, so
+# check first and say plainly what is holding the port.
+function Get-PortOwner {
+    param([Parameter(Mandatory = $true)][int]$Port)
+
+    $listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if (-not $listener) { return $null }
+
+    $process = Get-Process -Id $listener.OwningProcess -ErrorAction SilentlyContinue
+    return [PSCustomObject]@{
+        Port = $Port
+        Pid  = $listener.OwningProcess
+        Name = if ($process) { $process.ProcessName } else { "unknown" }
+    }
+}
+
+$occupied = @(8000, 3000 | ForEach-Object { Get-PortOwner -Port $_ } | Where-Object { $_ })
+
+if ($occupied.Count -gt 0) {
+    if ($Force) {
+        foreach ($entry in $occupied) {
+            Write-Host "Stopping $($entry.Name) (PID $($entry.Pid)) on port $($entry.Port)..."
+            Stop-Process -Id $entry.Pid -Force -ErrorAction SilentlyContinue
+        }
+        Start-Sleep -Milliseconds 800
+    }
+    else {
+        foreach ($entry in $occupied) {
+            Write-Warning "Port $($entry.Port) is already in use by $($entry.Name) (PID $($entry.Pid))."
+        }
+        Write-Host ""
+        Write-Host "NyayaBot may already be running - check http://localhost:3000 first."
+        Write-Host "To restart anyway, run: .\start-nyayabot.bat -Force"
+        exit 1
+    }
 }
 
 function ConvertTo-EncodedPowerShellCommand {

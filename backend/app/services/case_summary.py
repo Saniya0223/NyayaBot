@@ -3,8 +3,10 @@
 import hashlib
 import json
 
+from app.domains import domain_registry
 from app.llm.contracts import LLMProvider, LLMResponseContext
 from app.schemas.chat import StructuredCaseProfile
+from app.services.response_guard import guard_summary
 
 
 SUMMARY_FACT_KEYS = frozenset({
@@ -25,7 +27,8 @@ def recorded_facts(profile: StructuredCaseProfile) -> dict[str, object]:
         metadata = profile.fact_metadata.get(key) or {}
         source = str(metadata.get("source") or "")
         if not (source == "chat" or source.endswith("_chat") or source == "document_confirmation"
-                or source == "user_conflict_confirmation" or source.startswith("upload:")):
+                or source == "user_conflict_confirmation" or source == "deterministic_backfill"
+                or source.startswith("upload:")):
             continue
         if (metadata.get("confidence") or 0) < 0.75 and not metadata.get("confirmed"):
             continue
@@ -90,7 +93,7 @@ async def generate_case_summary(profile: StructuredCaseProfile, provider: LLMPro
         "Present next steps only as possibilities, not completed actions. Keep the user's supplied "
         "language and script style. Do not output a full legal document."
     )
-    return (await provider.chat(LLMResponseContext(
+    brief = (await provider.chat(LLMResponseContext(
         user_message=instruction,
         response_mode="CASE_SUMMARY",
         case_summary=data,
@@ -101,4 +104,15 @@ async def generate_case_summary(profile: StructuredCaseProfile, provider: LLMPro
         readiness=profile.readiness,
         professional_help=profile.professional_help,
         professional_help_should_surface=False,
+        legal_sources_status={
+            "corpus_available": bool(domain_registry.resolve(profile.category).rag.corpus_ids),
+            "verified_provisions": len(profile.legal_sources),
+            "case_law_available": False,
+        },
     ))).strip()
+    # The one model-text surface that does not pass through
+    # GeminiConversationService._tag_response, and main.py persists it into
+    # profile.ai_summary_cache - so an unguarded fabrication under the brief's
+    # "Relevant Laws" heading would be served from cache forever. Guarded here, inside
+    # the function that produces it, so the cache stores the guarded text.
+    return guard_summary(brief, profile).text

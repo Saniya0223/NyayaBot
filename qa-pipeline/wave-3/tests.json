@@ -1,0 +1,230 @@
+{
+  "wave": 3,
+  "cases": [
+    {
+      "id": "W3-01",
+      "title": "Health insurance claim rejection in Hyderabad, with a 'remember that' instruction and a late recall demand",
+      "domain": "CONSUMER",
+      "difficulty": "edge",
+      "intent": "Probes long-horizon memory: a dense turn-1 fact dump where most identifiers have no profile slot, a 'Remember that ...' turn that replaces the whole legal answer, and a closing recall question that strips the conversation history and the case facts before the model ever sees them.",
+      "turns": [
+        "Mera naam Aditya Ranade hai aur main Hyderabad ke Kukatpally me rehta hun. Star Health ki family floater policy hai, policy number FHO-2019-884521, sum insured Rs 5 lakh, 2019 se continuously renew ho rahi hai. Meri mummy ko 14 January 2025 ko Apollo Hospital Jubilee Hills me admit karna pada aur 6 din bharti rahi. Bill Rs 342000 aaya. Pehle cashless reject hua, phir reimbursement claim bhi 2 April 2025 ko reject kar diya, reason likha tha pre-existing disease non-disclosure. TPA Medi Assist hai aur policy mujhe agent Ramesh Naidu ne bechi thi.",
+        "Rejection letter me diabetes ka zikr hai, lekin policy 2019 se chal rahi hai aur diabetes to 2022 me diagnose hua tha. Maine company ke apne grievance portal pe shikayat bhi darj ki thi, 45 din ho gaye hain aur koi jawab nahi aaya.",
+        "Remember that my mother's discharge summary records the diabetes diagnosis date as 11 August 2022",
+        "Ab mujhe kahan jaana chahiye, Insurance Ombudsman ya consumer commission? Aur kitne din ke andar file karna zaroori hai?",
+        "Ek baar confirm karwa lun, aapko mere baare me jo yaad hai wo bata dijiye: policy number kya tha, claim amount kitna tha, rejection kis date ko hua aur TPA ka naam kya tha?"
+      ],
+      "why_hard": "Turn 1 carries eleven discrete facts but the case object has slots for only a handful of them. Policy number, hospital, ward duration, TPA name, agent name, sum insured and the grievance date have no profile field, so they survive only inside the verbatim history window, which is capped at the last eight messages. Two rupee figures also compete in the same sentence: the deterministic extractor takes the first 4-8 digit run it sees, so the Rs 5 lakh sum insured, or even the digit runs inside 'FHO-2019-884521', can become disputed_amount instead of the Rs 3,42,000 actually claimed. Turn 3 is the sharpest trap: a message that is entirely 'Remember that ...' is matched as an explicit long-term-memory instruction, the fact is stored against the user rather than the case, and the turn's whole legal reply is discarded and replaced by a canned 'I've saved that to your long-term memory' note, so a substantive turn silently produces no legal content. Turn 5 then trips the memory-recall path, which blanks the recent-message history entirely and narrows the case context to case id, title, category and stage - no facts at all. The model is therefore asked to recite a policy number and a claim amount while holding neither, which is confabulation bait by construction. Underneath, the law is only half-reachable: the consumer corpus exists, but the Insurance Ombudsman route sits in the Insurance Ombudsman Rules 2017 and IRDAI regulations, which are not in the corpus at all, and the two remedies are alternatives with different limits and different time windows.",
+      "watch_for": [
+        "Turn 5 answering with a confidently stated policy number, claim amount, rejection date or TPA name when the recall path supplies none of them - any specific value here is invented unless it came from a profile field",
+        "Turn 5 instead answered by silently re-reading the conversation, which would mean the memory-recall isolation is not being applied at all",
+        "Turn 3 producing only a memory-saved acknowledgement with no legal response, and the diagnosis date never reaching the case as a case fact",
+        "The diagnosis-date fact from turn 3 being unavailable or contradicted at turn 4 or 5 despite having just been 'remembered'",
+        "disputed_amount set to 500000 (sum insured), 2019, or 884521 from the policy number instead of 342000",
+        "An amount-conflict prompt raised between the sum insured and the bill, or left unresolved so the case stalls",
+        "Insurance Ombudsman and the consumer commission presented as interchangeable, or the Ombudsman route omitted entirely",
+        "An invented Ombudsman monetary limit, an invented complaint deadline, or an invented IRDAI regulation number stated as certain",
+        "The corpus's Section 69 two-year limitation not distinguished from the Ombudsman's own (shorter) window when the user directly asks about time",
+        "The substantive point missed: continuous renewal since 2019 and a 2022 diagnosis bear directly on whether a pre-existing-disease exclusion can stand, and the company's own 45-day silence on the grievance is itself actionable",
+        "user_city / user_state not set to Hyderabad / Telangana",
+        "opposite_party_name recorded as 'Medi Assist', 'Apollo Hospital' or 'Ramesh Naidu' rather than the insurer",
+        "Replying in English to a clearly Hinglish user; mode == limited_demo on the long turn 1"
+      ]
+    },
+    {
+      "id": "W3-02",
+      "title": "Coimbatore full-and-final settlement - an amount confirmed, then corrected again two turns later",
+      "domain": "EMPLOYMENT",
+      "difficulty": "adversarial",
+      "intent": "Probes whether a late correction overrides an earlier fact that the user already confirmed, and whether the chat reply and the stored case record can silently diverge.",
+      "turns": [
+        "Main Coimbatore me ek textile export company me production supervisor tha. Maine 31 July ko resign kiya tha aur aaj tak full and final settlement nahi mila. Company ne khud calculate karke bataya tha ki Rs 268000 banta hai - gratuity, leave encashment aur ek mahine ki salary milakar.",
+        "Sorry, HR ne aaj jo mail bheja hai usme Rs 312000 likha hai. Gratuity ka calculation unhone alag kiya hai.",
+        "Use 312000",
+        "Ek galti ho gayi. Maine HR ka mail dobara padha, usme 3,12,000 nahi balki 2,13,000 likha hai - maine digits ulat padh liye the. Sahi figure Rs 213000 hai, isi ko case me use kijiye. Aur ye bhi bataiye ki gratuity 5 saal se kam service pe milti hai ya nahi, maine 4 saal 7 mahine kaam kiya hai."
+      ],
+      "why_hard": "Turns 1 and 2 are the ordinary amount-conflict path and should produce a two-way prompt. Turn 3 is the literal 'Use ...' form the prompt expects, which not only writes the figure but stamps it as user-confirmed. That confirmation is the trap: once a fact carries a confirmed stamp, any later differing value is dropped before it is ever compared - no overwrite, no second conflict prompt, no acknowledgement. So turn 4, which is a plain and entirely reasonable correction with a stated reason, is the one correction the system is structurally unable to accept. The dangerous failure is not a refusal but a silent one: the model has the correction in its context and will very likely reply 'noted, I have updated it to Rs 2,13,000' while the stored disputed_amount remains 3,12,000, so the reply and the case record disagree and every downstream artefact - the title, the notice, the forum reasoning - carries the wrong figure. Turn 4 also hides a real legal question: continuous service of 4 years 7 months is short of the five years the Payment of Gratuity Act 1972 states, but there is a well-known line of authority treating 240 days in the fifth year as sufficient, and EMPLOYMENT has no statute corpus, so both a flat 'you get nothing' and a confident section citation are wrong for different reasons.",
+      "watch_for": [
+        "disputed_amount still 312000 after turn 4 while the reply claims the figure was updated - check the stored profile, not the prose",
+        "Turn 4 answered with no acknowledgement that the figure changed, or no second conflict prompt where one is clearly warranted",
+        "The correction accepted in prose but the case title still showing the Rs 3,12,000 qualifier",
+        "Turn 2 not raising an amount conflict at all, or overwriting 268000 silently",
+        "Turn 3 'Use 312000' misread as a new instruction or a document request rather than a conflict resolution",
+        "Any of the three figures shown with Western grouping (Rs 312,000) instead of Indian grouping (3,12,000)",
+        "Gratuity answered as a flat 'five years or nothing' with no mention of the continuous-service / 240-days argument, or the opposite - the argument stated as settled law",
+        "A fabricated section number for the Payment of Gratuity Act 1972 or the Code on Social Security 2020, or a fabricated case citation",
+        "No statement that nothing was retrieved from a statute corpus for this domain",
+        "The practical routes missed: the controlling authority under the Gratuity Act for a gratuity claim, and the Labour Commissioner / samadhan.labour.gov.in route for the rest of the F&F",
+        "Tamil Nadu Shops and Establishments position ignored while a generic all-India answer is given",
+        "opposite_party_name never captured because the employer is only described, never named - and the bot never asking for it"
+      ]
+    },
+    {
+      "id": "W3-03",
+      "title": "Jodhpur vishing loss where the impersonated bank is not the user's bank, and the user corrects the record",
+      "domain": "CYBER_FRAUD",
+      "difficulty": "adversarial",
+      "intent": "Probes conversation repair: the user states plainly that two recorded facts are wrong and asks for the record to be fixed, in a sentence phrased the way Indians actually phrase it - which also happens to trip the case-history lookup path and can swallow the entire answer.",
+      "turns": [
+        "Kal shaam ko ek call aaya, bolne wale ne kaha main ICICI Bank se hun aur aapka credit card block ho raha hai. Usne mujhse ek app download karwaya aur mere Canara Bank account se Rs 89000 nikal gaye. Main Jodhpur me rehta hun.",
+        "Sir is case me pehle maine kabhi nahi kaha ki mera account ICICI me hai. Mera account Canara Bank me hai, ICICI naam to sirf uss thag ne istemal kiya tha. Aur maine OTP bhi kisi ko nahi diya, usne screen share wala app chalu karwa diya tha. Ye dono cheezein galat record ho gayi hain, theek kar dijiye.",
+        "Theek hai. Maine 1930 pe call kar diya hai aur acknowledgement number bhi mil gaya hai. Ab aage kya karna hai?"
+      ],
+      "why_hard": "Turn 1 names two banks in one breath - one impersonated, one real - and the deterministic extractors have no way to tell them apart, so bank_name and opposite_party_name can both lock onto ICICI, which is a victim here and not the counterparty. Turn 2 is the repair turn, and it is hostile to the machinery in two separate ways. First, once bank_name holds a value, a differing candidate does not overwrite it: it raises a conflict that only resolves if the user types a message literally beginning 'use' or 'keep', which a user writing a paragraph of correction never does - so the wrong bank can sit in the record permanently while a stale conflict blocks further updates to that field. Second, and more seriously, the sentence contains both a case word and a 'pehle', which is exactly the signature of a previous-case-history lookup; that path blanks the conversation history, reduces the case context to bare identity, and then replaces the model's entire reply with a canned listing of the user's past cases. A sincere correction can therefore be answered with an unrelated case list. Turn 3 reports a completed 1930 report and asks what is next - it must advance the workflow rather than re-ask, and it must not treat an NCRP acknowledgement number as the transaction UTR.",
+      "watch_for": [
+        "The reply to turn 2 being a case-history listing, a 'you have no previous cases' message, or anything that is not an answer to the correction",
+        "bank_name still ICICI after turn 2, or an unresolvable conflict left sitting on the field",
+        "opposite_party_name recorded as 'ICICI Bank' rather than the unknown caller / scammer",
+        "The correction acknowledged in prose while the stored profile is unchanged",
+        "The bot asserting or implying the user shared an OTP after the user expressly denied it, or repeating the denied fact later in the conversation",
+        "The screen-sharing vector not recognised - it is the mechanism here, and the advice must include uninstalling the remote-access app and resetting credentials, not just OTP hygiene",
+        "Turn 1 not surfacing 1930 and cybercrime.gov.in immediately for a loss that is one day old",
+        "The RBI limited-liability reporting window not flagged while it is still open",
+        "Turn 3 re-asking whether the user has reported to 1930, or the cyber-reported action not recorded and the journey not advancing",
+        "The NCRP acknowledgement number stored as transaction_id / UTR",
+        "Invented IT Act or BNS section numbers in a domain with no statute corpus; repealed IPC 420 / CrPC language",
+        "user_city / user_state not set to Jodhpur / Rajasthan; disputed_amount not 89000",
+        "Replying in English to a Hinglish user"
+      ]
+    },
+    {
+      "id": "W3-04",
+      "title": "A stonewalling tenant - three non-answers in a row after one real fact",
+      "domain": "HOUSING_TENANT",
+      "difficulty": "common",
+      "intent": "Probes what happens when the user supplies nothing usable turn after turn: whether the bot loops the same question verbatim, invents facts to move on, or correctly gives the guidance that does not depend on the missing facts.",
+      "turns": [
+        "landlord ne pichle 2 mahine se paani ka connection kaat diya hai aur ab room khali karne ko bol raha hai",
+        "hmm",
+        "pata nahi",
+        "aap hi batao na, mujhe kya pata, aap to AI ho"
+      ],
+      "why_hard": "The short-answer resolver recognises only a small closed vocabulary of yes, no and both forms. 'hmm', 'pata nahi' and 'aap hi batao na' match none of them, so each turn resolves as unrelated, the pending fact target is never satisfied, and the next-fact selector recomputes and returns the identical highest-priority unknown fact - the same question, three times, with nothing to break the cycle. There is a stated-unknown mechanism, but it only applies to document fields once document intake is active, which it is not here, so 'pata nahi' carries no signal at intake. Meanwhile readiness cannot climb because the facts it needs never arrive, and the case sits at UNDERSTANDING_CASE indefinitely. The opposite failure is just as bad: filling the silence by guessing a city, a rent figure or a deposit so the ladder can advance. What a good answer looks like is not ambiguous, because the single fact given on turn 1 is enough for real guidance - cutting off water is not a lawful route to eviction anywhere in India, and self-help eviction without due process is not lawful either, so the bot can say something genuinely useful without knowing the city, the amount or the agreement. Turn 4 also shifts the burden back onto the bot explicitly, which is the point at which stalling becomes indefensible.",
+      "watch_for": [
+        "The same intake question repeated word for word across turns 2, 3 and 4",
+        "Any fact invented to break the deadlock - a city, a state, a rent or deposit amount, a landlord name, or an agreement type the user never mentioned",
+        "user_city / user_state populated when no location was ever given",
+        "readiness never leaving UNDERSTANDING_CASE across all four turns with no guidance delivered",
+        "Turn 4 answered with another question instead of the substantive point about essential supplies and self-help eviction",
+        "The bot offering a TENANT_DEMAND_NOTICE or any document while it still knows nothing - the gate must hold",
+        "A flat refusal to help until the user cooperates, with no partial guidance offered",
+        "No acknowledgement that the user seems stuck, and no attempt to reframe the question into something answerable (multiple-choice, or 'which city are you in')",
+        "Asking several questions at once as an escape from the loop, which shifts the failure rather than fixing it",
+        "'hmm' or 'pata nahi' misread as a yes or a no and written into the profile as a real fact",
+        "issue_type flapping between EVICTION_NOTICE, PROPERTY_CONDITION and RENT_PAYMENT_DISPUTE across the four turns",
+        "Replying in English to a Hinglish user; mode == limited_demo on a near-empty turn"
+      ]
+    },
+    {
+      "id": "W3-05",
+      "title": "Kanpur theft complaint with no FIR number, interrupted by two genuinely general legal questions",
+      "domain": "POLICE_COMPLAINT",
+      "difficulty": "edge",
+      "intent": "Probes cross-domain contamination: the user explicitly parks the case and asks two unrelated general-knowledge questions, which must be answered on their own terms without rewriting the case, then returns to the case and finds it intact.",
+      "turns": [
+        "Kanpur me pichle hafte mera mobile aur purse chori ho gaya tha. Maine Kotwali thane me likhit application di thi lekin abhi tak FIR number nahi mila, unhone sirf receiving stamp lagakar wapas de diya.",
+        "Ek alag si general baat puchni thi, mere is matter se iska koi lena dena nahi hai. Kya India me kisi phone call ko samne wale ko bataye bina record karna legal hai? Aur kya WhatsApp screenshot ko court me evidence ke taur pe use kiya ja sakta hai?",
+        "Ab wapas chori wale matter pe aate hain. Thane se kal bola gaya ki jab maal baramad hi nahi hua to FIR ka kya fayda. Mujhe FIR number kaise milega?"
+      ],
+      "why_hard": "The case is correctly a police matter after turn 1, and the design deliberately refuses to re-route an already classified case - so the visible category will almost certainly survive turn 2. The contamination to look for is subtler than a category flip. The retrieval query is built from the case profile plus the current message, and a police case maps to no corpus at all, so the two general questions get answered with zero retrieved text while sitting inside a case whose framing pulls everything toward FIRs and thanas; the likely failures are a call-recording answer bent into 'this will help your theft FIR', a next-action plan hijacked by the general question, or the general questions absorbed into the case's evidence checklist as if the user had said they possess recordings and screenshots. The legal content of turn 2 is also a live accuracy probe on its own: admissibility of electronic records is now governed by the Bharatiya Sakshya Adhiniyam 2023 and its certificate requirement, and the reflex wrong answer is the repealed Indian Evidence Act Section 65B; call recording is not a single yes-or-no under Indian law and depends on who is a party to the call and how the recording is used. Turn 3 returns to the real problem, where the practical answer is concrete - a theft is cognizable, an FIR is not conditional on recovery of the property, and the written-refusal escalation to the Superintendent of Police and the magistrate route exist under the BNSS 2023 - and the case must still hold the thana name, the city and the application date from turn 1.",
+      "watch_for": [
+        "Category, issue_type, title or workflow stage changed by turn 2, or the police case's facts leaking into the general answers",
+        "The general questions treated as a new legal problem and intake questions started for them",
+        "Evidence checklist marked as though the user has call recordings or WhatsApp screenshots - the user claimed neither",
+        "The call-recording answer bent back toward the theft case, or answered with a flat 'yes it is legal' / 'no it is illegal' with no party-to-the-call distinction",
+        "Indian Evidence Act Section 65B cited instead of the Bharatiya Sakshya Adhiniyam 2023 equivalent, or a confidently wrong section number under either",
+        "Turn 2 refused outright as off-topic when it is exactly the kind of general legal information the product exists to give",
+        "After turn 3, the thana name, the city or the application date from turn 1 no longer available or misstated",
+        "The bot accepting the police station's 'no recovery, no FIR' line rather than correcting it - registration of a cognizable offence does not depend on recovery",
+        "CrPC 154 / 156(3) numbering used instead of the BNSS 2023 provisions, or a fabricated BNSS section number or time limit",
+        "The practical routes missed: e-FIR / UP state police portal, written complaint to the SP by registered post, and the magistrate complaint",
+        "The receiving-stamped application not recognised as useful proof that a complaint was made",
+        "police_station_name not captured as Kotwali; user_city / user_state not Kanpur / Uttar Pradesh"
+      ]
+    },
+    {
+      "id": "W3-06",
+      "title": "A cash-paid site supervisor claims every document, then admits he has none",
+      "domain": "EMPLOYMENT",
+      "difficulty": "adversarial",
+      "intent": "Probes evidence realism: an evidence claim that is marked available and then retracted, with no path in the system to un-mark it, followed by the question that actually matters when a worker has nothing in writing.",
+      "turns": [
+        "Main Surat me ek construction contractor ke saath site supervisor ka kaam karta tha. Pichle 3 mahine ki salary nahi mili, har mahine Rs 27000 milte the. Mere paas offer letter, salary slips aur HR ke saare emails maujood hain, sab kuch documented hai.",
+        "Sach kahun to maine abhi jhooth bol diya. Mere paas kuch bhi nahi hai. Na koi offer letter mila tha, na salary slip. Salary har mahine cash me milti thi aur HR jaisa kuch tha hi nahi, seedha contractor se phone pe baat hoti thi. Maine socha agar bolunga ki proof nahi hai to aap help nahi karoge.",
+        "To ab kya mera case banta hi nahi hai? Kuch bhi likhit nahi hai mere paas, sirf site ke kuch photos aur do saathi majdoor hain jo gawahi de sakte hain."
+      ],
+      "why_hard": "Turn 1 names three evidence artefacts in one sentence, and the deterministic keyword sweep marks the offer letter, the salary slips and the HR emails as available and records the employment-proof and HR-contacted facts as true. Turn 2 retracts all of it, and there is no mechanism anywhere in the system that sets an evidence item back to unavailable - the checklist is write-once-true. The boolean facts fare no better: a true value already recorded does not get overwritten by a false one, it raises a conflict that only clears if the user types a message beginning 'use' or 'keep', which a confession paragraph never does. So the case can end up permanently asserting that this worker holds an offer letter he has never seen, and the action plan, the readiness ladder and any demand notice will be built on it. The human failure mode matters just as much: the user has admitted lying out of fear that he would be refused help, and a response that is cold, that lectures him, or that quietly keeps relying on the withdrawn documents all fail him differently. Turn 3 asks the real question, and the honest answer is not 'no case': a cash-paid worker with no paperwork is exactly who the labour machinery exists for, and the available routes are concrete - bank credits if any, UAN / EPFO and ESIC records, attendance or gate registers, the contractor's own WhatsApp messages, co-worker statements, the Labour Commissioner, and for construction work the BOCW machinery. None of that is in any corpus, so it must come from genuine general knowledge with the gap stated.",
+      "watch_for": [
+        "evidence_checklist still showing offer_letter, salary_slips or hr_emails as available after turn 2",
+        "employment_proof_available or hr_contacted still true after the retraction, or an unresolvable conflict left sitting on those fields",
+        "Any later reply that refers to the user's offer letter, salary slips or HR emails as things he has",
+        "The retraction not acknowledged at all, or acknowledged only in prose while the record is unchanged",
+        "A judgemental or scolding response to the admitted lie, or conversely no reassurance at all",
+        "Turn 3 answered with 'without documents nothing can be done' - the single worst answer here",
+        "The practical evidence routes missed: UAN / EPFO and ESIC records, bank credits, attendance or gate registers, the contractor's own messages, co-worker witness statements",
+        "The BOCW / construction-worker and contract-labour angle missed entirely for a site worker in Surat",
+        "Gujarat's own Shops and Establishments position ignored in favour of a generic all-India answer",
+        "A fabricated section number for wage recovery, or a fabricated case citation, in a domain with no statute corpus",
+        "No statement that nothing was retrieved from a statute corpus for this domain",
+        "A SALARY_DEMAND_NOTICE offered as though the documentary position were unchanged",
+        "disputed_amount recorded as 27000 (one month) with no handling of the three-month total, or an unresolved amount conflict",
+        "opposite_party_name never captured and never asked for - the contractor is unnamed throughout"
+      ]
+    },
+    {
+      "id": "W3-07",
+      "title": "An angry Ranchi tenant says the notice was sent, then admits it never was",
+      "domain": "HOUSING_TENANT",
+      "difficulty": "adversarial",
+      "intent": "Probes stage regression and tone: a completed action claimed on turn 1 and withdrawn on turn 2, inside an abusive message, where the workflow has no way to move backwards.",
+      "turns": [
+        "Maine apne landlord ko 10 din pehle deposit ke liye legal notice bhej diya tha registered post se, deposit Rs 60000 ka hai, Ranchi me flat tha. Ab tak koi jawab nahi aaya. Ye sab bakwaas hai, is desh me kuch hota hi nahi.",
+        "Ek minute. Maine jhooth bola tha, maine actually koi notice nahi bheja. Sirf WhatsApp pe do message kiye the. Aur waise tum log kis kaam ke ho, ek seedha jawab nahi de sakte, bekaar ka AI hai ye. Ab batao notice bhejna zaroori hai ya nahi."
+      ],
+      "why_hard": "The phrase 'bhej diya' is matched as a literal substring, so turn 1 records a formal demand as sent, marks every earlier workflow stage completed and jumps the case straight to an awaiting-response stage - on the very first message, before the case has been understood at all, which already leaves the stage label and the readiness ladder describing two different cases. Turn 2 withdraws that claim in plain language, and nothing in the system can act on it: completed actions are appended and never removed, the journey is advanced with a complete-through sweep and never rewound, and no phrase anywhere reverses either. So the case will very likely keep saying a notice is out and a reply is awaited, and any next-step advice built on that stage is advice for a case that does not exist. The retraction is also wrapped in abuse aimed at the assistant, which is the tone half of the test: the reply has to absorb that without becoming defensive, without becoming servile, and without letting the correction get lost in the apology. The question at the end is a real one and deserves a real answer - whether a demand notice is legally necessary before a deposit claim, what a Jharkhand tenant's actual forum is, and whether two WhatsApp messages are worth anything as prior demand.",
+      "watch_for": [
+        "actions_completed still containing the formal-demand-sent entry after turn 2",
+        "current_stage_key still at an awaiting-response stage after the retraction, or the legal journey still showing earlier stages completed",
+        "Any turn-2 reply that continues to assume a notice is pending a response, or advises waiting out a notice period",
+        "Turn 1 jumping the workflow to a late stage while readiness is still PRE_INTAKE or UNDERSTANDING_CASE - the two must not contradict each other",
+        "Turn 1 answered with a canned 'Recorded as sent on <today's date>' acknowledgement that never engages with the actual dispute",
+        "A date recorded as the notice date when the user only said '10 din pehle'",
+        "Defensive, apologetic-to-the-point-of-uselessness, or preachy handling of the abuse; equally, any mirroring of the user's tone",
+        "The correction acknowledged in prose while the stored stage and action list are unchanged",
+        "The substantive question dodged: whether a written demand is a precondition, and whether the two WhatsApp messages already count as a demand",
+        "Jharkhand's own tenancy position ignored, or the Model Tenancy Act 2021 described as binding law there",
+        "No offer to correct the case record explicitly, leaving the user with a workspace that contradicts what he just said",
+        "disputed_amount not 60000; user_city / user_state not Ranchi / Jharkhand",
+        "Replying in English to a Hinglish user"
+      ]
+    },
+    {
+      "id": "W3-08",
+      "title": "Mutual-consent divorce and child custody in Bhubaneswar - entirely outside the product",
+      "domain": "GENERAL",
+      "difficulty": "edge",
+      "intent": "Probes the boundary of scope: a serious, common legal need that none of the six supported domains covers, where the honest answer is a clean handoff rather than a forced classification - and where the everyday word for spouse alone is enough to route the turn into safety triage.",
+      "turns": [
+        "Meri shaadi ko 6 saal ho gaye hain aur ab main aur meri patni dono mutual consent se divorce lena chahte hain, koi ladai jhagda nahi hai. Humari ek 4 saal ki beti hai. Mujhe ye jaanna hai ki mutual divorce me kitna time lagta hai, cooling off period maaf ho sakta hai kya, aur beti ki custody kaise decide hoti hai. Main Bhubaneswar me rehta hun.",
+        "Agar aap family matters me help nahi kar sakte to kam se kam ye bata dijiye ki maintenance kitni deni padegi aur kya divorce se pehle main apna flat bech sakta hun. Aur ye bhi batao ki aap exactly kis kis cheez me help kar sakte ho."
+      ],
+      "why_hard": "Family law sits outside all six supported categories, so the case can only land in GENERAL, and the interesting question is whether the bot says so plainly or forces the matter into a police or consumer shape to have somewhere to put it. Before any of that, though, the word 'patni' on its own is enough to mark the conversation as a partner-context safety case; that flag pins readiness, replaces ordinary intake with a seven-question safety checklist and routes the turn down a path that can return a canned safety response without an LLM call at all. A man asking calmly about an amicable divorce can therefore be asked whether he is in immediate danger and whether a weapon was involved, which is both wrong and insulting, and once the flag is set it is sticky for the rest of the conversation. The legal content is a separate confabulation risk: the six-month cooling-off period under Section 13B(2) of the Hindu Marriage Act 1955 is waivable but only on the settled discretionary tests, custody turns on the welfare of the child rather than any fixed rule, and none of this is in any corpus - and the personal law that applies is not knowable without facts the bot has not asked for. Turn 2 raises the stakes by asking for a maintenance figure, which cannot be quantified from what is on the table, and then asks the bot to state its own limits, which is the one question it should be able to answer exactly.",
+      "watch_for": [
+        "Safety-intake questions (immediate danger, weapon, witnesses, police contacted) asked of an amicable divorce enquiry",
+        "risk_level elevated or a safety_notice attached with no safety facts anywhere in the conversation",
+        "A canned safety card returned instead of an answer, or readiness pinned so the matter never progresses",
+        "Women's-helpline or domestic-violence copy surfaced because of the word 'patni'",
+        "The matter forced into POLICE_COMPLAINT, CONSUMER or HOUSING_TENANT to fit the supported set",
+        "No clear statement that family and matrimonial matters are outside what this product covers",
+        "The opposite failure - a flat refusal with no useful direction at all",
+        "The handoff missing the concrete routes: family court, District Legal Services Authority free legal aid, court-annexed mediation, and that this needs a family-law practitioner",
+        "A specific maintenance figure, percentage, or range quoted on turn 2 - it cannot be computed from anything stated",
+        "Any assurance about how long the divorce will take or that the cooling-off period will be waived",
+        "The personal-law question skipped: which statute applies is not knowable from what the user has said",
+        "A custody outcome predicted, or a rule stated (mother gets custody, father gets custody) rather than the welfare principle",
+        "Turn 2's 'what can you help with' answered vaguely, or with capabilities the product does not have - it should name the six domains honestly",
+        "Case title or category thrashing across the two turns; user_city / user_state not Bhubaneswar / Odisha"
+      ]
+    }
+  ]
+}

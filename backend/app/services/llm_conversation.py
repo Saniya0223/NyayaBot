@@ -11,19 +11,35 @@ from app.domains.compatibility import PROFILE_FACT_FIELDS, read_profile_fact
 from app.domains.contracts import FactState, FactValueType, fact_state
 from app.services.language_style import LanguageScript
 from app.services.pii_masker import PIIMasker
+from app.services.case_naming import apply_dynamic_title
+from app.services.date_facts import same_date_ignoring_year
+from app.services.fact_extraction import (
+    DATE_FACT_FIELDS,
+    backfill_facts,
+    backfill_jurisdiction,
+)
 from app.services.case_readiness import (
+    READY_FOR_ACTION,
     READY_FOR_DOCUMENT,
     compute_blocking_missing_facts,
     compute_intake_missing_facts,
     compute_readiness,
+    crisis_document_block_active,
     document_routing_allowed,
 )
+from app.services.helplines import model_context as helpline_model_context
+from app.services.response_guard import guard_reply
 from app.services.safety_triage import (
     AMBER,
+    CRISIS_SUPPORT,
+    EMERGENCY_NUMBER,
+    EXTERNAL_HARM_CONTEXTS,
     RED,
     SafetyAssessment,
     assess_safety,
     extract_safety_facts,
+    is_crisis_only_case,
+    safety_triage_resolved,
     simple_yes_no,
 )
 from app.config import settings
@@ -33,11 +49,13 @@ from app.llm.contracts import (
     LLMExtractionContext,
     LLMProvider,
     LLMProviderError,
+    LLMRateLimitedError,
     LLMResponseContext,
 )
 from app.llm.factory import get_llm_provider
 from app.schemas.chat import (
     ChatMessage,
+    ChatRetryAction,
     ChatTurnRequest,
     ChatTurnResponse,
     DocumentUploadExtractionRequest,
@@ -54,6 +72,12 @@ from app.services.pending_interaction import (
 
 
 logger = logging.getLogger("uvicorn.error")
+
+# legal_sources provenance tags (M8). Applied to the context list and to
+# profile.legal_sources, which are the same dict objects, so
+# test_llm_conversation.py:516's identity-of-dicts membership assertion still holds.
+VERIFIED_PROVISION = "verified_provision"
+OFFICIAL_SOURCE_LINK = "official_source_link"
 
 
 DIRECT_PROFILE_FIELDS = PROFILE_FACT_FIELDS
@@ -87,6 +111,23 @@ DATE_WORDS = frozenset({
 # At or below this word count a turn is treated as confirmation, not substance.
 LOW_CONTEXT_MAX_WORDS = 3
 
+# Safety intake is a bounded conversation, not an unconditional loop. The same
+# question group is never put a third time, and triage closes itself after this
+# many safety turns so a case can never be swallowed by the questionnaire.
+SAFETY_MAX_ASKS_PER_GROUP = 2
+SAFETY_INTAKE_MAX_TURNS = 4
+
+# Which safety facts each question group is responsible for, so an unanswered
+# group can be recorded as unknown instead of being asked again.
+SAFETY_QUESTION_GROUP_FACTS: dict[str, tuple[str, ...]] = {
+    "incident": ("threat_details", "incident_date"),
+    "repeated": ("repeated_incidents",),
+    "violence_weapon": ("physical_violence_or_weapon",),
+    "dependants": ("dependants_at_risk",),
+    "evidence": ("evidence_available",),
+    "police": ("police_contacted",),
+}
+
 class GeminiConversationService:
     """Gemini/Groq understands and writes; deterministic code owns critical case state."""
 
@@ -117,6 +158,7 @@ class GeminiConversationService:
         recent_messages: Iterable[ChatMessage],
         user_context: Optional[dict[str, Any]] = None,
         evidence_context: Optional[dict[str, Any]] = None,
+        extraction_context_override: Optional[LLMExtractionContext] = None,
     ) -> ChatTurnResponse:
         history = self._recent_history(recent_messages)
 
@@ -126,6 +168,10 @@ class GeminiConversationService:
         prior_language = existing_profile.language_style if existing_profile else None
         prior_script = existing_profile.script_style if existing_profile else None
         prior_safety = existing_profile.safety_status if existing_profile else None
+        if existing_profile and existing_profile.key_facts.get("crisis_support_offered"):
+            # key_facts, not safety_status, is the durable record: safety_status
+            # is rewritten from the current assessment on every turn.
+            prior_safety = {**(prior_safety or {}), "crisis_support_offered": True}
         prior_text = " ".join(item.get("content", "") for item in history if item.get("role") == "user")
         safety = assess_safety(
             req.message,
@@ -141,23 +187,40 @@ class GeminiConversationService:
         )
         style = LanguageScript(safety.language_style, safety.script_style)
 
-        if self._safety_route_required(safety, existing_profile):
+        if self._safety_route_required(safety, existing_profile, req.message):
             if existing_profile:
                 existing_profile.pending_interaction = None
             return self._process_safety_turn(req, existing_profile, safety, style)
+        self._release_safety_intake(existing_profile, safety)
+        self._advance_crisis_cooldown(existing_profile)
 
         if (existing_profile and existing_profile.document_request
                 and existing_profile.document_request.get("document_type")
                 and existing_profile.document_request.get("status") in {"OPTIONAL_FIELDS_AVAILABLE", "NEEDS_REQUIRED_FIELDS", "READY_TO_GENERATE"}
                 and self._is_optional_skip(req.message)):
             doc_type = existing_profile.document_request["document_type"]
+            blocked = self._document_block_reason(existing_profile, safety)
+            if blocked:
+                self.workflow_agent._touch(existing_profile)
+                return self._tag_response(
+                    self._document_gate_response(
+                        existing_profile, req.message, style, blocked, hint=doc_type,
+                    ),
+                    self._provider_mode,
+                )
             response = self._document_request_response(existing_profile, req.message, style, hint=doc_type)
             if existing_profile.document_request:
                 existing_profile.document_request["optional_skipped"] = True
             self.workflow_agent._touch(existing_profile)
             return self._tag_response(response, self._provider_mode)
 
-        pending_document_request = bool(existing_profile and existing_profile.document_request and existing_profile.document_request.get("status") == "SAFETY_PAUSED")
+        # A request parked for safety (S5a) or for missing case facts (S5b)
+        # resumes by itself on the turn it becomes available, so the user does
+        # not have to ask a second time.
+        pending_document_request = bool(
+            existing_profile and existing_profile.document_request
+            and existing_profile.document_request.get("status") in {"SAFETY_PAUSED", "NEEDS_CASE_FACTS"}
+        )
         previous_help_level = existing_profile.professional_help.level if existing_profile and existing_profile.professional_help else None
         if not self.provider.status.configured:
             if existing_profile:
@@ -175,22 +238,39 @@ class GeminiConversationService:
                 fallback.quick_replies = []
             prefix = self._limited_demo_prefix(style)
             if self._is_document_handoff_request(req.message) or pending_document_request:
-                handoff = self._document_request_response(
-                    fallback.case_profile, req.message, style,
-                    hint=(existing_profile.document_request.get("document_type") if pending_document_request else None),
-                )
-                fallback.reply_text = handoff.reply_text
-                fallback.suggested_action = handoff.suggested_action
+                blocked = self._document_block_reason(fallback.case_profile, safety)
+                if blocked:
+                    gated = self._document_gate_response(
+                        fallback.case_profile, req.message, style, blocked,
+                        hint=(existing_profile.document_request.get("document_type") if pending_document_request else None),
+                    )
+                    fallback.reply_text = gated.reply_text
+                    fallback.suggested_action = None
+                    fallback.quick_replies = []
+                else:
+                    handoff = self._document_request_response(
+                        fallback.case_profile, req.message, style,
+                        hint=(existing_profile.document_request.get("document_type") if pending_document_request else None),
+                    )
+                    fallback.reply_text = handoff.reply_text
+                    fallback.suggested_action = handoff.suggested_action
             else:
                 fallback.reply_text = (
                     self._fallback_professional_help(fallback.case_profile, style)
                     if asks_about_legal_help(req.message)
                     else self._localized_fallback_reply(fallback.case_profile, fallback.reply_text, style)
                 )
-            fallback.reply_text = prefix + fallback.reply_text
+            fallback.reply_text = prefix + self._emergency_reminder(
+                fallback.case_profile, style, safety.safety_level, fallback.reply_text,
+            ) + fallback.reply_text
             return self._tag_response(fallback, "limited_demo")
 
         profile = existing_profile
+        profile_before_extraction = profile.model_copy(deep=True) if profile else None
+        extraction_succeeded = False
+        extraction_context = None
+        response_context = None
+        declined_offer = False
         pending = profile.pending_interaction if profile else None
         if profile and pending and (
             not valid_for_case(pending, profile)
@@ -209,8 +289,7 @@ class GeminiConversationService:
                 # controller. Gemini still receives the resulting updated state.
                 self._apply_pending_confirmation(req.message.strip(), profile)
 
-            extraction = await self.provider.extract_case_updates(
-                LLMExtractionContext(
+            extraction_context = extraction_context_override or LLMExtractionContext(
                     user_message=req.message,
                     recent_messages=history,
                     case_summary=self._compact_case(profile) if profile else None,
@@ -219,8 +298,9 @@ class GeminiConversationService:
                     script_style=style.script,
                     domain_catalog=domain_registry.extraction_catalog(),
                     document_catalog=[{"id": item.id, "name": item.name} for item in DOCUMENT_DEFINITIONS.values()],
-                )
             )
+            extraction = await self.provider.extract_case_updates(extraction_context)
+            extraction_succeeded = True
 
             if profile is None:
                 profile = self.workflow_agent._init_case_profile(
@@ -261,11 +341,21 @@ class GeminiConversationService:
                 extraction.facts = extraction.facts.__class__.model_validate(facts)
                 extraction.document_request = None
 
+            previous_category = profile.category
+            previous_issue_type = profile.issue_type
+            self._maybe_reclassify(profile, extraction, req.message)
             conflict = self._apply_extraction(profile, extraction)
+            # Deterministic backfill runs on the live path too, not only on the
+            # offline demo path. It fills only what the model left empty, and it
+            # enforces the date year invariant over what the model did supply.
+            backfill_facts(req.message, profile, prior_text=prior_text)
             self._apply_actions(profile, extraction.actions_detected)
             self.workflow_agent._mark_evidence(profile, extraction.evidence_detected)
             self.workflow_agent._assess_risk(req.message, profile)
             self._refresh_workflow(profile, safety, req.message)
+            renamed = apply_dynamic_title(profile, previous_category, previous_issue_type)
+            if renamed:
+                logger.info("case_id=%s event=case_retitled", profile.case_id)
             profile.professional_help = evaluate_professional_help(profile)
             if pending and resolution.status == "RESOLVED":
                 profile.pending_interaction = None
@@ -290,6 +380,12 @@ class GeminiConversationService:
                 hint = resolution.document_type or extraction.document_request or (existing_profile.document_request.get("document_type") if pending_document_request else None)
                 profile.pending_interaction = None
                 self.workflow_agent._touch(profile)
+                blocked = self._document_block_reason(profile, safety)
+                if blocked:
+                    return self._tag_response(
+                        self._document_gate_response(profile, req.message, style, blocked, hint=hint),
+                        self._provider_mode,
+                    )
                 return self._tag_response(self._document_request_response(profile, req.message, style, hint=hint), self._provider_mode)
 
             workflow_state = self._workflow_summary(profile)
@@ -306,6 +402,9 @@ class GeminiConversationService:
                 source for source in legal_sources
                 if source.get("act") and source.get("section")
             ]
+            # Lets the workspace panel distinguish "not retrieved yet" from "no corpus
+            # exists for this domain" instead of showing one placeholder for both (M8).
+            profile.key_facts["verified_sources_available"] = bool(profile.legal_sources)
             # Ordinary follow-ups come only from the ranked domain context.
             # Document fields are supplied separately after the user selects a document.
             missing_for_response: list[str] = []
@@ -313,8 +412,7 @@ class GeminiConversationService:
                 missing_for_response.extend(
                     f"document:{field}" for field in profile.missing_document_fields
                 )
-            reply = await self.provider.chat(
-                LLMResponseContext(
+            response_context = LLMResponseContext(
                     user_message=req.message,
                     # A durable-memory/history answer must not mistake recent
                     # conversational text for a saved memory or prior case.
@@ -345,42 +443,44 @@ class GeminiConversationService:
                          "allowed_choices": pending.allowed_choices}
                         if pending and resolution.status != "UNRELATED" else None
                     ),
-                )
+                    legal_sources_status=self._legal_sources_status(profile, legal_sources),
+                    helpline_registry=helpline_model_context(),
             )
-            if resolution.status != "AMBIGUOUS":
-                offer = document_offer(profile)
-                doc_label = profile.recommended_doc_label or ""
-                declined_offer = bool(
-                    pending and pending.type == "DOCUMENT_CONFIRMATION"
-                    and resolution.status == "RESOLVED" and not resolution.document_type
-                )
-                # The UI exposes the supported PREPARE_DOC action. If the reply
-                # asks a question, distinguish an explicit document offer from
-                # an ordinary fact question, without deriving the document ID
-                # from model prose.
-                document_question = bool(re.search(
-                    r"\b(?:prepare|draft|create|make)\b.*\b(?:notice|letter|complaint|document)\b",
-                    reply.casefold(),
-                ))
-                if offer and not declined_offer and (
-                    "?" not in reply or (doc_label and doc_label.casefold() in reply.casefold())
-                    or document_question
-                ):
-                    profile.pending_interaction = offer
-                elif "?" in reply and domain_context["next_fact_candidates"]:
-                    profile.pending_interaction = fact_candidate(profile, domain_context["next_fact_candidates"][0])
-                else:
-                    profile.pending_interaction = None
-            self.workflow_agent._touch(profile)
-            suggested_action = profile.recommended_next_action
-            response = ChatTurnResponse(
-                reply_text=reply,
-                case_profile=profile,
-                quick_replies=self._quick_replies(profile, conflict),
-                suggested_action=suggested_action,
-                message_id=str(uuid.uuid4()),
+            declined_offer = bool(
+                pending and pending.type == "DOCUMENT_CONFIRMATION"
+                and resolution.status == "RESOLVED" and not resolution.document_type
             )
-            return self._tag_response(response, self._provider_mode)
+            reply = await self.provider.chat(response_context)
+            return self._finish_chat_response(profile, reply, response_context, declined_offer)
+        except LLMRateLimitedError:
+            logger.warning(
+                "provider=%s model=%s reason=RATE_LIMITED event=turn_fell_back_to_limited_demo",
+                self.provider.status.provider, self.provider.status.model,
+            )
+            if not extraction_succeeded:
+                # Undo any staged pending-confirmation changes. Failed extraction
+                # must not change facts or consume the case's pending interaction.
+                if existing_profile is not None and profile_before_extraction is not None:
+                    for field, value in profile_before_extraction:
+                        setattr(existing_profile, field, value)
+                profile = existing_profile
+            # Terminal for this turn: no second extraction, chat, summary, or
+            # evidence/document provider operation is invoked by this fallback.
+            response = self._rate_limit_fallback(req, profile, style, prior_text=prior_text, safety=safety)
+            response.retry_action = ChatRetryAction(
+                message_id=response.message_id, label=f"Try {self._provider_title} again",
+            )
+            response._retry_state = {
+                "stage": "FINAL_CHAT" if extraction_succeeded else "EXTRACTION",
+                "original_message": req.message,
+                "history": history,
+                "extraction_context": extraction_context.model_dump(mode="json") if extraction_context else None,
+                "response_context": response_context.model_dump(mode="json") if response_context else None,
+                "declined_offer": declined_offer,
+                "user_context": user_context or {},
+                "evidence_context": evidence_context or {},
+            }
+            return response
         except LLMProviderError:
             logger.warning(
                 "provider=%s model=%s event=turn_fell_back_to_limited_demo",
@@ -409,6 +509,95 @@ class GeminiConversationService:
                 message_id=str(uuid.uuid4()),
             )
             return self._tag_response(response, "limited_demo")
+
+    def _finish_chat_response(
+        self, profile: StructuredCaseProfile, reply: str,
+        context: LLMResponseContext, declined_offer: bool,
+    ) -> ChatTurnResponse:
+        if (context.pending_resolution or {}).get("status") != "AMBIGUOUS":
+            offer = document_offer(profile)
+            doc_label = profile.recommended_doc_label or ""
+            # Preserve the same post-response pending-question/offer behavior.
+            document_question = bool(re.search(
+                r"\b(?:prepare|draft|create|make)\b.*\b(?:notice|letter|complaint|document)\b",
+                reply.casefold(),
+            ))
+            if offer and not declined_offer and (
+                "?" not in reply or (doc_label and doc_label.casefold() in reply.casefold())
+                or document_question
+            ):
+                profile.pending_interaction = offer
+            elif "?" in reply and context.domain_context["next_fact_candidates"]:
+                profile.pending_interaction = fact_candidate(profile, context.domain_context["next_fact_candidates"][0])
+            else:
+                profile.pending_interaction = None
+        self.workflow_agent._touch(profile)
+        reply = self._emergency_reminder(
+            profile,
+            LanguageScript(context.language_style, context.script_style),
+            (context.safety or {}).get("safety_level"),
+            reply,
+        ) + reply
+        response = ChatTurnResponse(
+            reply_text=reply, case_profile=profile,
+            quick_replies=self._quick_replies(profile, context.conflict),
+            suggested_action=profile.recommended_next_action, message_id=str(uuid.uuid4()),
+        )
+        return self._tag_response(response, self._provider_mode, context.user_message)
+
+    async def resume_response(
+        self, profile: StructuredCaseProfile, checkpoint: dict[str, Any],
+    ) -> ChatTurnResponse:
+        """Resume only final prose; extraction and deterministic updates already ran."""
+        context = LLMResponseContext.model_validate(checkpoint["response_context"])
+        try:
+            reply = await self.provider.chat(context)
+        except LLMProviderError:
+            response = self._rate_limit_fallback(
+                ChatTurnRequest(message=checkpoint["original_message"], case_id=profile.case_id),
+                profile, LanguageScript(context.language_style, context.script_style),
+            )
+            response.retry_action = ChatRetryAction(
+                message_id=response.message_id, label=f"Try {self._provider_title} again",
+            )
+            response._retry_state = dict(checkpoint)
+            return response
+        return self._finish_chat_response(profile, reply, context, checkpoint["declined_offer"])
+
+    def _rate_limit_fallback(
+        self,
+        req: ChatTurnRequest,
+        profile: Optional[StructuredCaseProfile],
+        style: LanguageScript,
+        prior_text: str = "",
+        safety: Optional[SafetyAssessment] = None,
+    ) -> ChatTurnResponse:
+        if profile is not None:
+            # A fact stated during an outage used to be lost forever: this
+            # branch performed no extraction at all, and the extraction prompt
+            # only ever reads the newest turn, so no later turn re-read it.
+            backfill_facts(req.message, profile, prior_text=prior_text)
+            self._refresh_workflow(profile, safety, req.message)
+            profile.professional_help = evaluate_professional_help(profile)
+        if profile is None:
+            # A new session needs an envelope, not facts inferred from a turn
+            # whose extraction failed. The retry can perform normal intake later.
+            profile = self.workflow_agent._init_case_profile("", req.case_id, category_override="GENERAL")
+            profile.language_style = style.language
+            profile.script_style = style.script
+            self._refresh_workflow(profile)
+            profile.professional_help = evaluate_professional_help(profile)
+        response = ChatTurnResponse(
+            reply_text=self._temporary_failure_prefix() + (
+                self._fallback_professional_help(profile, style)
+                if asks_about_legal_help(req.message) else self._safe_next_prompt(profile)
+            ),
+            case_profile=profile,
+            quick_replies=[f"Try {self._provider_title} again"],
+            suggested_action=profile.recommended_next_action,
+            message_id=str(uuid.uuid4()),
+        )
+        return self._tag_response(response, "limited_demo", req.message)
 
     async def process_document_upload(
         self,
@@ -472,12 +661,85 @@ class GeminiConversationService:
     def _safety_route_required(
         safety: SafetyAssessment,
         profile: Optional[StructuredCaseProfile],
+        message: str = "",
     ) -> bool:
-        """Keep unresolved or newly urgent safety turns out of the legal flow."""
+        """Keep unresolved or newly urgent safety turns out of the legal flow.
+
+        Safety routing has to be able to *end*. Previously this returned True on
+        every turn until every safety fact was known, which let triage swallow
+        questions it was never going to answer. The turn is handed back once the
+        emergency question is settled and the user has moved on, and reclaimed
+        the moment a new harm signal appears.
+        """
         if not safety.is_safety_case:
             return False
-        complete = bool(profile and profile.key_facts.get("safety_triage_complete"))
-        return not complete or safety.immediate_danger is not False
+        key_facts = (profile.key_facts if profile else None) or {}
+
+        # A self-harm disclosure, or one not yet answered with crisis support.
+        if safety.stage == CRISIS_SUPPORT:
+            return True
+
+        if key_facts.get("safety_triage_complete"):
+            # A closed triage only reopens on a genuinely new harm signal. This
+            # check sits ABOVE the active-danger short-circuit deliberately:
+            # `immediate_danger` is sticky, so with the old ordering an urgent
+            # turn could never be released even after the ask cap had closed
+            # triage, and the same 112 sentence came back forever.
+            return bool(safety.fresh_harm_signal)
+
+        if safety.immediate_danger is True:
+            return True
+
+        if key_facts.get("crisis_support_offered") and not safety.fresh_harm_signal:
+            # Crisis support has been given. Do not then drop the person into
+            # the attacker-proximity ladder for a danger nobody described.
+            if safety.immediate_danger is False or not any(
+                context in safety.contexts for context in EXTERNAL_HARM_CONTEXTS
+            ):
+                return False
+
+        if safety.immediate_danger is None:
+            return True
+
+        # Danger answered "no": release the turn when it has moved on.
+        return not GeminiConversationService._safety_turn_moved_on(safety, message)
+
+    @staticmethod
+    def _safety_turn_moved_on(safety: SafetyAssessment, message: str) -> bool:
+        """True when this turn asks something new rather than answering triage.
+
+        Deliberately strict - an explicit question. A long sentence is far more
+        likely to be the answer to "what exactly happened, and when?" than a
+        change of subject, and releasing it would lose the deterministic safety
+        fact it carries. Runaway intake is bounded separately, by the per-group
+        ask cap in `_paced_safety_reply`.
+        """
+        if safety.fresh_harm_signal or safety.danger_signal:
+            return False
+        if simple_yes_no(message) is not None:
+            return False
+        text = (message or "").strip()
+        return "?" in text and len(text.split()) > LOW_CONTEXT_MAX_WORDS
+
+    @staticmethod
+    def _release_safety_intake(
+        profile: Optional[StructuredCaseProfile],
+        safety: SafetyAssessment,
+    ) -> None:
+        """Close an open safety intake when the turn goes back to legal flow.
+
+        Only the emergency question has to be settled. The remaining intake
+        questions are useful, not blocking, so they must not pin the readiness
+        ladder once the user has moved on. A crisis case is deliberately left
+        open, which keeps `document_routing_allowed` shut for it.
+        """
+        if not profile or not safety.is_safety_case:
+            return
+        key_facts = profile.key_facts
+        if key_facts.get("safety_triage_complete") or safety.immediate_danger is not False:
+            return
+        key_facts["safety_triage_complete"] = True
+        key_facts.pop("last_safety_question_group", None)
 
     def _process_safety_turn(
         self,
@@ -488,19 +750,33 @@ class GeminiConversationService:
     ) -> ChatTurnResponse:
         """Handle safety deterministically before any provider or RAG call."""
         sanitized_text, _ = PIIMasker.mask_text(req.message.strip())
-        profile = existing_profile or self.workflow_agent._init_case_profile(
-            sanitized_text,
-            req.case_id,
-            category_override="POLICE_COMPLAINT",
-        )
+        crisis = safety.stage == CRISIS_SUPPORT
+        if existing_profile:
+            profile = existing_profile
+        else:
+            # A crisis turn is not a police complaint. Let the ordinary
+            # classifier decide, and mark a triage-assigned category so a later
+            # confident classification can correct it.
+            profile = self.workflow_agent._init_case_profile(
+                sanitized_text,
+                req.case_id,
+                category_override=None if crisis else "POLICE_COMPLAINT",
+            )
+            if not crisis:
+                profile.key_facts["category_source"] = "safety_triage"
         profile.language_style = style.language
         profile.script_style = style.script
         profile.risk_level = RED if safety.safety_level == RED else AMBER
         profile.safety_notice = safety.guidance
-        if self._is_document_handoff_request(req.message):
+        if self._is_document_handoff_request(req.message) and not crisis:
             profile.document_request = {"intent": "USER_REQUESTED", "status": "SAFETY_PAUSED", "message": req.message}
         profile.key_facts["safety_context"] = safety.safety_context
         profile.key_facts["safety_contexts"] = list(safety.contexts)
+        if crisis:
+            # Recorded before `_refresh_workflow` below, not after the reply is
+            # composed, so readiness is computed against the crisis-scoped
+            # intake contract on the crisis turn itself.
+            self._mark_crisis_support_offered(profile)
 
         extracted = extract_safety_facts(sanitized_text, safety)
         extracted.update(self._contextual_safety_facts(sanitized_text, profile))
@@ -516,10 +792,20 @@ class GeminiConversationService:
                 "confirmed": True,
             }
 
+        # M4. A safety turn returns before extraction, so W1-05's
+        # "मैं लखनऊ में रहता हूँ" - stated in the same breath as the threat -
+        # was never recorded, and the case had no jurisdiction for the rest of
+        # the conversation. Only the jurisdiction lookup runs here, not the full
+        # backfill: a threat narrative is the worst possible place to guess a
+        # counterparty, an amount or an incident date, and this turn already
+        # nulls every document affordance below.
+        backfill_jurisdiction(sanitized_text, profile)
+
         self._refresh_workflow(profile, safety, req.message)
         reply, quick_replies = self._paced_safety_reply(profile, safety, style)
         safety_state = safety.to_dict()
         safety_state["triage_complete"] = bool(profile.key_facts.get("safety_triage_complete"))
+        safety_state["crisis_support_offered"] = bool(profile.key_facts.get("crisis_support_offered"))
         profile.safety_status = safety_state
         profile.recommended_doc_type = None
         profile.recommended_doc_label = None
@@ -569,42 +855,181 @@ class GeminiConversationService:
         style: LanguageScript,
     ) -> tuple[str, list[str]]:
         """Return safety guidance plus at most one two-part follow-up."""
+        key_facts = profile.key_facts
+
+        if safety.stage == CRISIS_SUPPORT:
+            # Crisis support short-circuits everything: no evidence checklist,
+            # no CCTV question, no document offer, no intake ladder.
+            self._mark_crisis_support_offered(profile)
+            parts = [safety.guidance, safety.triage_question]
+            return "\n\n".join(part for part in parts if part), []
+
+        # N7: `safety_intake_turns` is a per-case total that never reset, so once
+        # the cap was spent a genuinely new threat closed triage on the same turn
+        # and produced the self-contradictory "if you are in danger now, call
+        # 112 ... the immediate-safety check is complete". A fresh harm signal
+        # after a closed triage reopens the budget. This runs before the counter
+        # below, so it can never fire on the turn the cap itself closes triage.
+        if key_facts.get("safety_triage_complete") and safety.fresh_harm_signal:
+            key_facts["safety_intake_turns"] = 0
+            key_facts.pop("safety_question_asks", None)
+            key_facts.pop("safety_reassurance_given", None)
+            key_facts.pop("safety_triage_complete", None)
+            key_facts.pop("last_safety_question_group", None)
+
+        turns = int(key_facts.get("safety_intake_turns") or 0) + 1
+        key_facts["safety_intake_turns"] = turns
+
         if safety.immediate_danger is None:
-            profile.key_facts["last_safety_question_group"] = "immediate_danger"
+            if self._safety_group_exhausted(key_facts, "immediate_danger") or turns > SAFETY_INTAKE_MAX_TURNS:
+                # Asked twice with no answer. Keep the emergency guidance, stop
+                # asking, and let the legal conversation resume.
+                key_facts["safety_triage_complete"] = True
+                key_facts.pop("last_safety_question_group", None)
+                parts = [safety.guidance, self._safety_text(style, "complete")]
+                return "\n\n".join(part for part in parts if part), []
+            self._record_safety_ask(key_facts, "immediate_danger")
             parts = [safety.triage_question, safety.guidance]
             return "\n\n".join(part for part in parts if part), self._safety_quick_replies(safety)
 
         if safety.immediate_danger is True:
-            profile.key_facts["last_safety_question_group"] = "urgent_safety"
+            # The urgent branch used to write `last_safety_question_group`
+            # directly instead of going through `_record_safety_ask`, so it had
+            # no counter and was exempt from both caps - an unbounded loop with
+            # no exit but a regex. It is now bounded exactly like the
+            # check-danger branch above.
+            key_facts["urgent_guidance_given"] = True
+            if self._safety_group_exhausted(key_facts, "urgent_safety") or turns > SAFETY_INTAKE_MAX_TURNS:
+                key_facts["safety_triage_complete"] = True
+                key_facts.pop("last_safety_question_group", None)
+                parts = [safety.guidance, self._safety_text(style, "complete")]
+                return "\n\n".join(part for part in parts if part), []
+            self._record_safety_ask(key_facts, "urgent_safety")
             # Urgent instructions precede the follow-up question.
             parts = [safety.guidance, safety.triage_question]
             return "\n\n".join(part for part in parts if part), self._safety_quick_replies(safety)
 
+        # The reassurance line belongs to the turn on which danger resolves.
+        # Repeating it every turn is what made the script look stuck.
+        prefix = ""
+        if not key_facts.get("safety_reassurance_given"):
+            prefix = safety.guidance or ""
+            key_facts["safety_reassurance_given"] = True
+
         missing = set(profile.intake_missing_facts)
-        prefix = safety.guidance or ""
-        if "threat_details" in missing or "incident_date" in missing:
-            profile.key_facts["last_safety_question_group"] = "incident"
-            question = self._safety_text(style, "incident")
-        elif "repeated_incidents" in missing:
-            profile.key_facts["last_safety_question_group"] = "repeated"
-            question = self._safety_text(style, "repeated")
-        elif "physical_violence_or_weapon" in missing:
-            profile.key_facts["last_safety_question_group"] = "violence_weapon"
-            question = self._safety_text(style, "violence_weapon")
-        elif safety.dependants_present and profile.key_facts.get("dependants_at_risk") is None:
-            profile.key_facts["last_safety_question_group"] = "dependants"
-            question = self._safety_text(style, "dependants")
-        elif "evidence_available" in missing:
-            profile.key_facts["last_safety_question_group"] = "evidence"
-            question = self._safety_text(style, "evidence")
-        elif "police_contacted" in missing:
-            profile.key_facts["last_safety_question_group"] = "police"
-            question = self._safety_text(style, "police")
-        else:
-            profile.key_facts["safety_triage_complete"] = True
-            profile.key_facts.pop("last_safety_question_group", None)
+        candidates = (
+            ("incident", "threat_details" in missing or "incident_date" in missing),
+            ("repeated", "repeated_incidents" in missing),
+            ("violence_weapon", "physical_violence_or_weapon" in missing),
+            ("dependants", safety.dependants_present and key_facts.get("dependants_at_risk") is None),
+            ("evidence", "evidence_available" in missing),
+            ("police", "police_contacted" in missing),
+        )
+
+        question = None
+        if turns <= SAFETY_INTAKE_MAX_TURNS:
+            for group, needed in candidates:
+                if not needed:
+                    continue
+                if self._safety_group_exhausted(key_facts, group):
+                    # Two unanswered asks: record it as unknown and move on.
+                    self._mark_safety_group_unknown(profile, group)
+                    continue
+                self._record_safety_ask(key_facts, group)
+                question = self._safety_text(style, group)
+                break
+
+        if question is None:
+            for group, needed in candidates:
+                if needed:
+                    self._mark_safety_group_unknown(profile, group)
+            key_facts["safety_triage_complete"] = True
+            key_facts.pop("last_safety_question_group", None)
             question = self._safety_text(style, "complete")
         return "\n\n".join(part for part in (prefix, question) if part), []
+
+    @staticmethod
+    def _emergency_reminder(
+        profile: Optional[StructuredCaseProfile],
+        style: LanguageScript,
+        safety_level: Optional[str],
+        reply: str = "",
+    ) -> str:
+        """One-line emergency instruction carried by every post-release reply.
+
+        Bounding the urgent branch (CF-1) means a case that was in active danger
+        now gets ordinary legal answers again. It must not silently lose the 112
+        instruction while the danger assessment still says RED. One short line,
+        no question, no second helpline block, never doubled.
+        """
+        key_facts = (profile.key_facts if profile else None) or {}
+        if not key_facts.get("urgent_guidance_given") or safety_level != RED:
+            return ""
+        if style.script == "devanagari":
+            line = f"अगर अभी तुरंत ख़तरा हो, तो पहले {EMERGENCY_NUMBER} पर कॉल कीजिए।"
+        elif style.language == "hinglish":
+            line = f"Agar abhi turant khatra ho, to pehle {EMERGENCY_NUMBER} par call kijiye."
+        else:
+            line = f"If you are in immediate danger, call {EMERGENCY_NUMBER} first."
+        return "" if line in (reply or "") else line + "\n\n"
+
+    @staticmethod
+    def _mark_crisis_support_offered(profile: StructuredCaseProfile) -> None:
+        """Record that crisis support was given, and open the document cooldown.
+
+        For a crisis-only case this also closes safety triage. There is no
+        attacker to ask about, so the immediate-danger question will never be
+        answered, and leaving triage open pinned the underlying legal matter at
+        UNDERSTANDING_CASE for the life of the case (CF-4). Documents are held
+        back by the explicit cooling-off window instead (CF-5), not by an
+        unanswerable question. A *mixed* case - self-harm plus a real attacker -
+        still owes the danger answer and is deliberately excluded.
+        """
+        key_facts = profile.key_facts
+        key_facts["crisis_support_offered"] = True
+        key_facts.pop("last_safety_question_group", None)
+        # A later disclosure restarts the window rather than inheriting a spent one.
+        key_facts["turns_since_crisis_support"] = 0
+        if is_crisis_only_case(key_facts):
+            key_facts["safety_triage_complete"] = True
+
+    @staticmethod
+    def _advance_crisis_cooldown(profile: Optional[StructuredCaseProfile]) -> None:
+        """Count one turn of the post-crisis document cooling-off window.
+
+        Incremented only on turns that reach the ordinary legal flow, so the
+        window measures conversation that has moved on, not turns spent inside
+        crisis support.
+        """
+        if profile is None:
+            return
+        key_facts = profile.key_facts
+        if not key_facts.get("crisis_support_offered"):
+            return
+        key_facts["turns_since_crisis_support"] = int(
+            key_facts.get("turns_since_crisis_support") or 0
+        ) + 1
+
+    @staticmethod
+    def _safety_group_exhausted(key_facts: dict[str, Any], group: str) -> bool:
+        asks = key_facts.get("safety_question_asks") or {}
+        return int(asks.get(group, 0)) >= SAFETY_MAX_ASKS_PER_GROUP
+
+    @staticmethod
+    def _record_safety_ask(key_facts: dict[str, Any], group: str) -> None:
+        asks = dict(key_facts.get("safety_question_asks") or {})
+        asks[group] = int(asks.get(group, 0)) + 1
+        key_facts["safety_question_asks"] = asks
+        key_facts["last_safety_question_group"] = group
+
+    @staticmethod
+    def _mark_safety_group_unknown(profile: StructuredCaseProfile, group: str) -> None:
+        """Record an unanswered safety fact as stated-unknown, not as blocking."""
+        stated = list(profile.key_facts.get("stated_unknown_facts") or [])
+        for fact in SAFETY_QUESTION_GROUP_FACTS.get(group, ()):
+            if fact not in stated:
+                stated.append(fact)
+        profile.key_facts["stated_unknown_facts"] = stated
 
     @staticmethod
     def _safety_text(style: LanguageScript, key: str) -> str:
@@ -763,6 +1188,26 @@ class GeminiConversationService:
 
             if metadata.get("confirmed") and not self._same_value(existing, candidate):
                 continue
+            if (
+                not existing_is_empty
+                and not self._same_value(existing, candidate)
+                and (
+                    (definition is not None and definition.value_type == FactValueType.DATE)
+                    or field in DATE_FACT_FIELDS
+                )
+                and same_date_ignoring_year(existing, candidate)
+            ):
+                # H8. The year invariant strips a year the user never wrote,
+                # while the extraction prompt re-asserts the full date on every
+                # later turn. Stored "10 August" vs model "10 August 2026" then
+                # looked like a factual conflict and hijacked every subsequent
+                # turn. It is not a conflict: it is the same date, and the year
+                # has already been ruled on. Let the candidate through and let
+                # `backfill_facts` -> `enforce_date_year_invariant`, which runs
+                # immediately after, re-apply the rule against what the user has
+                # actually written. A year stated later is recovered that way;
+                # one still unstated is stripped again.
+                existing_is_empty = True
             if not existing_is_empty and self._same_value(existing, candidate):
                 unavailable.discard(field)
                 continue
@@ -847,6 +1292,74 @@ class GeminiConversationService:
         if profile.key_facts.get("pending_document_extraction"):
             self.workflow_agent._check_conversation_actions(text, profile)
 
+    # Fields that belong to the case itself rather than to its legal domain, so
+    # they survive a re-classification intact.
+    _PRESERVED_ON_RECLASSIFY = (
+        "case_id", "case_number", "created_at", "key_facts", "fact_metadata",
+        "user_name", "user_city", "user_state", "user_phone",
+        "opposite_party_name", "opposite_party_address", "property_address",
+        "disputed_amount", "incident_date", "vacating_date", "unpaid_months",
+        "transaction_id", "bank_name", "police_station_name",
+        "timeline", "actions_completed", "documents", "deadlines",
+        "language_style", "script_style", "risk_level", "safety_notice",
+    )
+
+    def _maybe_reclassify(
+        self,
+        profile: StructuredCaseProfile,
+        extraction: Any,
+        message: str,
+    ) -> bool:
+        """Upgrade a case that was created before its domain was knowable.
+
+        A conversation that opens with "hi" creates a GENERAL case, and the
+        category was previously fixed at creation - so every later turn's
+        classification was discarded and the case stayed GENERAL forever, with
+        no workflow, no statutes and a placeholder title. Re-classify once the
+        user actually describes the problem.
+        """
+        proposed = domain_registry.normalize_id(extraction.classification.category)
+        if proposed == profile.category or proposed == "GENERAL":
+            return False
+
+        # Only an unclassified case is migrated. Re-routing an established case
+        # would silently discard a workflow the user has already progressed.
+        # A category assigned by safety triage is the exception: nobody chose
+        # POLICE_COMPLAINT, triage imposed it, so it must remain correctable.
+        triage_assigned = profile.key_facts.get("category_source") == "safety_triage"
+        if profile.category != "GENERAL" and not triage_assigned:
+            return False
+
+        # A confident read of a substantive turn, not a stray word in a greeting.
+        if extraction.classification.confidence < 0.5 or len(message.split()) < 3:
+            return False
+
+        fresh = self.workflow_agent._init_case_profile(
+            message, profile.case_id, category_override=proposed
+        )
+        preserved = {field: getattr(profile, field) for field in self._PRESERVED_ON_RECLASSIFY}
+
+        # Adopt the new domain's scaffolding, then restore what the case knows.
+        for field in (
+            "category", "category_display_name", "issue_type", "current_stage_key",
+            "current_stage_label", "evidence_checklist", "legal_journey", "rights_summary",
+        ):
+            setattr(profile, field, getattr(fresh, field))
+        for field, value in preserved.items():
+            setattr(profile, field, value)
+
+        domain = domain_registry.resolve(proposed)
+        profile.issue_type = domain.normalize_issue_type(extraction.classification.issue_type)
+
+        previous_category = "safety_triage" if triage_assigned else "GENERAL"
+        profile.key_facts.pop("category_source", None)
+
+        logger.info(
+            "case_id=%s from=%s to=%s issue_type=%s event=case_reclassified",
+            profile.case_id, previous_category, proposed, profile.issue_type,
+        )
+        return True
+
     def _refresh_workflow(
         self,
         profile: StructuredCaseProfile,
@@ -868,6 +1381,8 @@ class GeminiConversationService:
             safety_state = safety.to_dict()
             if profile.key_facts.get("safety_triage_complete"):
                 safety_state["triage_complete"] = True
+            if profile.key_facts.get("crisis_support_offered"):
+                safety_state["crisis_support_offered"] = True
             profile.safety_status = safety_state
         elif not profile.key_facts.get("safety_triage_complete"):
             profile.safety_status = None
@@ -911,11 +1426,170 @@ class GeminiConversationService:
             "intent": "SYSTEM_SUGGESTED",
         }
 
+    def _document_block_reason(
+        self,
+        profile: Optional[StructuredCaseProfile],
+        safety: Optional[SafetyAssessment],
+    ) -> Optional[str]:
+        """The whole document gate, for every affordance branch.
+
+        `document_routing_allowed` calls itself "the single gate every document
+        recommendation must pass", and was consulted at exactly one site - inside
+        `_refresh_workflow`, and only to suppress the *proactive* recommendation.
+        A user-*requested* document never passed through it, which is C3: W1-03
+        asked for a legal notice on turn 1 and was told "I can prepare this
+        document" with `readiness=UNDERSTANDING_CASE`, no employer name and no
+        amount. Every affordance branch now delegates here.
+
+        Returns `None` (allowed), `"SAFETY"` (not now - crisis or danger) or
+        `"READINESS"` (not yet - the case has not earned it). The two are
+        different refusals and must not share copy: the crisis deferral
+        deliberately names no paperwork at all, which is right after a self-harm
+        disclosure and wrong for a user who simply has not told us enough yet.
+        """
+        if profile is None:
+            return None
+        key_facts = profile.key_facts or {}
+        # Ordered first so the crisis deferral copy keeps winning.
+        if crisis_document_block_active(key_facts):
+            return "SAFETY"
+        if safety is not None and safety.blocks_document_routing and not safety_triage_resolved(key_facts):
+            return "SAFETY"
+        if profile.risk_level == RED or (safety is not None and safety.safety_level == RED):
+            return "SAFETY"
+        if safety is not None and safety.is_safety_case and not key_facts.get("safety_triage_complete"):
+            return "SAFETY"
+        if not document_routing_allowed(profile, safety or SafetyAssessment(), profile.readiness):
+            return "READINESS"
+        return None
+
+    def _document_affordance_blocked(
+        self,
+        profile: Optional[StructuredCaseProfile],
+        safety: Optional[SafetyAssessment],
+    ) -> bool:
+        return self._document_block_reason(profile, safety) is not None
+
+    @staticmethod
+    def _document_deferral_reply(style: LanguageScript) -> str:
+        """Script-matched deferral that names no template and no paperwork."""
+        if style.script == "devanagari":
+            return (
+                "अभी मैं आपकी सुरक्षा और हाल-चाल को पहले रखना चाहता हूँ। "
+                "जब आप थोड़ा बेहतर महसूस करें, हम आपके मामले के औपचारिक क़दमों पर लौट सकते हैं।"
+            )
+        if style.language == "hinglish":
+            return (
+                "Abhi main aapki safety aur haal-chaal ko pehle rakhna chahta hoon. "
+                "Jab aap thoda behtar mehsoos karein, hum aapke maamle ke formal steps par wapas aa sakte hain."
+            )
+        return (
+            "Right now I would rather stay with how you are doing. "
+            "Once things feel a little steadier, we can come back to the formal steps in your case."
+        )
+
+    @staticmethod
+    def _blocking_fact_phrases(profile: StructuredCaseProfile, limit: int = 2) -> list[str]:
+        """Plain-language names for the facts a document is still waiting on.
+
+        Reads `FactDefinition.meaning`, which is the product's own human phrasing
+        ("employer involved", "months or period for which salary is unpaid").
+        The raw key never leaves this function - W1-02 t2 told a user verbatim
+        that it needed "landlord ya property manager ka naam (opposite_party_name)".
+        """
+        definitions = {fact.key: fact for fact in domain_registry.resolve(profile.category).facts}
+        phrases: list[str] = []
+        for key in (profile.intake_missing_facts or []):
+            definition = definitions.get(key)
+            if definition is None or definition.document_only:
+                continue
+            meaning = (definition.meaning or "").strip()
+            if meaning and meaning not in phrases:
+                phrases.append(meaning)
+            if len(phrases) >= limit:
+                break
+        return phrases
+
+    def _document_not_ready_reply(
+        self, profile: StructuredCaseProfile, style: LanguageScript,
+    ) -> str:
+        """"Not yet", which is a different answer from the crisis "not now".
+
+        The crisis deferral names no paperwork on purpose. Here the document is
+        the right idea and the user should be told what it is waiting for, so
+        they can supply it on the next turn instead of being stonewalled.
+        """
+        phrases = self._blocking_fact_phrases(profile)
+        label = profile.recommended_doc_label or profile.document_request and profile.document_request.get("document_type")
+        if style.script == "devanagari":
+            need = " और ".join(phrases)
+            base = "मैं यह दस्तावेज़ तैयार कर सकता हूँ, लेकिन पहले कुछ जानकारी चाहिए।"
+            return f"{base} मुझे {need} बताइए।" if need else f"{base} कृपया अपने मामले के बारे में थोड़ा और बताइए।"
+        if style.language == "hinglish":
+            need = " aur ".join(phrases)
+            base = "Main yeh document taiyar kar sakta hoon, lekin pehle thodi jankari chahiye."
+            return f"{base} Mujhe {need} bata dijiye." if need else f"{base} Apne case ke baare mein thoda aur batayein."
+        need = " and ".join(phrases)
+        base = "I can prepare this document once I know a little more about your case."
+        return f"{base} Tell me {need}, and I will take it from there." if need else (
+            f"{base} Tell me a bit more about what happened, and I will take it from there."
+        )
+
+    def _document_not_ready_response(
+        self, profile: StructuredCaseProfile, message: str, style: LanguageScript,
+        hint: Optional[str] = None,
+    ) -> ChatTurnResponse:
+        """Refuse the affordance, but remember the request so it can resume.
+
+        A user who asked for a notice on turn 1 should get it on the turn it
+        becomes available, without having to ask a second time.
+        """
+        doc_type, _ = resolve_requested_document(message, profile.category, hint)
+        if not doc_type:
+            # "There is no such document for this case" is a more precise and
+            # more useful refusal than "not yet", and it is already implemented.
+            # Readiness has nothing to add to it, so it keeps precedence.
+            return self._document_request_response(profile, message, style, hint=hint)
+        profile.document_request = {
+            "intent": "USER_REQUESTED",
+            "status": "NEEDS_CASE_FACTS",
+            "document_type": doc_type,
+            "blocking_facts": list(profile.intake_missing_facts or [])[:4],
+            "message": message,
+        }
+        return ChatTurnResponse(
+            reply_text=self._document_not_ready_reply(profile, style),
+            case_profile=profile,
+            quick_replies=[],
+            suggested_action=None,
+            message_id=str(uuid.uuid4()),
+        )
+
+    def _document_gate_response(
+        self, profile: StructuredCaseProfile, message: str, style: LanguageScript,
+        reason: str, hint: Optional[str] = None,
+    ) -> ChatTurnResponse:
+        if reason == "READINESS":
+            return self._document_not_ready_response(profile, message, style, hint=hint)
+        return self._document_deferral_response(profile, style)
+
+    def _document_deferral_response(
+        self, profile: StructuredCaseProfile, style: LanguageScript,
+    ) -> ChatTurnResponse:
+        """Refuse a document affordance without parking a request or an action."""
+        return ChatTurnResponse(
+            reply_text=self._document_deferral_reply(style),
+            case_profile=profile,
+            quick_replies=[],
+            suggested_action=None,
+            message_id=str(uuid.uuid4()),
+        )
+
     def _document_request_response(
         self, profile: StructuredCaseProfile, message: str, style: LanguageScript,
         hint: Optional[str] = None,
     ) -> ChatTurnResponse:
-        original_message = profile.document_request.get("message", message) if profile.document_request and profile.document_request.get("status") == "SAFETY_PAUSED" else message
+        original_message = profile.document_request.get("message", message) if profile.document_request and profile.document_request.get("status") in {"SAFETY_PAUSED", "NEEDS_CASE_FACTS"} else message
         doc_type, error = resolve_requested_document(original_message, profile.category, hint)
         if not doc_type:
             profile.document_request = {"intent": "USER_REQUESTED", "status": "BLOCKED", "message": original_message}
@@ -1041,14 +1715,18 @@ class GeminiConversationService:
         workflow_state: Optional[dict[str, Any]] = None,
     ) -> list[dict[str, Any]]:
         query = self._build_rag_query(profile, narrative, workflow_state)
+        # M8: "kind" distinguishes a retrieved statutory provision from a bare Act-name
+        # portal link. Without it the two were formally indistinguishable inside a list
+        # called legal_sources, which is what handed the model the Act name
+        # "Code on Wages, 2019" with nothing to quote from it (finding C2).
         citations = [
-            citation.model_dump(mode="json")
+            {**citation.model_dump(mode="json"), "kind": VERIFIED_PROVISION}
             for citation in statutory_rag.retrieve_for_context(query, limit=4)
         ]
         seen_urls = {item.get("source_url") for item in citations}
         domain = domain_registry.resolve(profile.category)
         for source_model in domain.rag.official_sources:
-            source = source_model.model_dump()
+            source = {**source_model.model_dump(), "kind": OFFICIAL_SOURCE_LINK}
             if source.get("url") not in seen_urls:
                 citations.append(source)
 
@@ -1067,6 +1745,27 @@ class GeminiConversationService:
             len(citations),
         )
         return citations
+
+    @staticmethod
+    def _legal_sources_status(
+        profile: StructuredCaseProfile, legal_sources: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Tell the model, and the guard, what kind of legal backing this turn actually has.
+
+        ``corpus_available`` is False for EMPLOYMENT, CYBER_FRAUD, POLICE_COMPLAINT and
+        GENERAL, which all declare ``corpus_ids=()``: for those domains retrieval returns
+        nothing and no section number in the reply can be verified.
+        ``case_law_available`` is a hard False - ``app/data/`` holds three statute files and
+        no case law anywhere, so every judgment citation is unverifiable by construction.
+        """
+        domain = domain_registry.resolve(profile.category)
+        return {
+            "corpus_available": bool(domain.rag.corpus_ids),
+            "verified_provisions": sum(
+                1 for source in legal_sources if source.get("kind") == VERIFIED_PROVISION
+            ),
+            "case_law_available": False,
+        }
 
     def _compact_case(self, profile: Optional[StructuredCaseProfile]) -> Optional[dict[str, Any]]:
         if profile is None:
@@ -1182,10 +1881,33 @@ class GeminiConversationService:
             if item.sender in {"user", "bot"}
         ]
 
-    def _tag_response(self, response: ChatTurnResponse, mode: str) -> ChatTurnResponse:
+    def _tag_response(
+        self, response: ChatTurnResponse, mode: str, user_message: str = "",
+    ) -> ChatTurnResponse:
+        """The single funnel every return path passes through - including the offline
+        limited_demo path, the 429 rate-limit fallback, the provider-error path, the safety
+        short-circuit, the document gates and the two main.py call sites. The output guard
+        is wired here so it still holds on the degraded paths, where a prompt cannot.
+        """
         response.llm_provider = self.provider.status.provider
         response.llm_model = self.provider.status.model
         response.llm_mode = mode
+        # user_message lets the guard recognise a digit run the user supplied this turn
+        # (an order number, a landlord's phone) and leave it alone. It is passed on the
+        # paths that carry model text; the deterministic composers need no protection
+        # because the guard is a proven no-op on all of them.
+        guarded = guard_reply(response.reply_text, response.case_profile, user_message)
+        if guarded.redactions:
+            # Controlled vocabulary only: rule names, case id, domain. Never the reply
+            # text, the user's message, party names or amounts.
+            logger.warning(
+                "event=response_guard_redacted case_id=%s category=%s mode=%s rules=%s",
+                getattr(response.case_profile, "case_id", None),
+                getattr(response.case_profile, "category", None),
+                mode,
+                ",".join(item.as_log() for item in guarded.redactions),
+            )
+            response.reply_text = guarded.text
         return response
 
     @staticmethod
@@ -1258,6 +1980,13 @@ class GeminiConversationService:
             fact_key = profile_keys.get(document_field, document_field)
             present, value = read_profile_fact(profile, fact_key)
             if not present or value in (None, "", 0, 0.0, []):
+                missing.append(fact_key)
+                continue
+            if fact_key in DATE_FACT_FIELDS and (profile.fact_metadata or {}).get(fact_key, {}).get("year_known") is False:
+                # H8. "July" is a non-empty string, so a year-less date used to
+                # count as present and could be rendered straight into a date
+                # slot on a legal document. A date whose year the user never
+                # stated is not good enough for paperwork; ask for the year.
                 missing.append(fact_key)
         return list(dict.fromkeys(missing))
 

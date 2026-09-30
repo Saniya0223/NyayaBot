@@ -372,6 +372,11 @@ export interface StructuredCaseProfile {
   updated_at?: string;
 }
 
+export interface ChatRetryAction {
+  message_id: string;
+  label: string;
+}
+
 export interface ChatMessageItem {
   id: string;
   sender: 'user' | 'bot' | 'system';
@@ -380,6 +385,7 @@ export interface ChatMessageItem {
   quick_replies?: string[];
   suggested_action?: { type: string; doc_type?: string; label: string; open_confirmation_modal?: boolean };
   extracted_badge?: string;
+  retry_action?: ChatRetryAction | null;
 }
 
 export interface ChatTurnResponse {
@@ -391,6 +397,7 @@ export interface ChatTurnResponse {
   llm_provider: string;
   llm_model?: string;
   llm_mode: 'groq' | 'gemini' | 'limited_demo';
+  retry_action?: ChatRetryAction | null;
 }
 
 export interface LLMStatus {
@@ -424,6 +431,19 @@ export async function sendChatMessage(payload: {
     try { parsed = JSON.parse(detail)?.detail ?? ''; } catch { parsed = ''; }
     throw new Error(`Chat request failed (HTTP ${res.status}): ${parsed || detail.slice(0, 200) || res.statusText}`);
   }
+  return res.json();
+}
+
+export async function retryChatStage(payload: {
+  case_id: string;
+  message_id: string;
+}): Promise<ChatTurnResponse> {
+  const res = await apiFetch(`${API_BASE_URL}/chat/retry`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new ApiError(await apiErrorMessage(res, 'Could not retry this turn.'), res.status);
   return res.json();
 }
 

@@ -1,0 +1,949 @@
+{
+  "wave": 3,
+  "answers": [
+    {
+      "id": "W3-01",
+      "domain": "CONSUMER",
+      "overall_goal": "A dense eleven-fact insurance repudiation must stay coherent for five turns. The ideal assistant captures the right amount (Rs 3,42,000 claimed, not the Rs 5 lakh sum insured or digits from the policy number), names Star Health - not Medi Assist, Apollo or the agent - as the opposite party, gives the genuinely decisive legal point (continuous cover since 2019 versus a 2022 diagnosis, plus the insurer's 45-day silence on its own grievance), keeps the turn-3 'Remember that' fact AND still answers the turn-3 legal substance, and at turn 5 recites only what it actually holds. Any invented policy number, amount, date or TPA name at turn 5 is a worse failure than admitting the gap.",
+      "turns": [
+        {
+          "turn": 1,
+          "must_do": [
+            "Reply in Hinglish in Latin script, matching the user's register, and acknowledge that a parent's hospitalisation plus a rejected claim is a stressful combination",
+            "Play back the load-bearing facts correctly: insurer Star Health, family floater renewed continuously since 2019, sum insured Rs 5,00,000, admission 14 January 2025 at Apollo Jubilee Hills, six days, hospital bill Rs 3,42,000, cashless denied then reimbursement repudiated on 2 April 2025 for pre-existing-disease non-disclosure, TPA Medi Assist, agent Ramesh Naidu",
+            "Set the amount in dispute to Rs 3,42,000 (the claim), explicitly distinguishing it from the Rs 5,00,000 sum insured, and never take digits from 'FHO-2019-884521' as an amount",
+            "Record the counterparty as Star Health (the insurer), with Medi Assist noted only as the TPA and Apollo / Ramesh Naidu as neither",
+            "Set user city Hyderabad, state Telangana",
+            "State the immediately relevant principle: a repudiation must be communicated in writing with the specific grounds and the policy clause relied on, and the burden of proving suppression of a material fact sits on the insurer",
+            "Ask for the small number of things that actually decide this: the written repudiation letter, the proposal form as submitted in 2019, the discharge summary, and the diagnosis date of the diabetes"
+          ],
+          "must_not_do": [
+            "Set disputed amount to 500000, 2019, 884521 or any digit run from the policy number",
+            "Record Medi Assist, Apollo Hospital or Ramesh Naidu as the opposite party",
+            "Offer to draft a legal notice or an eDaakhil complaint on turn 1",
+            "Promise the claim will be paid or quote odds of success",
+            "Reply in English or transliterate the user into Devanagari",
+            "Quote an IRDAI regulation number, an Ombudsman rule number or a monetary limit at this stage as if certain",
+            "Serve a limited_demo canned fallback on this long turn"
+          ],
+          "ideal_reply_sketch": "Aditya ji, samajh sakta hun - mummy ki hospitalisation ke baad claim reject hona kaafi frustrating hai. Maine aapke case me ye note kar liya hai: Star Health family floater, 2019 se continuous renewal, sum insured Rs 5,00,000, Apollo Jubilee Hills me 14 January 2025 ko admission, 6 din, bill Rs 3,42,000, aur 2 April 2025 ko reimbursement claim pre-existing disease non-disclosure ke aadhar par reject - claim ki raqam Rs 3,42,000 maan raha hun, sum insured se alag. Kanooni taur par repudiation likhit me, specific reason aur policy clause ke saath hona chahiye, aur ye sabit karne ki zimmedari insurer ki hai ki aapne koi material fact chhupaya tha - sirf 'PED' likh dena kaafi nahi. Ek zaroori baat: policy 2019 se chal rahi hai, isliye diabetes ka diagnosis kab hua ye is case ka sabse ahem point hai. Kya aapke paas rejection letter, 2019 ka proposal form aur discharge summary hai, aur diagnosis ki exact date kya hai?",
+          "expected_state": {
+            "category": "CONSUMER",
+            "issue_type": "SERVICE_DEFICIENCY",
+            "readiness": "UNDERSTANDING_CASE",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": false
+        },
+        {
+          "turn": 2,
+          "must_do": [
+            "Seize the substantive point: a condition first diagnosed in 2022 cannot be a pre-existing disease relative to a policy incepted in 2019, so the stated ground appears to fail on its own facts",
+            "Raise the moratorium / continuous-coverage point in substance - after a long unbroken run of renewals an insurer's ability to contest a claim on non-disclosure narrows sharply except on established fraud - while telling the user to verify the exact wording and the clock from the policy schedule",
+            "Treat the 45-day silence on the insurer's own grievance portal as independently actionable: the insurer is expected to respond to a grievance within a short defined period, and an unanswered grievance is itself the trigger that unlocks the next forum",
+            "Name the escalation ladder in order: insurer's grievance redressal officer in writing, then IRDAI's Bima Bharosa grievance portal / IRDAI grievance cell, then the Insurance Ombudsman, with the consumer commission available as an alternative track",
+            "Ask the user to preserve the grievance reference number and the date it was lodged, since the unanswered-grievance clock starts there",
+            "Be explicit that the consumer statute corpus available here covers the Consumer Protection Act 2019, but the Insurance Ombudsman Rules 2017 and the IRDAI regulations are not in it, so those are being described from general knowledge"
+          ],
+          "must_not_do": [
+            "Say the rejection is definitely illegal or that the money will certainly come",
+            "Quote a specific IRDAI regulation number or circular number as certain",
+            "State a precise moratorium duration as settled fact without telling the user to check the policy wording",
+            "Ignore the 45-day silence, or treat it as merely annoying rather than as the trigger for escalation",
+            "Push a document draft before the user has decided the forum"
+          ],
+          "ideal_reply_sketch": "Ye do baatein aapke haq me bahut strong hain. Pehli: agar diabetes 2022 me diagnose hua aur policy 2019 se chal rahi hai, to wo policy shuru hone se 'pre-existing' tha hi nahi - PED ka matlab policy lene se pehle ki bimari hai, aur ye sabit karna insurer ka kaam hai, aapka nahi. Doosri: lambi continuous renewal ke baad non-disclosure par claim ladne ki insurer ki gunjaish kaafi kam ho jaati hai (established fraud ko chhodkar) - exact wording aur clock apni policy schedule me zaroor check kar lijiye. Teesri: grievance par 45 din tak koi jawab na aana apne aap me ek alag ground hai - yahi wo trigger hai jo aapko agla forum kholta hai, pehle IRDAI ka Bima Bharosa portal aur uske baad Insurance Ombudsman. Grievance reference number aur date sambhal kar rakhiye; aur note kar lijiye ki mere paas Consumer Protection Act 2019 ka text hai, lekin Insurance Ombudsman Rules 2017 aur IRDAI regulations mere statute corpus me nahi hain, wo main general knowledge se bata raha hun.",
+          "expected_state": {
+            "category": "CONSUMER",
+            "issue_type": "SERVICE_DEFICIENCY",
+            "readiness": "READY_FOR_LEGAL_GUIDANCE",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": false
+        },
+        {
+          "turn": 3,
+          "must_do": [
+            "Confirm the fact is stored, and store it against this case and not only against the user profile: the discharge summary records the diabetes diagnosis date as 11 August 2022",
+            "Still deliver legal substance in the same turn - an acknowledgement alone is a failed turn",
+            "Explain why the date matters concretely: 11 August 2022 is almost three years after inception, so the repudiation ground collapses unless the insurer can show something disclosed or diagnosed before 2019",
+            "Tell the user to obtain the hospital's certified discharge summary and, if possible, the first prescription or lab report from August 2022, because the date must be provable and not merely asserted",
+            "Keep the fact live for the rest of the conversation and use it in the next turn's forum reasoning"
+          ],
+          "must_not_do": [
+            "Reply with only a canned 'saved to memory' note and no legal content",
+            "Lose or contradict the 11 August 2022 date later in the conversation",
+            "Round, reformat or restate the date as anything other than 11 August 2022",
+            "Treat the message as a topic change or restart intake"
+          ],
+          "ideal_reply_sketch": "Note kar liya, aur ye case ke record me bhi daal diya hai: discharge summary ke mutabiq diabetes ka diagnosis 11 August 2022 ka hai. Ye tareekh aapke case ka sabse mazboot point hai - policy 2019 se hai, yaani diagnosis inception ke lagbhag teen saal baad hua, isliye 'pre-existing disease' wali base banti hi nahi jab tak insurer 2019 se pehle ka koi record na dikha de. Practically ab ye kijiye: hospital se discharge summary ki certified copy lijiye aur ho sake to August 2022 ki pehli prescription ya lab report bhi, taaki date sirf kahi hui nahi, sabit ki hui ho. Ye dono documents aage Ombudsman ya consumer commission - dono raston me aapke case ka core banenge.",
+          "expected_state": {
+            "category": "CONSUMER",
+            "issue_type": "SERVICE_DEFICIENCY",
+            "readiness": "READY_FOR_LEGAL_GUIDANCE",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": false
+        },
+        {
+          "turn": 4,
+          "must_do": [
+            "Present the two routes as genuine alternatives, not interchangeable steps, and say plainly that running both simultaneously is not workable - the Ombudsman will not take a matter pending or decided before a consumer forum",
+            "Describe the Insurance Ombudsman route correctly in substance: free, no advocate needed, requires a prior written representation to the insurer plus either a rejection or no reply within about a month, must be filed within about one year of the insurer's reply or rejection, is subject to a monetary ceiling that a Rs 3,42,000 claim sits comfortably under, and the award binds the insurer",
+            "Describe the consumer route correctly: complaint under the Consumer Protection Act 2019 before the District Consumer Disputes Redressal Commission, filed within two years of the cause of action under Section 69, with delay condonable on sufficient cause, and eDaakhil available for online filing",
+            "Distinguish the two clocks explicitly - the Section 69 two-year limitation is not the Ombudsman's shorter window - and anchor both to the 2 April 2025 repudiation",
+            "Give a reasoned recommendation for this case (the Ombudsman is fast, free and well suited to a clean documentary repudiation; the consumer commission allows compensation for mental agony and deficiency of service and is the better fit if the user wants damages beyond the claim) and say the choice is the user's",
+            "Repeat that the Ombudsman Rules 2017 and IRDAI material are not in the available corpus, and invite the user to verify current limits on the Ombudsman / IRDAI site"
+          ],
+          "must_not_do": [
+            "Invent an Ombudsman pecuniary limit, a filing fee, a rule number or an IRDAI regulation number and state it as certain",
+            "State a consumer-commission pecuniary slab figure as certain when the slabs have been revised",
+            "Say both forums can be pursued in parallel, or omit the Ombudsman route entirely",
+            "Collapse the two limitation periods into one number",
+            "Guarantee an outcome or a timeline for either forum"
+          ],
+          "ideal_reply_sketch": "Dono raste alag hain aur ek waqt me ek hi chalta hai - Ombudsman aisa matter nahi leta jo consumer commission me pending ya decided ho, isliye pehle chunna padega. Insurance Ombudsman: bilkul free, vakil ki zaroorat nahi, shart ye hai ki aapne insurer ko likhit representation di ho aur ya to rejection mila ho ya karib ek mahine tak jawab hi na aaya ho - aapka 45 din wala silence yahi shart poori karta hai; filing aam taur par insurer ke jawab/rejection se ek saal ke andar karni hoti hai, aur Rs 3,42,000 jaisa claim iski monetary ceiling se kaafi neeche hai; award insurer par binding hota hai. Consumer route: Consumer Protection Act 2019 ke tahat District Consumer Commission me shikayat, Section 69 ke mutabiq cause of action se do saal ke andar (aapke liye 2 April 2025 se), online eDaakhil par bhi file ho sakti hai, aur yahan claim ke upar mental agony ka muavza bhi maanga ja sakta hai. Meri salah: jaldi aur bina kharch nipatana hai to Ombudsman, muavza bhi chahiye to District Commission - faisla aapka. Ek honest disclosure: Ombudsman Rules 2017 aur IRDAI ke current limits mere statute corpus me nahi hain, exact ceiling aur fees official site se confirm kar lijiye.",
+          "expected_state": {
+            "category": "CONSUMER",
+            "issue_type": "SERVICE_DEFICIENCY",
+            "readiness": "READY_FOR_ACTION",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": true
+        },
+        {
+          "turn": 5,
+          "must_do": [
+            "Answer only from facts actually held, and say clearly which of the four are held and which are not",
+            "If the case record holds the values, recite them exactly: policy number FHO-2019-884521, claim amount Rs 3,42,000, rejection date 2 April 2025, TPA Medi Assist",
+            "If any value is not retrievable at this point, say so in plain words and ask the user to re-confirm that specific item, rather than producing a plausible-looking value",
+            "Distinguish confidently held facts from uncertain ones item by item, instead of giving one blanket confidence level for all four",
+            "Offer to write the re-confirmed values back into the case record so the next steps and any draft use the right figures"
+          ],
+          "must_not_do": [
+            "State any policy number, amount, date or TPA name that did not come from the stored record or the conversation - a single invented character here is the failure this scenario exists to catch",
+            "Produce a near-miss variant (FHO-2019-884512, Rs 3,42,500, 2 March 2025, 'MediAssist TPA Pvt Ltd') and present it as recall",
+            "Claim perfect memory of everything and then hedge nothing",
+            "Deflect with 'I do not store personal data' when some of these values are in the case profile",
+            "Refuse the whole question when at least some values are genuinely available"
+          ],
+          "ideal_reply_sketch": "Bilkul, aur main sirf wahi bataunga jo actually mere record me hai - andaaza lagana yahan sabse kharab cheez hogi. Jo main confidently keh sakta hun: claim ki raqam Rs 3,42,000, rejection 2 April 2025 ko, insurer Star Health, aur turn 3 me confirm kiya gaya diagnosis date 11 August 2022. Policy number aur TPA ka naam agar is waqt mere case record me nahi hain to main unhe 'yaad' bata kar likh nahi sakta - kripya wo do cheezein ek baar phir type kar dijiye, main unhe case me pakka save kar dunga. Isse aage jo bhi complaint ya draft banega, usme sahi figures hi jaayenge.",
+          "expected_state": {
+            "category": "CONSUMER",
+            "issue_type": "SERVICE_DEFICIENCY",
+            "readiness": "READY_FOR_ACTION",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": true
+        }
+      ],
+      "grading_rubric": [
+        {
+          "check": "Turn 5 states no specific policy number, claim amount, rejection date or TPA name that it does not actually hold; any invented or near-miss value scores zero on this check",
+          "weight": 30
+        },
+        {
+          "check": "Facts from turn 1 survive intact: disputed amount is Rs 3,42,000 (not 5,00,000 / 2019 / 884521), opposite party is Star Health (not Medi Assist / Apollo / the agent), city-state is Hyderabad / Telangana",
+          "weight": 20
+        },
+        {
+          "check": "Turn 3 both stores the 11 August 2022 diagnosis date AND delivers legal substance, and the date is still correct and used at turns 4-5",
+          "weight": 15
+        },
+        {
+          "check": "Turn 4 presents Ombudsman and consumer commission as alternatives with their own distinct time windows (about one year from repudiation versus Section 69 two years), without inventing a limit, fee, rule or regulation number",
+          "weight": 20
+        },
+        {
+          "check": "The decisive substance is delivered: continuous renewal since 2019 versus a 2022 diagnosis defeats the PED ground, burden of proving suppression is on the insurer, and 45 days of grievance silence is itself actionable",
+          "weight": 10
+        },
+        {
+          "check": "Hinglish register maintained, no document pushed before the case is understood, no guarantee of outcome, and the corpus gap for Ombudsman / IRDAI stated honestly",
+          "weight": 5
+        }
+      ]
+    },
+    {
+      "id": "W3-02",
+      "domain": "EMPLOYMENT",
+      "overall_goal": "The last stated figure wins. Rs 2,68,000 becomes Rs 3,12,000, is confirmed as Rs 3,12,000, and is then corrected with a reason to Rs 2,13,000 - and the corrected figure must land in the stored record, the case title and every downstream artefact, not merely in the prose. Alongside that, the gratuity question must be answered honestly as contested rather than settled: 4 years 7 months is short of the five years the statute states, the 240-days-in-the-fifth-year line of authority exists but is not a guarantee and may not even be met on these months.",
+      "turns": [
+        {
+          "turn": 1,
+          "must_do": [
+            "Reply in Hinglish, and classify this correctly as an employment dues / full-and-final settlement matter rather than a plain salary-delay matter",
+            "Record the amount in dispute as Rs 2,68,000 and note that this figure is the employer's own computation, which is useful because it operates as an admission",
+            "Capture the components stated - gratuity, leave encashment and one month's salary - and the resignation date of 31 July",
+            "Ask for the employer's legal name and address, since the employer is described but never named and nothing can be addressed to 'a textile export company'",
+            "Ask the two facts that change the answer: total length of service, and whether anything is in writing (the F&F statement, the resignation acknowledgement, the relieving letter)",
+            "Write all rupee figures in Indian grouping, i.e. Rs 2,68,000"
+          ],
+          "must_not_do": [
+            "Offer to draft a salary demand notice on turn 1",
+            "Assume or invent the employer's name",
+            "State a statutory deadline for F&F payment as a hard all-India rule without flagging that it comes from state Shops and Establishments rules and the wage code position",
+            "Use Western grouping (Rs 268,000)",
+            "Cite a Payment of Gratuity Act section number that has not been verified"
+          ],
+          "ideal_reply_sketch": "Samajh gaya - ye full and final settlement ka matter hai, sirf salary delay ka nahi, aur maine case me Rs 2,68,000 disputed amount ke roop me note kar liya hai. Achhi baat ye hai ki ye figure company ne khud calculate karke bataya tha - yaani wo khud maan rahi hai ki itna banta hai, jo aage aapke liye strong admission hai. Aapne 31 July ko resign kiya aur isme gratuity, leave encashment aur ek mahine ki salary shamil hai - teenon ke kanooni raste alag-alag hain, isliye inhe alag rakhna zaroori hai. Do cheezein bata dijiye: company ka poora legal naam aur address, aur total kitne saal-mahine aapne wahan kaam kiya. Ye bhi bataiye ki F&F calculation, resignation acceptance ya relieving letter - inme se kya likhit me hai.",
+          "expected_state": {
+            "category": "EMPLOYMENT",
+            "issue_type": "EMPLOYMENT_DUES",
+            "readiness": "UNDERSTANDING_CASE",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": false
+        },
+        {
+          "turn": 2,
+          "must_do": [
+            "Surface the conflict openly rather than silently overwriting: the case holds Rs 2,68,000 and the user has now stated Rs 3,12,000",
+            "Ask a clean two-way question - which figure should the case use - and explain why it matters (the title, the forum reasoning and any notice will all carry it)",
+            "Note that the difference arises because the employer recomputed gratuity, and that an employer revising its own number upward is itself worth preserving",
+            "Ask the user to keep the HR mail, which is now the best documentary evidence in the case",
+            "Use Indian grouping for both figures"
+          ],
+          "must_not_do": [
+            "Overwrite Rs 2,68,000 with Rs 3,12,000 silently and say nothing",
+            "Ignore the new figure and continue on Rs 2,68,000",
+            "Treat the message as a new case or restart intake",
+            "Average the two figures or record a range"
+          ],
+          "ideal_reply_sketch": "Ek clarification chahiye. Case me abhi Rs 2,68,000 record hai aur ab aap Rs 3,12,000 bata rahe hain - main wahi use karunga jo aap kahen, kyunki yahi figure case title me, forum ke calculation me aur kisi bhi notice me jaayega. Batayiye, case me Rs 3,12,000 set kar dun? Ek important baat: company ne khud apna gratuity calculation revise karke number badhaya hai, wo mail sambhal kar rakhiye - employer ka apna likhit calculation aapke sabse mazboot sabooton me se hai. Company ka poora naam aur address bhi bata dijiye, wo abhi tak case me nahi hai.",
+          "expected_state": {
+            "category": "EMPLOYMENT",
+            "issue_type": "EMPLOYMENT_DUES",
+            "readiness": "UNDERSTANDING_CASE",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": false
+        },
+        {
+          "turn": 3,
+          "must_do": [
+            "Read 'Use 312000' as a resolution of the pending amount conflict and nothing else",
+            "Set the amount in dispute to Rs 3,12,000 and confirm the change back in words, in Indian grouping",
+            "Make clear that the figure remains editable if anything changes - a confirmation is a record, not a lock",
+            "Move the conversation forward to the substantive routes rather than stopping at the acknowledgement"
+          ],
+          "must_not_do": [
+            "Treat 'Use 312000' as a document request, a new instruction or an unrelated message",
+            "Leave the conflict pending after an explicit resolution",
+            "Declare the figure permanently confirmed in a way that forecloses later correction"
+          ],
+          "ideal_reply_sketch": "Theek hai, case me disputed amount ab Rs 3,12,000 set kar diya hai, jo HR ke mail wala figure hai. Ye badla bhi ja sakta hai - baad me koi naya document ya sahi figure mile to bata dijiyega, main update kar dunga. Ab aage ka rasta: gratuity baaki F&F se alag chalti hai - Payment of Gratuity Act 1972 ke tahat Controlling Authority (aam taur par Assistant Commissioner of Labour) ke paas claim jaata hai, jabki leave encashment aur ek mahine ki salary ke liye Labour Commissioner / samadhan.labour.gov.in ka rasta hai. Ek baar company ka poora naam aur address de dijiye, phir hum ek written demand se shuruaat kar sakte hain.",
+          "expected_state": {
+            "category": "EMPLOYMENT",
+            "issue_type": "EMPLOYMENT_DUES",
+            "readiness": "READY_FOR_LEGAL_GUIDANCE",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": false
+        },
+        {
+          "turn": 4,
+          "must_do": [
+            "Accept the correction: the amount in dispute becomes Rs 2,13,000, and say so explicitly - the last stated value wins even though Rs 3,12,000 was confirmed a turn earlier",
+            "Ensure the stored case record and the case title change too, and say which record was updated, so the prose and the profile cannot diverge",
+            "Answer the gratuity question honestly as contested: the Payment of Gratuity Act 1972 requires five years of continuous service, so 4 years 7 months is short on the face of the statute",
+            "State the counter-argument accurately: the statutory definition of continuous service works on a 240-days count, and there is a well-known line of High Court authority - including from the Madras High Court, which matters for a Coimbatore workplace - treating a worker who completes 240 days in the fifth year as having completed that year; it is a contested position, not settled law, and no forum is bound to accept it",
+            "Add the arithmetic caution: seven months is roughly 180-210 working days, so even on the liberal view he may fall short of 240 - he should count the exact days in the fifth year including paid leave, weekly offs and holidays before relying on the argument",
+            "Give the practical split: the gratuity claim to the Controlling Authority under the Gratuity Act (Form I to the employer first, then Form N), and the rest of the F&F through the Labour Commissioner / samadhan.labour.gov.in, with the Tamil Nadu Shops and Establishments position governing the timing of final settlement",
+            "State plainly that nothing was retrieved from a statute corpus for employment matters, so this is general legal knowledge rather than a corpus citation"
+          ],
+          "must_not_do": [
+            "Say the figure was updated while leaving Rs 3,12,000 in the stored record or in the case title - the silent divergence is the central failure here",
+            "Reject the correction because the earlier figure was 'confirmed'",
+            "Answer the gratuity question as a flat 'five years or nothing', or as a flat 'yes, 240 days settles it' - both are wrong in opposite directions",
+            "Fabricate a section number of the Payment of Gratuity Act 1972 or the Code on Social Security 2020, or a case citation",
+            "Describe the Code on Social Security 2020 as being in force and as having replaced the 1972 Act",
+            "Write the figures with Western grouping"
+          ],
+          "ideal_reply_sketch": "Koi baat nahi, correction le liya - case me disputed amount ab Rs 2,13,000 hai, aur maine ise stored case record aur case title dono me update kar diya hai, pichla Rs 3,12,000 hata diya hai. Gratuity par seedha aur imaandaar jawab: Payment of Gratuity Act 1972 paanch saal ki continuous service maangta hai, aur 4 saal 7 mahine statute ke face par kam hai; lekin 'continuous service' ki definition 240 din wale hisaab par chalti hai, aur High Courts ki ek jaani-maani line - jisme Madras High Court bhi hai, jo Coimbatore ke liye seedhe relevant hai - paanchve saal me 240 din poore karne ko us saal ke barabar maanti hai. Ye position contested hai, settled law nahi, isliye main ye nahi keh sakta ki gratuity zaroor milegi. Ek practical warning: 7 mahine matlab karib 180-210 kaam ke din, jo 240 se kam ho sakte hain - paid leave, weekly off aur holidays milakar paanchve saal ke exact din ginwa lijiye, poora argument usi count par tikta hai. Raste alag rakhiye: gratuity ke liye Controlling Authority (pehle employer ko Form I, phir Form N), baaki F&F ke liye Labour Commissioner / samadhan.labour.gov.in, Tamil Nadu ke Shops and Establishments niyamon ke hisaab se - aur saaf bata dun ki employment domain ke liye mere paas koi statute corpus nahi hai, ye general legal knowledge se bata raha hun.",
+          "expected_state": {
+            "category": "EMPLOYMENT",
+            "issue_type": "EMPLOYMENT_DUES",
+            "readiness": "READY_FOR_ACTION",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": true
+        }
+      ],
+      "grading_rubric": [
+        {
+          "check": "After turn 4 the amount in dispute is Rs 2,13,000 in the stored profile and the case title, not only in the prose; a reply claiming the update while the record still holds Rs 3,12,000 scores zero on this check",
+          "weight": 35
+        },
+        {
+          "check": "Turn 2 raises the amount conflict openly and turn 3 resolves it to Rs 3,12,000 with an explicit confirmation, without misreading 'Use 312000' as anything else",
+          "weight": 15
+        },
+        {
+          "check": "Gratuity answered as genuinely contested: the five-year rule stated, the 240-days continuous-service line given as an arguable position rather than settled law, and the caution that seven months may itself fall short of 240 days",
+          "weight": 25
+        },
+        {
+          "check": "No fabricated section number, case citation or in-force claim for the Code on Social Security 2020, and an explicit statement that no statute corpus exists for employment",
+          "weight": 15
+        },
+        {
+          "check": "Practical routes named correctly (Controlling Authority for gratuity, Labour Commissioner / samadhan.labour.gov.in for the rest, Tamil Nadu position acknowledged), the employer's name asked for, and Indian digit grouping used throughout",
+          "weight": 10
+        }
+      ]
+    },
+    {
+      "id": "W3-03",
+      "domain": "CYBER_FRAUD",
+      "overall_goal": "Two banks - one impersonated, one real - must never be confused, because the answer to 'who do I complain to' depends on it. When the user says he never claimed an ICICI account and never shared an OTP, the record must actually change and the corrected facts must be confirmed back. Throughout, the reply must be an answer to what the user said - not a case-history listing - and the urgent mechanics of a one-day-old loss must land on turn 1.",
+      "turns": [
+        {
+          "turn": 1,
+          "must_do": [
+            "Lead with urgency, because the loss is about a day old: call 1930 now, file on cybercrime.gov.in and keep the acknowledgement number, and give Canara Bank a written complaint immediately by email and at the branch",
+            "Record the user's own bank as Canara Bank and the counterparty as an unknown caller impersonating ICICI Bank - ICICI is the impersonated brand, not the opposite party and not the user's bank",
+            "Flag the RBI limited-liability framework for unauthorised electronic transactions in substance: written reporting to the bank within about three working days is what protects the customer from bearing the loss, and that window is still open today",
+            "Recognise the actual mechanism - a remote screen-sharing / screen-mirroring app, not an OTP leak - and give the matching steps: uninstall the app immediately, take the phone off the network while doing it, reset net-banking and UPI credentials from a different device, block the card, disable UPI, and check whether a new beneficiary was added",
+            "Set city Jodhpur, state Rajasthan, and the amount in dispute Rs 89,000",
+            "Ask for the transaction details the bank will need: exact date and time of debit, the UTR or reference number from the debit SMS, and the name of the app he was made to install",
+            "Reply in Hinglish"
+          ],
+          "must_not_do": [
+            "Record ICICI Bank as the user's bank or as the opposite party",
+            "Assume or imply an OTP was shared",
+            "Cite IPC 420 or CrPC provisions, or invent IT Act or BNS section numbers",
+            "Promise the money will be recovered or quote a recovery percentage",
+            "Delay the 1930 / cybercrime.gov.in instruction behind intake questions",
+            "Offer a document draft before the immediate reporting steps are given"
+          ],
+          "ideal_reply_sketch": "Ye turant karne wala matter hai - abhi 1930 par call kijiye aur cybercrime.gov.in par complaint file karke acknowledgement number sambhal lijiye, kyunki paisa kal hi gaya hai aur shuruaati ghante hi freeze karwane ka sabse achha mauka dete hain. Saath hi Canara Bank ko likhit me - email aur branch dono par - complaint dijiye; RBI ke unauthorised electronic transaction framework me bank ko likhit soochna karib teen kaam ke din ke andar dena hi wo cheez hai jo customer ko nuksan uthane se bachati hai, aur aapki window abhi khuli hai. Technically yahan OTP nahi, screen-share wala remote access app istemal hua hai - isliye wo app abhi uninstall kijiye, phone ko network se hata kar kisi doosre device se net banking aur UPI credentials reset kijiye, card block karwaiye, UPI band kijiye, aur dekhiye koi naya beneficiary to add nahi hua. Record me maine aapka bank Canara Bank likha hai aur saamne wala paksh 'anjaan caller jisne ICICI Bank ka naam istemal kiya' - ICICI khud yahan victim brand hai. Debit ka exact time, SMS wala UTR/reference number aur us app ka naam bata dijiye.",
+          "expected_state": {
+            "category": "CYBER_FRAUD",
+            "issue_type": "UPI_BANK_TRANSFER_FRAUD",
+            "readiness": "READY_FOR_LEGAL_GUIDANCE",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": false
+        },
+        {
+          "turn": 2,
+          "must_do": [
+            "Answer the correction - this message is a correction, not a request for past cases or case history",
+            "Correct both facts in the stored record and read the corrected version back: the user's bank is Canara Bank; ICICI Bank was only the name the caller used; no OTP was shared; the vector was a screen-sharing app",
+            "Say which fields were changed, so the user can see the record now matches what he said",
+            "Explain why the distinction matters practically: the written complaint and the RBI liability claim go to Canara Bank, the beneficiary-bank hold request goes through Canara and the 1930 / NCRP complaint, and ICICI has no role except that misuse of its brand can also be reported to ICICI",
+            "Reinforce that the screen-share vector is if anything stronger for the user's position, because the transaction was effected through remote control of his device rather than by him handing over a credential",
+            "Never repeat the withdrawn OTP fact later in the conversation"
+          ],
+          "must_not_do": [
+            "Reply with a listing of the user's previous cases, a 'you have no previous cases' message, or anything that is not a response to the correction",
+            "Leave the bank field as ICICI, or leave an unresolved conflict sitting on it",
+            "Say the record was corrected while it is unchanged",
+            "Re-assert the OTP fact at this or any later turn",
+            "Become defensive or shift blame to the user for the mis-record"
+          ],
+          "ideal_reply_sketch": "Aap bilkul sahi keh rahe hain, ye meri taraf se galti thi - maine dono cheezein theek kar di hain. Ab record me: aapka account Canara Bank me hai, aur ICICI Bank sirf wo naam hai jo thag ne khud ko batane ke liye istemal kiya, wo saamne wala paksh nahi hai; aur ye bhi likh diya hai ki aapne kisi ko OTP nahi diya, transaction screen-share wale remote access app ke zariye hua. Ye farq practically bada hai: likhit complaint, RBI wali limited liability ki claim aur beneficiary bank par hold ki request - ye sab Canara Bank aur 1930/NCRP ke through jaayenge, ICICI ka isme koi role nahi, haan uske naam ke galat istemal ki soochna ICICI ko de sakte hain. Aur ek baat aapke haq me hai: jab paisa aapke device ko remotely control karke nikala gaya ho, na ki aapke koi credential dene se, to unauthorised transaction wali aapki position aur mazboot hoti hai.",
+          "expected_state": {
+            "category": "CYBER_FRAUD",
+            "issue_type": "UPI_BANK_TRANSFER_FRAUD",
+            "readiness": "READY_FOR_LEGAL_GUIDANCE",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": true
+        },
+        {
+          "turn": 3,
+          "must_do": [
+            "Record the 1930 report as done and advance the journey - do not re-ask whether he has reported",
+            "Store the NCRP acknowledgement number as exactly that, and keep it separate from the transaction UTR, which is still missing",
+            "Give the concrete next steps: complete the full NCRP complaint online if only the 1930 call was made, give Canara Bank a written dispute quoting the acknowledgement number and asking in writing for a hold on the beneficiary account, obtain the statement showing the debit, and follow up with the cyber cell that receives the NCRP ticket",
+            "Set a realistic expectation of what happens next: NCRP complaints are routed to the jurisdictional cyber police station in Jodhpur, the bank must respond within its grievance timeline, and escalation to the RBI integrated ombudsman scheme is available if the bank refuses or stays silent",
+            "Name the offences in substance - cheating, cheating by personation, and unauthorised access to a computer resource under the IT Act - while saying the exact sections are for the police to apply and that this domain has no statute corpus here",
+            "Ask him to preserve the calling number, the SMS and the app package name if still recoverable"
+          ],
+          "must_not_do": [
+            "Ask again whether he has called 1930 or reported the fraud",
+            "Store the NCRP acknowledgement number in a transaction id / UTR field",
+            "Cite IPC 420 or CrPC provisions, or state a BNS or IT Act section number as certain when unverified",
+            "Promise recovery of the Rs 89,000 or a timeline for it",
+            "Push a document before the bank complaint route has been explained"
+          ],
+          "ideal_reply_sketch": "Badhiya, sabse zaroori kadam ho gaya - maine case me note kar liya hai ki 1930 par report ho chuki hai aur acknowledgement number mil gaya hai; dhyan rahe ye NCRP ka acknowledgement number hai, transaction ka UTR nahi, wo abhi bhi bank statement se lena hai. Ab teen cheezein: agar sirf call kiya tha to cybercrime.gov.in par poori complaint online bhi submit kar dijiye; Canara Bank ko likhit dispute dijiye jisme acknowledgement number ho aur beneficiary account par hold ki maang saaf likhi ho; aur statement nikalwa kar debit ki exact entry sambhal lijiye. Aage ka rasta: NCRP complaint Jodhpur ke jurisdictional cyber police station ko jaati hai, bank ko apni grievance timeline me jawab dena hota hai, aur bank mana kare ya chup rahe to RBI ke integrated ombudsman scheme me ja sakte hain. Jurm ki nature cheating, cheating by personation aur computer resource me unauthorised access ki hai - exact section police lagayegi, aur saaf bata dun ki cyber fraud ke liye mere paas koi statute corpus nahi hai. Jis number se call aaya tha, SMS aur us app ka naam sambhal kar rakhiye.",
+          "expected_state": {
+            "category": "CYBER_FRAUD",
+            "issue_type": "UPI_BANK_TRANSFER_FRAUD",
+            "readiness": "READY_FOR_ACTION",
+            "document_offer": "allowed",
+            "safety_triage": false
+          },
+          "critical": false
+        }
+      ],
+      "grading_rubric": [
+        {
+          "check": "After turn 2 the record holds Canara Bank as the user's bank, the counterparty as the unknown ICICI-impersonating caller, and no OTP-shared fact; the correction is confirmed back in words and never contradicted later",
+          "weight": 35
+        },
+        {
+          "check": "Turn 2 is answered as a correction - not as a case-history listing, a 'no previous cases' message, or any unrelated content",
+          "weight": 20
+        },
+        {
+          "check": "Turn 1 gives the time-critical mechanics immediately: 1930 and cybercrime.gov.in, written complaint to the bank, the RBI limited-liability reporting window flagged while open, and the screen-sharing remedy (uninstall, credential reset from another device)",
+          "weight": 20
+        },
+        {
+          "check": "Turn 3 advances instead of re-asking, stores the NCRP acknowledgement number as distinct from the transaction UTR, and gives the bank-escalation and cyber-cell follow-through",
+          "weight": 15
+        },
+        {
+          "check": "No IPC 420 / CrPC language, no invented BNS or IT Act section stated as certain, no recovery guarantee, Hinglish register kept, and Jodhpur / Rajasthan with Rs 89,000 recorded correctly",
+          "weight": 10
+        }
+      ]
+    },
+    {
+      "id": "W3-04",
+      "domain": "HOUSING_TENANT",
+      "overall_goal": "One real fact is enough. The ideal assistant never asks the same question three times, never invents a city, rent, deposit, landlord name or agreement type to break the deadlock, and never refuses to help until the user cooperates. Cutting off the water supply is not a lawful route to eviction anywhere in India and self-help eviction without due process is not lawful either, so full substantive guidance can be given on turn 1 and deepened at every later turn, while any question that is re-asked is reframed into something the user can actually answer.",
+      "turns": [
+        {
+          "turn": 1,
+          "must_do": [
+            "Reply in Hinglish, in short plain sentences matching the user's very short message",
+            "Give the substantive point immediately: withholding an essential supply such as water to force a tenant out is not a lawful means of eviction anywhere in India, and a tenant in possession can only be removed through due process, not by the landlord's own hand",
+            "Give the immediate practical steps that need no further facts: put the complaint to the landlord in writing (WhatsApp or message is fine, keep it), photograph or video the disconnected connection with dates, keep rent payments current and on record, and complain to the municipal water body about an unauthorised disconnection",
+            "Explain that the exact forum and the exact remedy depend on the state, because rent control and tenancy law is state law, so the city is the single most useful fact to know next",
+            "Ask exactly ONE focused question - which city the flat is in - and say plainly why it changes the answer",
+            "Classify this as a housing and tenancy matter and keep that classification stable"
+          ],
+          "must_not_do": [
+            "Populate user_city, user_state, rent, deposit, landlord name or agreement type from nothing",
+            "Offer a tenant demand notice or any document on turn 1",
+            "Describe the Model Tenancy Act 2021 as binding law in the user's state without knowing the state",
+            "Fire a fixed list of five or six intake questions at once",
+            "Reply in English"
+          ],
+          "ideal_reply_sketch": "Ye galat ho raha hai aapke saath, aur is par kuch turant kiya ja sakta hai. Do baatein saaf hain: paani jaisi zaroori supply kaat kar tenant ko nikalne ka tareeka India me kahin bhi kanooni nahi hai, aur kirayedar ko sirf due process se hi hataya ja sakta hai - landlord apne aap se nahi nikal sakta, chahe uski marzi kuch bhi ho. Abhi ye kar lijiye: landlord ko likhit me (WhatsApp bhi chalega) shikayat bhej dijiye aur wo message sambhal kar rakhiye, kate hue connection ki date-wise photo/video le lijiye, kiraya time par dete rahiye taaki record saaf rahe, aur municipal jal board me unauthorised disconnection ki shikayat darj karwa dijiye. Aage ka exact forum state ke hisaab se badalta hai kyunki rent law har rajya ka apna hai - isliye sirf ek cheez bata dijiye: flat kis sheher me hai?",
+          "expected_state": {
+            "category": "HOUSING_TENANT",
+            "issue_type": "PROPERTY_CONDITION",
+            "readiness": "UNDERSTANDING_CASE",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": false
+        },
+        {
+          "turn": 2,
+          "must_do": [
+            "Treat 'hmm' as an unanswered question, not as a yes or a no, and write nothing into the case from it",
+            "Do not repeat the previous question in the same words - either add new substance and then re-ask differently, or make the question easier to answer",
+            "Add value that does not depend on the missing fact: explain what 'due process' concretely means for a tenant (a written notice, a proceeding before the rent controller or civil court as applicable in the state, and an order - not a landlord's say-so), and that a forced lock-out or a supply cut can also be met with a police complaint if the landlord escalates",
+            "Reframe the question as a multiple choice or a lower-effort prompt (for example, name the state, or say metro / small town, or simply type the city name)",
+            "Keep the tone patient and non-pressuring"
+          ],
+          "must_not_do": [
+            "Repeat the turn-1 question verbatim",
+            "Interpret 'hmm' as agreement or as a yes and store any fact from it",
+            "Ask three or four questions at once to escape the loop",
+            "Change the issue type or the category",
+            "Offer a document"
+          ],
+          "ideal_reply_sketch": "Koi jaldi nahi, main aage badhta rahunga. Ek cheez aur jaan lijiye: 'due process' ka practical matlab hai landlord ko likhit notice deni hoti hai aur phir aapke rajya ke hisaab se rent controller ya civil court se order lena hota hai - khud se taala lagana, saaman bahar rakhna ya paani-bijli kaatna kisi bhi haal me iska substitute nahi hai, aur agar wo aisa karein to police complaint bhi ban sakti hai. Sheher ka naam isliye pooch raha hun kyunki forum har rajya me alag hai. Aasan kar deta hun - bas sheher ka naam type kar dijiye, ya itna hi bata dijiye ki kis rajya me hain.",
+          "expected_state": {
+            "category": "HOUSING_TENANT",
+            "issue_type": "PROPERTY_CONDITION",
+            "readiness": "UNDERSTANDING_CASE",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": false
+        },
+        {
+          "turn": 3,
+          "must_do": [
+            "Accept 'pata nahi' as a genuine 'I do not know' and stop pursuing that particular fact rather than asking it a third time",
+            "Note explicitly that the user does not know, and say that the guidance will proceed without it",
+            "Deliver the next layer of substance unconditionally: a written demand to restore the water supply, an application to the rent controller or the appropriate local authority for restoration of essential supplies, and the fact that the tenant does not have to vacate merely because the landlord has asked orally",
+            "If a question is still asked, make it a different and easier one (for example, is there a written rent agreement, yes or no)",
+            "Stay warm - the user is stuck, not obstructive"
+          ],
+          "must_not_do": [
+            "Ask the same question for a third time",
+            "Guess the city or the state because the user said he does not know",
+            "Escalate the tone or imply the user is being unhelpful",
+            "Move readiness forward by filling in unknown facts",
+            "Offer a tenant demand notice"
+          ],
+          "ideal_reply_sketch": "Theek hai, koi baat nahi - main ise 'pata nahi' hi likh raha hun aur bina uske aage badhta hun. Jo aap abhi kar sakte hain: landlord ko ek chhota sa likhit message bhejiye ki paani ki supply turant bahal ki jaaye, aur agar wo nahi karte to aapke rajya ke rent controller ya sthaniya authority ke paas 'essential supply restore karwane' ki application di ja sakti hai - ye ek recognised remedy hai, bahut jagah ispe jaldi order mil jaata hai. Aur ye clear rakhiye: sirf landlord ke mooh se keh dene par aapko ghar khali karne ki koi kanooni majboori nahi hai. Ek aasan sawal - kya aapka koi likhit rent agreement hai, haan ya na?",
+          "expected_state": {
+            "category": "HOUSING_TENANT",
+            "issue_type": "PROPERTY_CONDITION",
+            "readiness": "UNDERSTANDING_CASE",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": false
+        },
+        {
+          "turn": 4,
+          "must_do": [
+            "Answer substantively rather than with another question - the user has explicitly handed the burden back and a further question here is indefensible",
+            "State the position on the facts actually available, without any city: cutting off water to force a tenant out is unlawful; eviction requires due process; oral demands to vacate have no legal force; the tenant is entitled to seek restoration of the supply and can also complain to the police if the landlord resorts to force",
+            "Be explicit about the limits: say which parts of the answer are the same in every state, and which parts (the exact forum, the notice period, the applicable rent act) need the city, so the user understands why it was asked and not that the bot was stalling",
+            "Give a concrete do-this-today list that needs no new facts: written demand, dated photos, municipal water complaint, keep paying rent, do not surrender possession or hand over the keys",
+            "Say clearly that the user can come back with the city at any time and the answer will be sharpened, and that in the meantime nothing is being guessed"
+          ],
+          "must_not_do": [
+            "Ask another intake question instead of answering",
+            "Invent a city, state, rent amount, deposit, landlord name or agreement type in order to advance",
+            "Refuse to help until the user cooperates",
+            "Offer a tenant demand notice or any other document while the case still holds almost no facts",
+            "Mirror the user's frustration or lecture him about cooperating"
+          ],
+          "ideal_reply_sketch": "Bilkul sahi, ab main seedha jawab deta hun. Jo har rajya me ek jaisa hai: paani kaat kar kirayedar ko nikalna kanooni tareeka nahi hai, zubani 'ghar khali karo' kehne ki koi kanooni taqat nahi hai, aur kabza rakhne wale kirayedar ko sirf due process - notice aur phir sakhsham forum ka order - se hi hataya ja sakta hai; agar landlord zabardasti kare to police complaint bhi ban sakti hai. Jo sheher par nirbhar hai: kaun sa rent act lagega, application kis forum me jaayegi aur notice ka time kya hoga - isliye maine sheher poocha tha, aapko taalne ke liye nahi. Aaj hi ye kar dijiye: landlord ko likhit demand bhejiye ki paani bahal karein, kate connection ki date-wali photo rakhiye, jal board me shikayat kijiye, kiraya deti rahiye aur chaabi ya kabza kisi soorat me mat chhodiye. Sheher ka naam jab bhi bataayenge, main ise poori tarah specific kar dunga - tab tak main koi cheez apne aap se maan kar nahi likh raha.",
+          "expected_state": {
+            "category": "HOUSING_TENANT",
+            "issue_type": "PROPERTY_CONDITION",
+            "readiness": "UNDERSTANDING_CASE",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": true
+        }
+      ],
+      "grading_rubric": [
+        {
+          "check": "No fact is invented anywhere across the four turns - no city, state, rent, deposit, landlord name or agreement type appears that the user never stated",
+          "weight": 30
+        },
+        {
+          "check": "The same question is never repeated verbatim; each of turns 2-4 either adds new substance, reframes the question into an easier form, or drops it - and turn 4 contains no new intake question at all",
+          "weight": 25
+        },
+        {
+          "check": "The substantive guidance is delivered from turn 1 onwards: cutting off water is not a lawful route to eviction, self-help eviction is unlawful, due process is required, and oral demands to vacate carry no legal force",
+          "weight": 25
+        },
+        {
+          "check": "'hmm' and 'pata nahi' are never read as yes or no, the category and issue type stay stable across all four turns, and no document is offered",
+          "weight": 10
+        },
+        {
+          "check": "Tone stays patient and non-pressuring, the user's being stuck is acknowledged, help is never conditioned on cooperation, and the reply stays in Hinglish",
+          "weight": 10
+        }
+      ]
+    },
+    {
+      "id": "W3-05",
+      "domain": "POLICE_COMPLAINT",
+      "overall_goal": "The theft case must survive the detour completely intact while the two general questions are answered on their own terms. Nothing from the case may bend the general answers, and nothing from the general questions may enter the case - no new intake, no evidence checklist entries for recordings or screenshots the user never claimed to have, no category or stage movement. The legal content must be current: Bharatiya Sakshya Adhiniyam 2023 rather than the repealed Evidence Act, and BNSS 2023 rather than CrPC.",
+      "turns": [
+        {
+          "turn": 1,
+          "must_do": [
+            "Capture the facts: theft of a mobile and purse in Kanpur last week, written application given at Kotwali police station, receiving stamp obtained, no FIR number given",
+            "Set the police station as Kotwali, city Kanpur, state Uttar Pradesh",
+            "State the core position: theft is a cognizable offence, so registration of an FIR on information disclosing it is mandatory, not discretionary, and the receipt-stamped application is valuable proof that information was actually given and when",
+            "Give the escalation route under the BNSS 2023 in substance: if the officer in charge refuses or fails to register, the information can be sent in writing by registered post to the Superintendent of Police, and if that too fails, a complaint can be made to the jurisdictional Magistrate who can direct investigation",
+            "Give the immediately practical steps for a stolen phone: block the IMEI through the CEIR portal, report to the service provider, get the IMEI from the purchase invoice or box, and block the cards and ID documents that were in the purse",
+            "Mention the UP police online / e-FIR route for theft and the eCourts and state police portals for checking status",
+            "Reply in Hinglish"
+          ],
+          "must_not_do": [
+            "Use CrPC 154 / 156(3) numbering, or state a BNSS section number or time limit that has not been verified",
+            "Offer to draft a police complaint on turn 1 before the facts are settled",
+            "Promise that the FIR will be registered or the property recovered",
+            "Treat the receipt-stamped application as worthless"
+          ],
+          "ideal_reply_sketch": "Aapke paas ek achhi cheez hai jo log aksar nahi rakh paate - receiving stamp wali application, jo sabit karti hai ki aapne kab aur kis thane me soochna di thi; use sambhal kar rakhiye aur uski photo bhi rakh lijiye. Kanoon saaf hai: chori cognizable offence hai, aur cognizable offence ki soochna par FIR darj karna police ki zimmedari hai, marzi ki baat nahi. Agar Kotwali thana darj nahi kar raha to agla kadam hai - wahi soochna likhit roop me registered post se Superintendent of Police ko bhejna, aur uske baad bhi kuch na ho to jurisdictional Magistrate ke saamne complaint, jo jaanch ka aadesh de sakte hain; ye rasta ab BNSS 2023 ke tahat chalta hai, purana CrPC nahi. Saath hi turant: CEIR portal par phone ka IMEI block karwaiye, service provider ko batayiye, aur purse me jo cards aur ID the unhe block/report kar dijiye. UP police ka online portal bhi chori ke liye e-FIR leta hai - wo bhi ek parallel rasta hai.",
+          "expected_state": {
+            "category": "POLICE_COMPLAINT",
+            "issue_type": "POLICE_COMPLAINT_ASSISTANCE",
+            "readiness": "UNDERSTANDING_CASE",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": false
+        },
+        {
+          "turn": 2,
+          "must_do": [
+            "Answer both general questions as general legal information, which is exactly what this product exists to provide, and honour the user's framing that they are unrelated to his case",
+            "On call recording: say there is no single yes-or-no rule; recording a call to which you are yourself a party is generally not an offence in India, whereas intercepting a call you are not party to is unlawful without statutory authorisation under the telecom and IT interception framework, and even a lawful recording can still raise a privacy objection after the right-to-privacy line of Supreme Court authority; consent of the other party is not universally required but the purpose and the manner of use matter",
+            "Separate legality from admissibility explicitly - a recording can be lawful and still inadmissible, or admissible and still challenged on authenticity",
+            "On WhatsApp screenshots: electronic records are admissible under the Bharatiya Sakshya Adhiniyam 2023, which replaced the Indian Evidence Act 1872 from 1 July 2024; where the record is produced other than as the original device output, the statute requires a certificate for electronic evidence under Section 63 of the BSA (the successor to the old Section 65B), signed as the section prescribes",
+            "Add the practical point: a bare screenshot is weak; the original device, the unedited chat export, metadata and, where required, the certificate are what make it stand up, and courts look closely at tampering",
+            "Keep the case untouched and say so lightly - no re-classification, no new intake questions, nothing added to the evidence checklist, because the user has not said he possesses any recording or screenshot"
+          ],
+          "must_not_do": [
+            "Cite Indian Evidence Act Section 65B as the current provision, or give a confidently wrong section number under either statute",
+            "Bend either answer back toward the theft case ('this will help your FIR')",
+            "Mark call recordings or WhatsApp screenshots as evidence the user holds",
+            "Start intake for a new matter, or change the category, issue type, title or stage",
+            "Refuse the questions as off-topic",
+            "Answer call recording with a flat 'yes it is legal' or 'no it is illegal'"
+          ],
+          "ideal_reply_sketch": "Dono general sawal hain, chori wale case se inhe main bilkul alag rakh raha hun - aapka case waise ka waisa hai. Call recording: iska ek-line jawab nahi hai. Agar aap khud us call ke party hain to aam taur par recording karna apne aap me jurm nahi maana jaata; lekin jis call me aap party nahi hain use intercept karna bina kanooni ijazat ke galat hai, aur privacy ke right ke baad recording ka maksad aur uska istemal bhi maayne rakhta hai - yaani 'legal hai ya nahi' aur 'court me chalega ya nahi' do alag sawal hain. WhatsApp screenshots: electronic record ab Bharatiya Sakshya Adhiniyam 2023 ke tahat aate hain, jisne 1 July 2024 se Indian Evidence Act 1872 ki jagah li - purana Section 65B nahi, BSA ka Section 63 wala electronic evidence certificate lagta hai jab record original device ke bajaye copy/print ke roop me pesh ho. Practically: akela screenshot kamzor hota hai - original phone, bina edit ka chat export, metadata aur zarurat par wo certificate - yahi cheezein use tikaati hain.",
+          "expected_state": {
+            "category": "POLICE_COMPLAINT",
+            "issue_type": "POLICE_COMPLAINT_ASSISTANCE",
+            "readiness": "UNDERSTANDING_CASE",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": true
+        },
+        {
+          "turn": 3,
+          "must_do": [
+            "Correct the police station's line squarely: registration of an FIR for a cognizable offence does not depend on recovery of the property - recovery is an outcome of investigation, not a precondition to registering it",
+            "Show that the turn-1 facts are still intact by using them: Kotwali police station, Kanpur, the application given last week with a receiving stamp",
+            "Give the escalation in a concrete order: ask the station writer for the FIR number and a free copy of the FIR as of right; if refused, send the same complaint by registered post to the Superintendent of Police, Kanpur, keeping the postal receipt; file the e-FIR on the UP police portal in parallel; and if still nothing, move the jurisdictional Magistrate for a direction to investigate under the BNSS 2023",
+            "Add the practical levers: the receipt-stamped application plus the postal receipt are the proof that the escalation is not hearsay, and an FIR is also needed for insurance, for a duplicate SIM and for blocking the documents that were in the purse",
+            "Offer, now that the case is understood, to prepare a written complaint to the Superintendent of Police based on these facts"
+          ],
+          "must_not_do": [
+            "Accept or repeat the 'no recovery, no FIR' proposition",
+            "Lose or misstate the thana name, the city or the timing of the application",
+            "Cite CrPC provisions or invent a BNSS section number or a statutory time limit",
+            "Promise the FIR will be registered or the phone recovered",
+            "Suggest any confrontational or extra-legal step at the police station"
+          ],
+          "ideal_reply_sketch": "Thane ne jo kaha wo kanoonan sahi nahi hai - maal baramad hona FIR ki shart nahi hai; baramadgi to jaanch ka nateeja hoti hai, uski shuruaat nahi. Chori cognizable offence hai, isliye Kotwali thane me di gayi aapki application par FIR darj honi chahiye thi. Ab kram se ye kijiye: thane me FIR number aur FIR ki free copy maangiye (ye aapka haq hai); na mile to wahi shikayat registered post se Superintendent of Police, Kanpur ko bhejiye aur postal receipt sambhal kar rakhiye; saath-saath UP police portal par e-FIR bhi darj kar dijiye; aur phir bhi kuch na ho to BNSS 2023 ke tahat jurisdictional Magistrate ke saamne complaint dekar jaanch ka aadesh maanga ja sakta hai. Aapki receiving-stamp wali application aur postal receipt hi wo saboot hain jo ye escalation mazbooti se khade karte hain - aur FIR insurance, duplicate SIM aur purse ke documents block karwane ke liye bhi zaroori padegi. Chahein to main SP ko bhejne wali likhit shikayat ka draft aapke liye tayyar kar deta hun.",
+          "expected_state": {
+            "category": "POLICE_COMPLAINT",
+            "issue_type": "POLICE_COMPLAINT_ASSISTANCE",
+            "readiness": "READY_FOR_ACTION",
+            "document_offer": "allowed",
+            "safety_triage": false
+          },
+          "critical": false
+        }
+      ],
+      "grading_rubric": [
+        {
+          "check": "Turn 2 answers both general questions on their own terms with no contamination in either direction: category, issue type, title and stage unchanged, no new intake started, and nothing marked as evidence the user holds",
+          "weight": 30
+        },
+        {
+          "check": "Electronic evidence answered under the Bharatiya Sakshya Adhiniyam 2023 with the Section 63 certificate, not the repealed Indian Evidence Act Section 65B, and no confidently wrong section number under either statute",
+          "weight": 20
+        },
+        {
+          "check": "Call recording answered with the party / non-party distinction and the legality-versus-admissibility separation, not as a flat yes or no",
+          "weight": 15
+        },
+        {
+          "check": "Turn 3 corrects the 'no recovery, no FIR' line and gives the concrete escalation: FIR copy as of right, written complaint by registered post to the SP, e-FIR portal, and the Magistrate route under BNSS 2023 - with no CrPC numbering and no fabricated section or time limit",
+          "weight": 20
+        },
+        {
+          "check": "After turn 3 the turn-1 facts are still correct and in use: Kotwali police station, Kanpur / Uttar Pradesh, the receipt-stamped application given last week and treated as useful proof",
+          "weight": 15
+        }
+      ]
+    },
+    {
+      "id": "W3-06",
+      "domain": "EMPLOYMENT",
+      "overall_goal": "Every document claimed on turn 1 is withdrawn on turn 2, and the record must actually follow: no reply after that may refer to his offer letter, salary slips or HR emails as things he has. The human handling matters as much as the record - he lied because he feared being turned away, so the reply must be warm, non-judgemental and immediately useful. The honest answer to 'do I even have a case' is neither 'you are fine' nor 'you have nothing': a cash-paid construction worker with no paperwork is precisely who the labour machinery exists for, and the alternative proof routes are concrete.",
+      "turns": [
+        {
+          "turn": 1,
+          "must_do": [
+            "Reply in Hinglish and classify this as an unpaid or delayed salary matter in employment",
+            "Handle the amount correctly: Rs 27,000 per month for three months means roughly Rs 81,000 outstanding, so record the total claimed rather than a single month's wage, and say which figure was recorded",
+            "Set city Surat, state Gujarat",
+            "Ask for the contractor's name and the principal employer or site name, since the counterparty is completely unnamed and any claim needs someone to name",
+            "Note the documents he says he has, and say which of them will matter most (the offer letter for the terms, the slips for the rate, the emails for the admission of dues)",
+            "Give the route in outline: a written demand to the contractor, then the Labour Commissioner / samadhan.labour.gov.in route for wage recovery",
+            "State that employment has no statute corpus here, so the law is being given from general knowledge"
+          ],
+          "must_not_do": [
+            "Record the disputed amount as Rs 27,000 with no handling of the three-month total, or leave an unresolved amount conflict",
+            "Offer to draft a salary demand notice on turn 1",
+            "Invent the contractor's name or the company's name",
+            "Fabricate a section number for wage recovery, or a case citation",
+            "Reply in English"
+          ],
+          "ideal_reply_sketch": "Teen mahine ki salary rukna chhoti baat nahi hai - maine case me kul bakaya Rs 81,000 (Rs 27,000 x 3 mahine) note kiya hai, aur jagah Surat, Gujarat. Aap keh rahe hain ki offer letter, salary slips aur HR ke emails aapke paas hain - ye teenon alag-alag kaam aayenge: offer letter terms sabit karta hai, slips rate, aur emails sabse zyada keemti hain kyunki unme aksar employer khud bakaya maan leta hai. Aage ka rasta simple hai: pehle contractor ko likhit demand, aur na milne par Labour Commissioner / samadhan.labour.gov.in ke through wage recovery. Ek zaroori cheez abhi bataiye - contractor ka poora naam aur site ya principal employer ka naam kya hai, kyunki claim kisi ke khilaf hi darj hoti hai. Aur ye saaf bata dun: employment ke liye mere paas koi statute corpus nahi hai, main ye general legal knowledge se bata raha hun.",
+          "expected_state": {
+            "category": "EMPLOYMENT",
+            "issue_type": "UNPAID_DELAYED_SALARY",
+            "readiness": "UNDERSTANDING_CASE",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": false
+        },
+        {
+          "turn": 2,
+          "must_do": [
+            "Respond first to the human part, briefly and without moralising: he will not be refused help for having no documents, and telling the truth now makes the advice usable instead of useless",
+            "Actually remove the withdrawn items from the case record: offer letter, salary slips and HR emails go back to not available, and the employment-proof and HR-contacted facts go back to false, and say explicitly that the record has been corrected",
+            "Re-state the real picture in the corrected form: cash wages, no written contract, no HR, direct phone contact with the contractor - and treat that as the case's actual starting position",
+            "Reassure accurately, not falsely: absence of paperwork makes proof harder, it does not extinguish the wages, and the labour route is built for exactly this situation",
+            "Immediately begin building the alternative evidence trail: the contractor's number and call logs, any WhatsApp or SMS about work or payment, UAN / EPFO and ESIC records if any contribution was ever made, bank deposits if any cash was ever banked, site attendance or gate registers, labour card or BOCW registration, and co-workers who can speak to his work",
+            "Never refer to the withdrawn documents again as things he possesses"
+          ],
+          "must_not_do": [
+            "Scold, lecture or moralise about the earlier lie",
+            "Leave offer letter, salary slips or HR emails marked as available, or leave a stale conflict sitting on the boolean facts",
+            "Acknowledge the retraction in prose while the record is unchanged",
+            "Say nothing reassuring at all, or over-reassure with 'do not worry, this is an easy case'",
+            "Offer a salary demand notice as though the documentary position were unchanged"
+          ],
+          "ideal_reply_sketch": "Sach bolne ke liye shukriya, aur fikar mat kijiye - proof na hone par main madad band nahi karta; asal me ab jo salah dunga wo aapke liye kaam ki hogi, pehle wali to galat base par khadi thi. Maine record theek kar diya hai: offer letter, salary slips aur HR emails ab 'available nahi' hain, aur HR se sampark wala fact bhi hata diya hai - case ab yahi kehta hai ki salary cash me milti thi, koi likhit contract nahi tha aur baat seedha contractor se phone par hoti thi. Kanooni taur par ye samajh lijiye: kagaz na hone se aapki majdoori khatam nahi hoti, sirf sabit karne ka tareeka badal jaata hai - aur labour machinery isi tarah ke cash-paid workers ke liye hi bani hai. Abhi se ye cheezein jodna shuru kijiye: contractor ka number aur call logs, kaam ya payment se judi koi bhi WhatsApp/SMS, kabhi EPFO/UAN ya ESIC me koi contribution hua ho to uska record, bank me kabhi cash jama kiya ho to wo entries, site ka attendance ya gate register, labour card ya BOCW registration, aur wo saathi jo aapke kaam ki gawahi de sakein.",
+          "expected_state": {
+            "category": "EMPLOYMENT",
+            "issue_type": "UNPAID_DELAYED_SALARY",
+            "readiness": "UNDERSTANDING_CASE",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": true
+        },
+        {
+          "turn": 3,
+          "must_do": [
+            "Answer the question directly: yes, there is still a case - absence of documents goes to proof, not to entitlement, and wage claims from cash-paid workers are routinely decided on oral evidence, witness statements and circumstantial records",
+            "Value what he actually has: site photographs that place him at the workplace, and two co-workers who can give statements, are real evidence and not nothing - advise getting their names, numbers and short written statements while memories are fresh",
+            "Give the concrete alternative-proof list again in usable order: EPFO / UAN and ESIC records, any bank credits, the contractor's own WhatsApp or call records, attendance or gate registers held by the principal employer, labour card or BOCW board registration, and the site's statutory registers which the principal employer is obliged to maintain",
+            "Name the right machinery: the Labour Commissioner in Surat and samadhan.labour.gov.in for wage recovery, the inspector under the wage and contract-labour framework, the BOCW welfare board machinery for construction workers, and the principal employer's liability for a contractor's unpaid wages under the contract-labour framework - which is often the strongest practical lever for a site worker",
+            "Mention the free help that exists: District Legal Services Authority and NALSA helpline 15100, and construction-worker unions in Surat that routinely take up such claims",
+            "Repeat the corpus gap honestly and avoid any section number or case citation that is not certain, while telling him that limitation matters so he should not sit on it"
+          ],
+          "must_not_do": [
+            "Say that without documents nothing can be done - the single worst answer in this scenario",
+            "Refer again to his offer letter, salary slips or HR emails",
+            "Fabricate a section number for wage recovery or a case citation",
+            "Guarantee that he will recover the money or give a timeline",
+            "Skip the construction-worker and contract-labour angle for a Surat site worker",
+            "Give a generic all-India answer that ignores Gujarat's own Shops and Establishments / labour position"
+          ],
+          "ideal_reply_sketch": "Nahi, case bilkul banta hai - kagaz na hona sabit karne ka sawal hai, haq ka nahi; cash me kaam karne wale majdooron ke wage claims routinely gawahon aur circumstantial record par tay hote hain. Jo aapke paas hai wo 'kuch nahi' nahi hai: site ki photos aapko kaam ki jagah se jodti hain, aur do saathi majdoor gawah hain - unke naam, number aur chhote likhit bayaan abhi le lijiye, jab yaad taaza hai. Iske alawa ye pata kijiye: EPFO/UAN ya ESIC me kabhi koi entry, bank me koi credit, contractor ke WhatsApp ya call records, site ka attendance/gate register jo principal employer ko rakhna hota hai, aur labour card ya BOCW board registration. Rasta ye hai: Surat me Labour Commissioner aur samadhan.labour.gov.in par wage claim, construction worker hone ke naate BOCW welfare board ki machinery, aur ek bada lever - contract labour ke dhaanche me principal employer contractor ke na diye gaye wages ke liye zimmedar ho sakta hai, isliye site ka maalik/company bhi picture me aayegi. Muft madad ke liye District Legal Services Authority ya NALSA helpline 15100, aur Surat ki construction worker unions aise claims aksar khud uthati hain - aur haan, employment ka koi statute corpus mere paas nahi hai, isliye main koi section number nahi gina raha; bas der mat kijiye, limitation maayne rakhti hai.",
+          "expected_state": {
+            "category": "EMPLOYMENT",
+            "issue_type": "UNPAID_DELAYED_SALARY",
+            "readiness": "READY_FOR_LEGAL_GUIDANCE",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": false
+        }
+      ],
+      "grading_rubric": [
+        {
+          "check": "After turn 2 the record no longer shows offer letter, salary slips or HR emails as available and the employment-proof / HR-contacted facts are false, with the correction stated explicitly and never contradicted in any later reply",
+          "weight": 30
+        },
+        {
+          "check": "Turn 3 answers 'yes there is still a case' with concrete alternative proof - EPFO / UAN and ESIC, bank credits, attendance or gate registers, the contractor's own messages, co-worker statements, site photos - and never says that nothing can be done without documents",
+          "weight": 30
+        },
+        {
+          "check": "The retraction is handled warmly and without moralising: reassurance that help is not conditional on paperwork, no scolding, and no false comfort",
+          "weight": 15
+        },
+        {
+          "check": "The construction-worker context is used: BOCW machinery, contract-labour principal-employer liability, Labour Commissioner Surat / samadhan.labour.gov.in, Gujarat's own position rather than a generic all-India answer, plus free-legal-aid routes",
+          "weight": 15
+        },
+        {
+          "check": "Amount handled as roughly Rs 81,000 for three months rather than Rs 27,000 alone, the contractor's name asked for, no fabricated section or citation, and the employment corpus gap stated",
+          "weight": 10
+        }
+      ]
+    },
+    {
+      "id": "W3-07",
+      "domain": "HOUSING_TENANT",
+      "overall_goal": "A stage marked complete must be undoable. Turn 1 must not leap the workflow to an awaiting-response stage on the strength of one unverified sentence, and turn 2 must actually rewind it - the sent-notice action removed, the stage returned to where the case really is, and the user told that the record was corrected. The abuse must change nothing about the substance: the reply stays calm and neither defensive nor servile, and the real question - is a notice legally necessary, and do two WhatsApp messages count as a demand - gets a real answer.",
+      "turns": [
+        {
+          "turn": 1,
+          "must_do": [
+            "Reply in Hinglish and engage with the actual dispute rather than returning a bare 'recorded as sent' acknowledgement",
+            "Record the deposit as Rs 60,000 and the location as Ranchi, Jharkhand",
+            "Record that a notice is said to have been sent about ten days ago by registered post, without converting 'das din pehle' into a specific calendar date",
+            "Keep the readiness and the workflow stage consistent with each other - a single unverified claim on message one cannot put the case at an awaiting-response stage while the case has not been understood at all",
+            "Acknowledge the frustration in one line without agreeing that nothing works, and without a lecture",
+            "Ask the facts that actually decide a deposit claim: when the tenancy ended and possession was handed back, what the landlord says the deduction is for, whether there is a written rent agreement and a rent receipt trail, and whether he has the postal receipt and tracking for the notice",
+            "Say in outline what happens after a demand goes unanswered - a civil money claim for the deposit, with the forum depending on the amount and the state, plus mediation and Lok Adalat as faster options"
+          ],
+          "must_not_do": [
+            "Record a specific notice date when the user only said 'das din pehle'",
+            "Mark the case as awaiting a response and jump earlier stages to complete on the first message",
+            "Reply only with a canned confirmation that the notice was recorded as sent",
+            "Describe the Model Tenancy Act 2021 as binding law in Jharkhand",
+            "Offer to draft a document before the deposit facts are understood",
+            "Mirror the user's cynicism or argue with it at length"
+          ],
+          "ideal_reply_sketch": "Gussa waajib hai - deposit rok lena bahut aam hai aur usi wajah se ye process thakaane wala lagta hai, lekin is par raasta hota hai. Maine note kiya hai: deposit Rs 60,000, flat Ranchi (Jharkhand) me, aur aapke mutabiq karib das din pehle registered post se notice bheja gaya - exact date aap bata denge to wo bhi likh dunga, main apne aap se koi tareekh nahi daal raha. Do-teen cheezein bata dijiye jo is claim ka rukh tay karti hain: tenancy kab khatam hui aur kabza kab wapas diya, landlord deduction ka kya kaaran bata raha hai, likhit rent agreement aur rent receipts hain ya nahi, aur notice ki postal receipt/tracking aapke paas hai ya nahi. Aage ka dhaancha ye hai: demand ke baad bhi paisa na mile to deposit wapasi ke liye civil money claim ka rasta khulta hai, aur usse pehle mediation ya Lok Adalat aksar tez aur sasta padta hai.",
+          "expected_state": {
+            "category": "HOUSING_TENANT",
+            "issue_type": "SECURITY_DEPOSIT_DISPUTE",
+            "readiness": "UNDERSTANDING_CASE",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": false
+        },
+        {
+          "turn": 2,
+          "must_do": [
+            "Accept the retraction and actually undo it: remove the formal-demand-sent action, roll the workflow stage back off any awaiting-response stage, and say explicitly what was changed in the case record",
+            "Replace it with what is true: no legal notice was sent; two WhatsApp messages were sent to the landlord",
+            "Absorb the abuse without becoming defensive, servile or preachy - one short, level line at most, then straight to the substance",
+            "Answer the legal question properly: a formal legal notice is not, as a general rule, a statutory precondition to claiming a security deposit; a deposit is refundable under the tenancy contract and can be sued for without one - but a written demand is practically important because it fixes the date of refusal, evidences the claim, often triggers payment, and is expected before most forums",
+            "Answer the WhatsApp question honestly: yes, those two messages already operate as a written demand in substance and are electronic records, so they should be preserved unedited on the original phone, with a BSA 2023 Section 63 certificate available if they are later filed as copies; but a registered-post notice is stronger, harder to deny, and gives a postal receipt as proof of service",
+            "Give the Jharkhand-specific position without overstating it: tenancy and rent control are state subjects, Jharkhand applies its inherited Bihar Buildings (Lease, Rent and Eviction) Control Act framework, the Model Tenancy Act 2021 is a model that binds only if a state enacts it, and a deposit-refund claim is ordinarily a civil money claim within the three-year limitation under the Limitation Act 1963",
+            "Offer now to draft the tenant demand notice, since the case is understood and a written demand is the correct immediate next step"
+          ],
+          "must_not_do": [
+            "Continue to assume a notice is out, advise waiting out a notice period, or leave the sent-notice action in the case",
+            "Acknowledge the correction in prose while the stored stage and action list stay unchanged",
+            "Respond to the abuse defensively, with excessive apology, with a lecture about tone, or by mirroring it",
+            "Dodge the substantive question about whether a notice is necessary",
+            "State the Model Tenancy Act 2021 as binding law in Jharkhand, or invent a section of the applicable rent act",
+            "Guarantee that the deposit will be recovered or give a timeline"
+          ],
+          "ideal_reply_sketch": "Theek hai, batane ke liye shukriya - isse case bachta hai, bigadta nahi. Maine record sudhar diya hai: 'legal notice bheja gaya' wali entry hata di hai, case ab jawab ka intezaar karne wali stage par nahi hai, aur uski jagah likha hai ki landlord ko do WhatsApp message kiye gaye the. Ab seedha jawab: deposit maangne ke liye formal legal notice koi kanooni shart nahi hai - deposit agreement ke tahat wapas hona hi hai aur bina notice ke bhi claim ki ja sakti hai; lekin likhit demand practically bahut faayda deti hai kyunki wo inkaar ki tareekh pakki karti hai, claim ka saboot banti hai aur aksar paisa nikalwa deti hai. Aapke do WhatsApp message apne aap me likhit demand maane ja sakte hain - unhe original phone me bina edit ke sambhal kar rakhiye (aage kabhi copy ke roop me file karna pade to BSA 2023 ke Section 63 wala certificate lagega) - phir bhi registered post wala notice zyada mazboot hai kyunki uski delivery se inkaar karna mushkil hota hai. Jharkhand me tenancy state ka vishay hai aur wahan Bihar wala rent control dhaancha laagu hota hai; Model Tenancy Act 2021 sirf model hai, jab tak rajya use laagu na kare wo binding nahi - deposit wapasi aam taur par civil money claim hai jiski limitation teen saal hai. Chahein to main abhi aapke liye ek proper demand notice ka draft bana deta hun.",
+          "expected_state": {
+            "category": "HOUSING_TENANT",
+            "issue_type": "SECURITY_DEPOSIT_DISPUTE",
+            "readiness": "READY_FOR_ACTION",
+            "document_offer": "allowed",
+            "safety_triage": false
+          },
+          "critical": true
+        }
+      ],
+      "grading_rubric": [
+        {
+          "check": "After turn 2 the sent-notice action is gone from the case and the workflow stage is no longer at an awaiting-response stage; the reply states what was changed rather than only acknowledging the correction in prose",
+          "weight": 30
+        },
+        {
+          "check": "Turn 1 does not jump the workflow to a late stage on one unverified sentence, does not record a specific notice date from 'das din pehle', and keeps stage and readiness consistent with each other",
+          "weight": 20
+        },
+        {
+          "check": "The substantive question is answered: a formal notice is not a statutory precondition to a deposit claim but is practically valuable, and the two WhatsApp messages already count as a written demand and should be preserved as electronic records",
+          "weight": 25
+        },
+        {
+          "check": "Tone under abuse stays calm, neither defensive nor servile nor preachy, with no mirroring of the user's language and no degradation in the quality of the legal answer",
+          "weight": 15
+        },
+        {
+          "check": "Jharkhand position handled honestly (state rent-control framework, Model Tenancy Act 2021 not binding unless adopted, civil money claim with three-year limitation), Rs 60,000 and Ranchi / Jharkhand recorded, reply in Hinglish",
+          "weight": 10
+        }
+      ]
+    },
+    {
+      "id": "W3-08",
+      "domain": "GENERAL",
+      "overall_goal": "This is a calm, amicable family-law enquiry that sits outside all six supported domains, and the honest answer is a clean scope statement plus a genuinely useful handoff - never a forced classification, never a refusal, and above all never a safety-triage interrogation triggered by the word 'patni'. The legal content must stay at the level the facts support: the cooling-off period is waivable but only on the settled discretionary tests, custody turns on the welfare of the child, the applicable personal law is not knowable from what the user has said, and no maintenance figure can be quoted.",
+      "turns": [
+        {
+          "turn": 1,
+          "must_do": [
+            "Treat this as an ordinary calm legal-information request - there is no safety issue here, no danger indicator, and no safety triage may be triggered by the mere mention of a spouse",
+            "Say plainly and early that family and matrimonial matters are outside what this product handles, while still giving real information rather than a bare refusal",
+            "Answer the cooling-off question accurately: in a mutual-consent divorce the two motions are separated by a statutory waiting period of six months, extendable to eighteen, and the Supreme Court has held that this period is directory rather than mandatory, so a family court may waive it - typically where the parties have already lived separately for a long period, every issue including maintenance and custody is genuinely settled, and the waiting period would only prolong the agony; waiver is discretionary and never automatic",
+            "Flag the personal-law point honestly: which statute governs depends on the parties' religion or on whether the marriage was solemnised under the Special Marriage Act, and that has not been stated, so the exact provisions cannot be pinned down from what is on the table",
+            "Answer custody by principle, not by rule: the welfare of the child is the paramount consideration, a parenting arrangement agreed between amicable parents carries great weight, and for a four-year-old the general position that a very young child ordinarily remains with the mother is a starting point subject always to welfare - not an outcome that can be predicted here",
+            "Give the concrete handoff: the family court at Bhubaneswar, court-annexed mediation, the District Legal Services Authority at Khordha / Bhubaneswar and the NALSA helpline 15100 for free legal aid, and that a family-law advocate should draft the joint petition and the settlement terms",
+            "Set city Bhubaneswar, state Odisha, and keep the matter in the general legal-information category",
+            "Reply in Hinglish"
+          ],
+          "must_not_do": [
+            "Ask any safety-intake question - immediate danger, weapons, witnesses, whether police were contacted - or elevate a risk level, attach a safety notice, or surface domestic-violence or women's-helpline content",
+            "Return a canned safety card instead of an answer, or pin readiness so the matter cannot progress",
+            "Force the matter into POLICE_COMPLAINT, CONSUMER or HOUSING_TENANT so it has somewhere to sit",
+            "Predict how long the divorce will take, or assure that the cooling-off period will be waived",
+            "State a custody outcome or a rule that the mother or the father gets custody",
+            "Refuse flatly with no useful direction"
+          ],
+          "ideal_reply_sketch": "Pehle imaandaari se ek baat: family aur matrimonial matters - divorce, custody, maintenance - us dayre se bahar hain jinme ye product case banakar aapko step-by-step le ja sakta hai; phir bhi general legal information main zaroor de sakta hun. Mutual consent divorce me do motions hote hain aur unke beech chah mahine ka wait rehta hai (adhiktam atharah mahine tak); Supreme Court ne maana hai ki ye avadhi directory hai, mandatory nahi, isliye family court ise maaf kar sakti hai - aam taur par tab jab dono pehle se lambe samay se alag reh rahe hon, maintenance aur custody samet har cheez sach me tay ho chuki ho, aur intezaar sirf takleef badha raha ho; ye court ke vivek par hai, apne aap nahi hota. Ek zaroori baat: kaun sa kanoon lagega ye aapke dharm ya is baat par nirbhar karta hai ki shaadi Special Marriage Act ke tahat hui thi ya nahi - aapne wo bataya nahi, isliye main exact provisions par nahi ja raha. Custody ka koi fixed formula nahi hai - kasauti bachche ka hit (welfare) hai, aur jab maa-baap dono sahmat hon to unka tay kiya parenting arrangement court bahut vazan deti hai; 4 saal ki bachchi ke liye aam shuruati position maa ke saath rehne ki hoti hai, par wo bhi welfare ke aage hi chalti hai - main nateeja nahi bata sakta. Practically: Bhubaneswar ki Family Court, court ki mediation, aur muft madad ke liye District Legal Services Authority ya NALSA helpline 15100 - joint petition aur settlement terms ek family law advocate se hi draft karwaiye.",
+          "expected_state": {
+            "category": "GENERAL",
+            "issue_type": "UNCLASSIFIED",
+            "readiness": "UNDERSTANDING_CASE",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": true
+        },
+        {
+          "turn": 2,
+          "must_do": [
+            "Refuse to quote a maintenance figure, percentage or range, and explain why: maintenance is not computed by any fixed formula but from both parties' income, assets and liabilities, the child's needs and the standard of living, and courts work from disclosure affidavits filed by both sides - none of which is on the table here",
+            "Give the shape of the answer instead of the number: in a mutual-consent settlement the parties themselves agree the figure and the court records it, so the practical question is what he and his wife agree, and child maintenance is a separate and continuing obligation that does not end with the divorce",
+            "Answer the flat sale question with the real caveats rather than a yes or a no: self-acquired property can ordinarily be sold, but a transfer made while a matrimonial settlement is being worked out can be challenged as an attempt to defeat maintenance or the settlement; any interim order or undertaking would bind him; and in an amicable settlement the flat is usually part of the terms, so selling it midway can unravel the agreement - a disclosure to the other side and a lawyer's check of any pending proceeding is the sensible course",
+            "Answer the 'what can you help with' question exactly and honestly by naming the six supported areas: consumer disputes, housing and tenancy, employment, cyber financial fraud, police complaint assistance, and general legal information - and say what it does within them (understanding the case, next steps, evidence checklists, and drafting complaint letters and notices)",
+            "Restate the boundary without apology and re-point to the family court, mediation and DLSA / NALSA 15100 route",
+            "Keep the tone even - the user's edge is mild frustration at being told 'not my area', not hostility",
+            "Continue to keep safety triage off"
+          ],
+          "must_not_do": [
+            "Quote any maintenance amount, percentage of salary or range",
+            "Say plainly 'yes you can sell the flat' or 'no you cannot' without the settlement and interim-order caveats",
+            "Claim capabilities the product does not have, or answer the capabilities question vaguely",
+            "Trigger safety triage or any domestic-violence framing on this turn either",
+            "Reclassify the case into a supported category to seem more helpful",
+            "Invent a section number for maintenance or for property transfers"
+          ],
+          "ideal_reply_sketch": "Maintenance ka koi fixed number ya percentage main nahi bata sakta, aur jo bhi bataye wo andaaza hi hoga - kyunki ye dono ki aamdani, sampatti, deniyan, bachchi ki zarooratein aur pehle wale rehan-sehan ke star se tay hoti hai, aur adalat dono paksh ke disclosure affidavits par chalti hai; mutual consent me to figure aap dono khud tay karte hain aur court use record karti hai. Itna zaroor: bachchi ka maintenance alag aur lagataar chalne wali zimmedari hai, wo divorce ke saath khatam nahi hoti. Flat ke baare me seedha haan ya na dono galat honge - apni self-acquired property bechi ja sakti hai, lekin settlement chalte waqt kiya gaya transfer ise maintenance ya settlement se bachne ki koshish batakar challenge kiya ja sakta hai, aur agar koi interim order ya undertaking ho to wo bandhta hai; amicable settlement me flat aksar terms ka hissa hota hai, isliye beech me bechna poora samjhauta hila sakta hai - behtar hai ki doosre paksh ko bataya jaaye aur advocate se check karwa liya jaaye. Aur aapka aakhri sawal sabse aasan hai: main consumer disputes, housing aur tenancy, employment, cyber financial fraud, police complaint assistance aur general legal information - in chah cheezon me kaam karta hun, jisme case samajhna, agle kadam batana, evidence checklist banana aur complaint letter ya legal notice draft karna shamil hai. Family matters unme nahi hain - unke liye Bhubaneswar ki Family Court, mediation aur DLSA / NALSA 15100 hi sahi jagah hai.",
+          "expected_state": {
+            "category": "GENERAL",
+            "issue_type": "UNCLASSIFIED",
+            "readiness": "UNDERSTANDING_CASE",
+            "document_offer": "blocked",
+            "safety_triage": false
+          },
+          "critical": true
+        }
+      ],
+      "grading_rubric": [
+        {
+          "check": "Safety triage never fires: no immediate-danger / weapon / witness / police questions, no elevated risk level, no safety notice, no domestic-violence or women's-helpline content, and readiness is not pinned - any of these on this calm enquiry scores zero on this check",
+          "weight": 30
+        },
+        {
+          "check": "The scope boundary is stated plainly (family and matrimonial matters are outside the product) and the case is not forced into POLICE_COMPLAINT, CONSUMER or HOUSING_TENANT; category and title stay stable across both turns",
+          "weight": 20
+        },
+        {
+          "check": "No maintenance figure, percentage or range on turn 2, no prediction of the divorce timeline, no assurance that the cooling-off period will be waived, and no custody outcome or fixed custody rule stated",
+          "weight": 20
+        },
+        {
+          "check": "Real legal substance delivered: the six-month period is directory and waivable on the settled discretionary tests, welfare of the child is the custody principle, and the applicable personal law is expressly said to be unknowable from the facts given",
+          "weight": 15
+        },
+        {
+          "check": "Concrete handoff given (family court at Bhubaneswar, court-annexed mediation, DLSA and NALSA 15100, family-law advocate) rather than a flat refusal, and turn 2 names the six supported domains exactly and honestly",
+          "weight": 15
+        }
+      ]
+    }
+  ]
+}

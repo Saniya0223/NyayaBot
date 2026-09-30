@@ -1,0 +1,180 @@
+INFO:     provider=groq model=openai/gpt-oss-120b configured=True mode=groq event=llm_initialized
+INFO:     Started server process [32304]
+INFO:     Waiting for application startup.
+INFO:     Auto-Fill browser runtime: browser-use=True Playwright=True Chromium=True
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
+INFO:     provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b prompt_tokens=4332 cached_tokens=None fresh_prompt_tokens=None completion_tokens=803 total_tokens=5135 cache_hit_percent=None
+WARNING:  event=groq_rate_limit provider=groq operation=chat model=openai/gpt-oss-120b http_status=429 retry_after_seconds=11.0 remaining_tokens=3170 token_reset_seconds=36.225 remaining_requests=996 request_reset_seconds=345.6 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=chat attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=chat event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=chat model=openai/gpt-oss-120b prompt_tokens=3627 cached_tokens=None fresh_prompt_tokens=None completion_tokens=473 total_tokens=4100 cache_hit_percent=None
+INFO:     case_id=b32095fd-438a-4b68-866c-150b7d18df87 classification=HOUSING_TENANT workflow_stage=INFORMAL_REQUEST provider=groq model=openai/gpt-oss-120b mode=groq event=chat_processed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b prompt_tokens=4318 cached_tokens=None fresh_prompt_tokens=None completion_tokens=484 total_tokens=4802 cache_hit_percent=None
+WARNING:  event=groq_rate_limit provider=groq operation=chat model=openai/gpt-oss-120b http_status=429 retry_after_seconds=6.0 remaining_tokens=2888 token_reset_seconds=38.34 remaining_requests=994 request_reset_seconds=518.4 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=chat attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=chat event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=chat model=openai/gpt-oss-120b prompt_tokens=2702 cached_tokens=None fresh_prompt_tokens=None completion_tokens=117 total_tokens=2819 cache_hit_percent=None
+INFO:     case_id=e7b337d5-78f3-44b0-aad0-19efe9c3a720 classification=GENERAL workflow_stage=INTAKE provider=groq model=openai/gpt-oss-120b mode=groq event=chat_processed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b prompt_tokens=4655 cached_tokens=None fresh_prompt_tokens=None completion_tokens=494 total_tokens=5149 cache_hit_percent=None
+WARNING:  event=groq_rate_limit provider=groq operation=chat model=openai/gpt-oss-120b http_status=429 retry_after_seconds=23.0 remaining_tokens=610 token_reset_seconds=55.425 remaining_requests=992 request_reset_seconds=691.2 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=chat attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=chat event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=chat model=openai/gpt-oss-120b prompt_tokens=2744 cached_tokens=None fresh_prompt_tokens=None completion_tokens=148 total_tokens=2892 cache_hit_percent=None
+INFO:     case_id=e7b337d5-78f3-44b0-aad0-19efe9c3a720 classification=GENERAL workflow_stage=INTAKE provider=groq model=openai/gpt-oss-120b mode=groq event=chat_processed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b prompt_tokens=4754 cached_tokens=None fresh_prompt_tokens=None completion_tokens=1251 total_tokens=6005 cache_hit_percent=None
+WARNING:  provider=groq model=openai/gpt-oss-120b event=turn_fell_back_to_limited_demo
+INFO:     case_id=e7b337d5-78f3-44b0-aad0-19efe9c3a720 classification=GENERAL workflow_stage=INTAKE provider=groq model=openai/gpt-oss-120b mode=limited_demo event=chat_processed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b prompt_tokens=4816 cached_tokens=None fresh_prompt_tokens=None completion_tokens=832 total_tokens=5648 cache_hit_percent=None
+WARNING:  event=groq_rate_limit provider=groq operation=chat model=openai/gpt-oss-120b http_status=429 retry_after_seconds=26.0 remaining_tokens=706 token_reset_seconds=54.705 remaining_requests=989 request_reset_seconds=950.4 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=chat attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=chat event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=chat model=openai/gpt-oss-120b prompt_tokens=2905 cached_tokens=None fresh_prompt_tokens=None completion_tokens=644 total_tokens=3549 cache_hit_percent=None
+INFO:     case_id=e7b337d5-78f3-44b0-aad0-19efe9c3a720 classification=GENERAL workflow_stage=INTAKE provider=groq model=openai/gpt-oss-120b mode=groq event=chat_processed
+WARNING:  event=groq_rate_limit provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b http_status=429 retry_after_seconds=7.0 remaining_tokens=4939 token_reset_seconds=22.957 remaining_requests=988 request_reset_seconds=1036.8 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b prompt_tokens=4908 cached_tokens=4352 fresh_prompt_tokens=556 completion_tokens=960 total_tokens=5868 cache_hit_percent=88.67
+INFO:     provider=groq model=openai/gpt-oss-120b operation=chat event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=chat model=openai/gpt-oss-120b prompt_tokens=3063 cached_tokens=None fresh_prompt_tokens=None completion_tokens=318 total_tokens=3381 cache_hit_percent=None
+INFO:     case_id=e7b337d5-78f3-44b0-aad0-19efe9c3a720 classification=GENERAL workflow_stage=INTAKE provider=groq model=openai/gpt-oss-120b mode=groq event=chat_processed
+WARNING:  event=groq_rate_limit provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b http_status=429 retry_after_seconds=9.0 remaining_tokens=3979 token_reset_seconds=30.157 remaining_requests=986 request_reset_seconds=1209.6 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b prompt_tokens=4348 cached_tokens=None fresh_prompt_tokens=None completion_tokens=888 total_tokens=5236 cache_hit_percent=None
+WARNING:  event=groq_rate_limit provider=groq operation=chat model=openai/gpt-oss-120b http_status=429 retry_after_seconds=12.0 remaining_tokens=3057 token_reset_seconds=37.072 remaining_requests=985 request_reset_seconds=1296.0 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=chat attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=chat event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=chat model=openai/gpt-oss-120b prompt_tokens=3684 cached_tokens=None fresh_prompt_tokens=None completion_tokens=1050 total_tokens=4734 cache_hit_percent=None
+INFO:     case_id=fa577e1d-d2cc-4f06-8017-86c544c241d6 classification=HOUSING_TENANT workflow_stage=INFORMAL_REQUEST provider=groq model=openai/gpt-oss-120b mode=groq event=chat_processed
+WARNING:  event=groq_rate_limit provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b http_status=429 retry_after_seconds=20.0 remaining_tokens=3922 token_reset_seconds=30.585 remaining_requests=984 request_reset_seconds=1382.4 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b prompt_tokens=5535 cached_tokens=4096 fresh_prompt_tokens=1439 completion_tokens=2048 total_tokens=7583 cache_hit_percent=74.0
+INFO:     provider=groq model=openai/gpt-oss-120b operation=chat event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=chat model=openai/gpt-oss-120b prompt_tokens=4520 cached_tokens=None fresh_prompt_tokens=None completion_tokens=897 total_tokens=5417 cache_hit_percent=None
+INFO:     case_id=fa577e1d-d2cc-4f06-8017-86c544c241d6 classification=HOUSING_TENANT workflow_stage=INFORMAL_REQUEST provider=groq model=openai/gpt-oss-120b mode=groq event=chat_processed
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction attempt=1 error_type=APIStatusError event=api_call_failed
+WARNING:  provider=groq model=openai/gpt-oss-120b event=turn_fell_back_to_limited_demo
+INFO:     case_id=fa577e1d-d2cc-4f06-8017-86c544c241d6 classification=HOUSING_TENANT workflow_stage=INFORMAL_REQUEST provider=groq model=openai/gpt-oss-120b mode=limited_demo event=chat_processed
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction attempt=1 error_type=APIStatusError event=api_call_failed
+WARNING:  provider=groq model=openai/gpt-oss-120b event=turn_fell_back_to_limited_demo
+INFO:     case_id=fa577e1d-d2cc-4f06-8017-86c544c241d6 classification=HOUSING_TENANT workflow_stage=INFORMAL_REQUEST provider=groq model=openai/gpt-oss-120b mode=limited_demo event=chat_processed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b prompt_tokens=4343 cached_tokens=4096 fresh_prompt_tokens=247 completion_tokens=1016 total_tokens=5359 cache_hit_percent=94.31
+INFO:     case_id=74ff2d17-a51f-4dea-a9c0-0894ffa36eac classification=EMPLOYMENT workflow_stage=INFORMAL_REQUEST provider=groq model=openai/gpt-oss-120b mode=groq event=chat_processed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b prompt_tokens=4780 cached_tokens=None fresh_prompt_tokens=None completion_tokens=1524 total_tokens=6304 cache_hit_percent=None
+INFO:     case_id=74ff2d17-a51f-4dea-a9c0-0894ffa36eac classification=EMPLOYMENT workflow_stage=INFORMAL_REQUEST provider=groq model=openai/gpt-oss-120b mode=groq event=chat_processed
+WARNING:  event=groq_rate_limit provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b http_status=429 retry_after_seconds=34.0 remaining_tokens=1879 token_reset_seconds=45.907 remaining_requests=981 request_reset_seconds=1641.6 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b prompt_tokens=4854 cached_tokens=None fresh_prompt_tokens=None completion_tokens=624 total_tokens=5478 cache_hit_percent=None
+WARNING:  event=groq_rate_limit provider=groq operation=chat model=openai/gpt-oss-120b http_status=429 retry_after_seconds=20.0 remaining_tokens=2791 token_reset_seconds=39.067 remaining_requests=980 request_reset_seconds=1728.0 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=chat attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=chat event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=chat model=openai/gpt-oss-120b prompt_tokens=3328 cached_tokens=None fresh_prompt_tokens=None completion_tokens=989 total_tokens=4317 cache_hit_percent=None
+INFO:     case_id=74ff2d17-a51f-4dea-a9c0-0894ffa36eac classification=EMPLOYMENT workflow_stage=INFORMAL_REQUEST provider=groq model=openai/gpt-oss-120b mode=groq event=chat_processed
+WARNING:  event=groq_rate_limit provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b http_status=429 retry_after_seconds=19.0 remaining_tokens=4309 token_reset_seconds=27.682 remaining_requests=979 request_reset_seconds=1814.4 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b prompt_tokens=5243 cached_tokens=None fresh_prompt_tokens=None completion_tokens=727 total_tokens=5970 cache_hit_percent=None
+WARNING:  event=groq_rate_limit provider=groq operation=chat model=openai/gpt-oss-120b http_status=429 retry_after_seconds=26.0 remaining_tokens=2304 token_reset_seconds=42.72 remaining_requests=978 request_reset_seconds=1900.8 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=chat attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=chat event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=chat model=openai/gpt-oss-120b prompt_tokens=3717 cached_tokens=None fresh_prompt_tokens=None completion_tokens=514 total_tokens=4231 cache_hit_percent=None
+INFO:     case_id=74ff2d17-a51f-4dea-a9c0-0894ffa36eac classification=EMPLOYMENT workflow_stage=INFORMAL_REQUEST provider=groq model=openai/gpt-oss-120b mode=groq event=chat_processed
+WARNING:  event=groq_rate_limit provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b http_status=429 retry_after_seconds=4.0 remaining_tokens=4266 token_reset_seconds=28.005 remaining_requests=977 request_reset_seconds=1987.2 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b prompt_tokens=4339 cached_tokens=4096 fresh_prompt_tokens=243 completion_tokens=645 total_tokens=4984 cache_hit_percent=94.4
+INFO:     provider=groq model=openai/gpt-oss-120b operation=chat event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=chat model=openai/gpt-oss-120b prompt_tokens=3049 cached_tokens=None fresh_prompt_tokens=None completion_tokens=682 total_tokens=3731 cache_hit_percent=None
+INFO:     case_id=facbcdd1-f91c-4495-a61e-26b2e3a9d8cb classification=CYBER_FRAUD workflow_stage=FRAUD_OCCURRED provider=groq model=openai/gpt-oss-120b mode=groq event=chat_processed
+WARNING:  event=groq_rate_limit provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b http_status=429 retry_after_seconds=21.0 remaining_tokens=4464 token_reset_seconds=26.52 remaining_requests=975 request_reset_seconds=2160.0 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b prompt_tokens=5253 cached_tokens=4096 fresh_prompt_tokens=1157 completion_tokens=1163 total_tokens=6416 cache_hit_percent=77.97
+INFO:     provider=groq model=openai/gpt-oss-120b operation=chat event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=chat model=openai/gpt-oss-120b prompt_tokens=3647 cached_tokens=1792 fresh_prompt_tokens=1855 completion_tokens=972 total_tokens=4619 cache_hit_percent=49.14
+INFO:     case_id=facbcdd1-f91c-4495-a61e-26b2e3a9d8cb classification=CYBER_FRAUD workflow_stage=FRAUD_OCCURRED provider=groq model=openai/gpt-oss-120b mode=groq event=chat_processed
+WARNING:  event=groq_rate_limit provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b http_status=429 retry_after_seconds=24.0 remaining_tokens=4005 token_reset_seconds=29.962 remaining_requests=973 request_reset_seconds=2332.8 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b prompt_tokens=6018 cached_tokens=4096 fresh_prompt_tokens=1922 completion_tokens=1777 total_tokens=7795 cache_hit_percent=68.06
+WARNING:  event=groq_rate_limit provider=groq operation=chat model=openai/gpt-oss-120b http_status=429 retry_after_seconds=8.0 remaining_tokens=5260 token_reset_seconds=20.55 remaining_requests=972 request_reset_seconds=2419.2 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=chat attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=chat event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=chat model=openai/gpt-oss-120b prompt_tokens=4435 cached_tokens=None fresh_prompt_tokens=None completion_tokens=1383 total_tokens=5818 cache_hit_percent=None
+INFO:     case_id=facbcdd1-f91c-4495-a61e-26b2e3a9d8cb classification=CYBER_FRAUD workflow_stage=FRAUD_OCCURRED provider=groq model=openai/gpt-oss-120b mode=groq event=chat_processed
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction attempt=1 error_type=APIStatusError event=api_call_failed
+WARNING:  provider=groq model=openai/gpt-oss-120b event=turn_fell_back_to_limited_demo
+INFO:     case_id=facbcdd1-f91c-4495-a61e-26b2e3a9d8cb classification=CYBER_FRAUD workflow_stage=FRAUD_OCCURRED provider=groq model=openai/gpt-oss-120b mode=limited_demo event=chat_processed
+INFO:     case_id=7474c145-02eb-4fcd-8dd0-fa35e84caa67 classification=POLICE_COMPLAINT workflow_stage=SHO_APPROACHED provider=groq model=openai/gpt-oss-120b mode=limited_demo event=chat_processed
+INFO:     case_id=7474c145-02eb-4fcd-8dd0-fa35e84caa67 classification=POLICE_COMPLAINT workflow_stage=SHO_APPROACHED provider=groq model=openai/gpt-oss-120b mode=limited_demo event=chat_processed
+INFO:     case_id=7474c145-02eb-4fcd-8dd0-fa35e84caa67 classification=POLICE_COMPLAINT workflow_stage=SHO_APPROACHED provider=groq model=openai/gpt-oss-120b mode=limited_demo event=chat_processed
+INFO:     case_id=7474c145-02eb-4fcd-8dd0-fa35e84caa67 classification=POLICE_COMPLAINT workflow_stage=SHO_APPROACHED provider=groq model=openai/gpt-oss-120b mode=limited_demo event=chat_processed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b prompt_tokens=4357 cached_tokens=4096 fresh_prompt_tokens=261 completion_tokens=1022 total_tokens=5379 cache_hit_percent=94.01
+INFO:     provider=groq model=openai/gpt-oss-120b operation=chat event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=chat model=openai/gpt-oss-120b prompt_tokens=3681 cached_tokens=None fresh_prompt_tokens=None completion_tokens=726 total_tokens=4407 cache_hit_percent=None
+INFO:     case_id=fa1a85c5-e7ad-498f-b6e7-a8d3d503c760 classification=CONSUMER workflow_stage=INFORMAL_REQUEST provider=groq model=openai/gpt-oss-120b mode=groq event=chat_processed
+WARNING:  event=groq_rate_limit provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b http_status=429 retry_after_seconds=24.0 remaining_tokens=3275 token_reset_seconds=35.437 remaining_requests=969 request_reset_seconds=2678.4 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction attempt=1 error_type=RateLimitError event=api_call_failed
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction attempt=2 error_type=BadRequestError event=api_call_failed
+WARNING:  provider=groq model=openai/gpt-oss-120b event=turn_fell_back_to_limited_demo
+INFO:     case_id=fa1a85c5-e7ad-498f-b6e7-a8d3d503c760 classification=CONSUMER workflow_stage=INFORMAL_REQUEST provider=groq model=openai/gpt-oss-120b mode=limited_demo event=chat_processed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b prompt_tokens=5283 cached_tokens=None fresh_prompt_tokens=None completion_tokens=1301 total_tokens=6584 cache_hit_percent=None
+WARNING:  event=groq_rate_limit provider=groq operation=chat model=openai/gpt-oss-120b http_status=429 retry_after_seconds=37.0 remaining_tokens=1413 token_reset_seconds=49.402 remaining_requests=967 request_reset_seconds=2851.2 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=chat attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=chat event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=chat model=openai/gpt-oss-120b prompt_tokens=4338 cached_tokens=None fresh_prompt_tokens=None completion_tokens=1564 total_tokens=5902 cache_hit_percent=None
+INFO:     case_id=fa1a85c5-e7ad-498f-b6e7-a8d3d503c760 classification=CONSUMER workflow_stage=INFORMAL_REQUEST provider=groq model=openai/gpt-oss-120b mode=groq event=chat_processed
+WARNING:  event=groq_rate_limit provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b http_status=429 retry_after_seconds=38.0 remaining_tokens=2876 token_reset_seconds=38.43 remaining_requests=966 request_reset_seconds=2937.6 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b prompt_tokens=6266 cached_tokens=None fresh_prompt_tokens=None completion_tokens=2048 total_tokens=8314 cache_hit_percent=None
+WARNING:  event=groq_rate_limit provider=groq operation=chat model=openai/gpt-oss-120b http_status=429 retry_after_seconds=49.0 remaining_tokens=342 token_reset_seconds=57.435 remaining_requests=965 request_reset_seconds=3024.0 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=chat attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=chat event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=chat model=openai/gpt-oss-120b prompt_tokens=5314 cached_tokens=None fresh_prompt_tokens=None completion_tokens=1383 total_tokens=6697 cache_hit_percent=None
+INFO:     case_id=fa1a85c5-e7ad-498f-b6e7-a8d3d503c760 classification=CONSUMER workflow_stage=INFORMAL_REQUEST provider=groq model=openai/gpt-oss-120b mode=groq event=chat_processed
+INFO:     case_id=dc1f955f-413a-4efc-8fd9-ac2685923cdb classification=POLICE_COMPLAINT workflow_stage=SHO_APPROACHED provider=groq model=openai/gpt-oss-120b mode=limited_demo event=chat_processed
+INFO:     case_id=dc1f955f-413a-4efc-8fd9-ac2685923cdb classification=POLICE_COMPLAINT workflow_stage=SHO_APPROACHED provider=groq model=openai/gpt-oss-120b mode=limited_demo event=chat_processed
+INFO:     case_id=dc1f955f-413a-4efc-8fd9-ac2685923cdb classification=POLICE_COMPLAINT workflow_stage=SHO_APPROACHED provider=groq model=openai/gpt-oss-120b mode=limited_demo event=chat_processed
+WARNING:  event=groq_rate_limit provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b http_status=429 retry_after_seconds=27.0 remaining_tokens=2867 token_reset_seconds=38.497 remaining_requests=964 request_reset_seconds=3110.399 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b prompt_tokens=4351 cached_tokens=None fresh_prompt_tokens=None completion_tokens=855 total_tokens=5206 cache_hit_percent=None
+WARNING:  event=groq_rate_limit provider=groq operation=chat model=openai/gpt-oss-120b http_status=429 retry_after_seconds=4.0 remaining_tokens=3081 token_reset_seconds=36.892 remaining_requests=963 request_reset_seconds=3196.799 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=chat attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=chat event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=chat model=openai/gpt-oss-120b prompt_tokens=3097 cached_tokens=None fresh_prompt_tokens=None completion_tokens=861 total_tokens=3958 cache_hit_percent=None
+INFO:     case_id=44e6162e-940b-4579-89a0-eeb59fbd1482 classification=CYBER_FRAUD workflow_stage=FRAUD_OCCURRED provider=groq model=openai/gpt-oss-120b mode=groq event=chat_processed
+INFO:     case_id=44e6162e-940b-4579-89a0-eeb59fbd1482 classification=CYBER_FRAUD workflow_stage=FRAUD_OCCURRED provider=groq model=openai/gpt-oss-120b mode=limited_demo event=chat_processed
+INFO:     case_id=44e6162e-940b-4579-89a0-eeb59fbd1482 classification=CYBER_FRAUD workflow_stage=FRAUD_OCCURRED provider=groq model=openai/gpt-oss-120b mode=limited_demo event=chat_processed
+WARNING:  event=groq_rate_limit provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b http_status=429 retry_after_seconds=7.0 remaining_tokens=5697 token_reset_seconds=17.272 remaining_requests=962 request_reset_seconds=3283.2 decision=retry_once
+WARNING:  provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction attempt=1 error_type=RateLimitError event=api_call_failed
+INFO:     provider=groq model=openai/gpt-oss-120b operation=structured_CaseExtraction event=api_call_succeeded
+INFO:     event=llm_usage provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b prompt_tokens=4547 cached_tokens=None fresh_prompt_tokens=None completion_tokens=1280 total_tokens=5827 cache_hit_percent=None
+WARNING:  event=groq_rate_limit provider=groq operation=chat model=openai/gpt-oss-120b http_status=429 retry_after_seconds=156.0 remaining_tokens=2600 token_reset_seconds=40.5 remaining_requests=961 request_reset_seconds=3369.6 decision=no_retry
+WARNING:  provider=groq model=openai/gpt-oss-120b reason=RATE_LIMITED event=turn_fell_back_to_limited_demo
+INFO:     case_id=bfe0e033-cc7e-4e21-b94a-356198b7a1f3 classification=GENERAL workflow_stage=INTAKE provider=groq model=openai/gpt-oss-120b mode=limited_demo event=chat_processed
+WARNING:  event=groq_rate_limit provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b http_status=429 retry_after_seconds=958.0 remaining_tokens=8000 token_reset_seconds=0.001 remaining_requests=961 request_reset_seconds=3369.6 decision=no_retry
+WARNING:  provider=groq model=openai/gpt-oss-120b reason=RATE_LIMITED event=turn_fell_back_to_limited_demo
+INFO:     case_id=bfe0e033-cc7e-4e21-b94a-356198b7a1f3 classification=GENERAL workflow_stage=INTAKE provider=groq model=openai/gpt-oss-120b mode=limited_demo event=chat_processed
+WARNING:  event=groq_rate_limit provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b http_status=429 retry_after_seconds=938.0 remaining_tokens=8000 token_reset_seconds=0.001 remaining_requests=962 request_reset_seconds=3283.2 decision=no_retry
+WARNING:  provider=groq model=openai/gpt-oss-120b reason=RATE_LIMITED event=turn_fell_back_to_limited_demo
+INFO:     case_id=bfe0e033-cc7e-4e21-b94a-356198b7a1f3 classification=GENERAL workflow_stage=INTAKE provider=groq model=openai/gpt-oss-120b mode=limited_demo event=chat_processed
+WARNING:  event=groq_rate_limit provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b http_status=429 retry_after_seconds=1645.0 remaining_tokens=8000 token_reset_seconds=0.001 remaining_requests=962 request_reset_seconds=3283.2 decision=no_retry
+WARNING:  provider=groq model=openai/gpt-oss-120b reason=RATE_LIMITED event=turn_fell_back_to_limited_demo
+INFO:     case_id=bfe0e033-cc7e-4e21-b94a-356198b7a1f3 classification=GENERAL workflow_stage=INTAKE provider=groq model=openai/gpt-oss-120b mode=limited_demo event=chat_processed
+WARNING:  event=groq_rate_limit provider=groq operation=structured_CaseExtraction model=openai/gpt-oss-120b http_status=429 retry_after_seconds=580.0 remaining_tokens=8000 token_reset_seconds=0.001 remaining_requests=963 request_reset_seconds=3196.799 decision=no_retry
+WARNING:  provider=groq model=openai/gpt-oss-120b reason=RATE_LIMITED event=turn_fell_back_to_limited_demo
+INFO:     case_id=77038a82-e443-4587-9224-f2bf4ad5f3ff classification=GENERAL workflow_stage=INTAKE provider=groq model=openai/gpt-oss-120b mode=limited_demo event=chat_processed
