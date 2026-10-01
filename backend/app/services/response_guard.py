@@ -143,9 +143,9 @@ def _cited_parts(cited: str) -> list[str]:
 
 
 def _norm_act(value: str) -> str:
-    """Loose Act-name form: ``Act, 2019`` == ``Act 2019``. Used only to *reject*."""
+    """Normalize punctuation and spacing in Act names for exact licensing or caveats."""
     text = unicodedata.normalize("NFKC", value or "").casefold()
-    text = re.sub(rf"[,.'\u2019\u2018\"\u201c\u201d{DASH}/]", " ", text)
+    text = re.sub(rf"[,.'\u2019\u2018\"\u201c\u201d{DASH}/():]", " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -159,12 +159,24 @@ def _act_alternatives(value: str) -> list[str]:
     disjunction. `_norm_act` replaces the ``/`` with a space, so the whole label collapsed
     into the single meaningless string ``model tenancy act state rent control acts``, and no
     containment test could ever see that the Rajasthan Rent Control Act *is* a State Rent
-    Control Act. The product's corpus says it covers this Act; the guard could not read its
-    own label. Split on the disjunction *before* normalising, and register each alternative
-    in its own right, so the accept path and the reject path read the label the same way.
+    Control Act. Split on the disjunction *before* normalising. Exact alternatives may be
+    licensed; related State enactments only receive an unverified-citation caveat.
     """
     return [name for name in (_norm_act(part) for part in _ACT_ALT_SPLIT_RE.split(value or ""))
             if name]
+
+
+def _positive_act_name(value: str) -> str:
+    """Only explicit aliases may share a positive (Act, section) license.
+
+    The tenancy corpus says ``Model Tenancy Act`` without a year, while the official
+    title and ordinary citations use ``Model Tenancy Act, 2021``. This one known alias
+    must not license an invented State/City enactment or a different year.
+    """
+    name = _norm_act(value)
+    if name.startswith("the "):
+        name = name[4:]
+    return "model tenancy act" if name == "model tenancy act 2021" else name
 
 
 # "Model"/"State"/"Central", plus every State or UT surface form the product already knows.
@@ -218,7 +230,12 @@ _ACT_ANCHOR = r"(?:Act|Sanhita|Adhiniyam|Nyaya|Code|Rules|Regulations|Ordinance|
 ACT_NAME_RE = re.compile(
     rf"\b(?:[A-Z][\w&'\u2019{DASH}]*\s+(?:of\s+|on\s+|and\s+|for\s+|the\s+)?){{0,6}}{_ACT_ANCHOR}"
     rf"(?:\s+(?:on|of|for)\s+[A-Z][\w&'\u2019{DASH}]*(?:\s+[A-Z][\w&'\u2019{DASH}]*)?)?"
-    rf"(?:\s*,?\s*(?:19|20)\d{{2}})?\b"
+    rf"(?:\s*\([^)]{{1,80}}\))?"
+    rf"(?:\s*\[[^\]]{{1,80}}\])?"
+    rf"(?:\s*[{DASH}]\s*(?:[A-Za-z][A-Za-z {DASH}]{{0,60}}|(?:18|19|20)\d{{2}}))?"
+    rf"(?:\s*,?\s*(?:18|19|20)\d{{2}})?"
+    rf"(?:\s*:\s*[^.,;!?()\n]{{1,80}})?(?!\w)",
+    re.IGNORECASE,
 )
 
 
@@ -259,8 +276,8 @@ class CitationAllowlist:
           A corpus-less domain licenses only what its own documents already print, so
           EMPLOYMENT accepts no bare statute number at all.
 
-        Note this only ever *accepts*. Rejection still runs through `_classify`, which
-        prefers a caveat over deletion, so widening the Act test cannot delete correct law.
+        Act names must match a vouched-for pair exactly after controlled normalization.
+        Related but unverified names are handled separately by `_classify`.
         """
         parts = _cited_parts(cited)
         if not parts:
@@ -269,10 +286,9 @@ class CitationAllowlist:
             for part in parts:
                 variants = _section_variants(part)
                 if not any(
-                    (known, section) in self.verified_pairs
+                    (name, section) in self.verified_pairs
                     for named in named_acts
-                    for known in self.act_names
-                    if named in known or known in named
+                    for name in [_positive_act_name(named)]
                     for section in variants
                 ):
                     return False
@@ -317,11 +333,13 @@ def _norm_url(value: str) -> str:
 
 
 def _fact_keys(domain_id: str) -> frozenset[str]:
-    """Closed set, read live: the domain's fact keys plus every profile field name."""
+    """Closed set, read live: domain, profile, and document field names."""
     from app.schemas.chat import StructuredCaseProfile
+    from app.services.document_registry import DOCUMENT_DEFINITIONS
 
     keys = {fact.key for fact in domain_registry.resolve(domain_id).facts}
     keys |= set(StructuredCaseProfile.model_fields)
+    keys |= {field for definition in DOCUMENT_DEFINITIONS.values() for field in definition.required_fields}
     return frozenset(key for key in keys if "_" in key)
 
 
@@ -351,11 +369,8 @@ def build_allowlist(profile: Any) -> CitationAllowlist:
     domain_sections: set[str] = set()
 
     def _pair(act_name: str, found_sections: set[str]) -> None:
-        # A label that names a family ("Model Tenancy Act / State Rent Control Acts") is
-        # registered once per alternative, so the accept path reads the label exactly as
-        # `_classify` does. This only *splits* labels the corpus already carries - it adds
-        # no Act and no (act, section) pair whose section was not already in the corpus, so
-        # `licensed()` is not loosened and A1 is untouched.
+        # Register a composite corpus label per exact alternative. Related enactments
+        # can be caveated by `_classify`, but cannot inherit these positive pairs.
         for alternative in _act_alternatives(act_name):
             pairs.update((alternative, section) for section in found_sections)
 
@@ -498,7 +513,8 @@ def _case_law_note(profile: Any) -> str:
     )
 
 
-def _statute_note(profile: Any, allow: CitationAllowlist) -> str:
+def _statute_note(profile: Any, allow: CitationAllowlist, *, stripped: bool,
+                  caveated: bool) -> str:
     authority = allow.official_authorities[0] if allow.official_authorities else ""
     # The authority is named, never the URL: EMPLOYMENT's official source URL carries six
     # underscores and test_api.py:170 asserts no underscore reaches reply_text. The URL
@@ -520,15 +536,40 @@ def _statute_note(profile: Any, allow: CitationAllowlist) -> str:
         english_tail = "Please have the exact provision verified before relying on a section number."
         hinglish_tail = "Kisi section number par bharosa karne se pehle exact provision verify kara lein."
         devanagari_tail = "\u0915\u093f\u0938\u0940 \u0938\u0947\u0915\u094d\u0936\u0928 \u0928\u0902\u092c\u0930 \u092a\u0930 \u092d\u0930\u094b\u0938\u093e \u0915\u0930\u0928\u0947 \u0938\u0947 \u092a\u0939\u0932\u0947 \u0938\u0939\u0940 \u092a\u094d\u0930\u093e\u0935\u0927\u093e\u0928 \u0938\u0924\u094d\u092f\u093e\u092a\u093f\u0924 \u0915\u0930\u093e \u0932\u0947\u0902\u0964"
+    if not (stripped or caveated):
+        return ""
+    english_actions: list[str] = []
+    hinglish_actions: list[str] = []
+    devanagari_actions: list[str] = []
+    if stripped:
+        english_actions.append("I removed the section numbers I could not confirm.")
+        hinglish_actions.append("Jo section numbers main confirm nahi kar saka, unhe hata diya hai.")
+        devanagari_actions.append(
+            "\u091c\u093f\u0928 \u0938\u0947\u0915\u094d\u0936\u0928 \u0928\u0902\u092c\u0930\u094b\u0902 \u0915\u0940 \u092a\u0941\u0937\u094d\u091f\u093f \u0928\u0939\u0940\u0902 \u0939\u094b \u0938\u0915\u0940, \u0909\u0928\u094d\u0939\u0947\u0902 \u0939\u091f\u093e \u0926\u093f\u092f\u093e \u0939\u0948\u0964"
+        )
+    if caveated:
+        english_actions.append(
+            "I kept the other cited section numbers in the reply, but could not confirm their "
+            "exact provisions or applicability." if stripped else
+            "I kept the cited section numbers in the reply, but could not confirm their "
+            "exact provisions or applicability."
+        )
+        hinglish_actions.append(
+            "Baaki section numbers reply mein rakhe hain, lekin unka exact provision ya "
+            "applicability confirm nahi kar saka." if stripped else
+            "Section numbers reply mein rakhe hain, lekin unka exact provision ya "
+            "applicability confirm nahi kar saka."
+        )
+        devanagari_actions.append(
+            "\u092c\u093e\u0915\u0940 \u0938\u0947\u0915\u094d\u0936\u0928 \u0928\u0902\u092c\u0930 \u0909\u0924\u094d\u0924\u0930 \u092e\u0947\u0902 \u0930\u0916\u0947 \u0939\u0948\u0902, \u0932\u0947\u0915\u093f\u0928 \u0909\u0928\u0915\u0947 \u0938\u0939\u0940 \u092a\u094d\u0930\u093e\u0935\u0927\u093e\u0928 \u092f\u093e \u0932\u093e\u0917\u0942 \u0939\u094b\u0928\u0947 \u0915\u0940 \u092a\u0941\u0937\u094d\u091f\u093f \u0928\u0939\u0940\u0902 \u0939\u0941\u0908 \u0939\u0948\u0964" if stripped else
+            "\u0938\u0947\u0915\u094d\u0936\u0928 \u0928\u0902\u092c\u0930 \u0909\u0924\u094d\u0924\u0930 \u092e\u0947\u0902 \u0930\u0916\u0947 \u0939\u0948\u0902, \u0932\u0947\u0915\u093f\u0928 \u0909\u0928\u0915\u0947 \u0938\u0939\u0940 \u092a\u094d\u0930\u093e\u0935\u0927\u093e\u0928 \u092f\u093e \u0932\u093e\u0917\u0942 \u0939\u094b\u0928\u0947 \u0915\u0940 \u092a\u0941\u0937\u094d\u091f\u093f \u0928\u0939\u0940\u0902 \u0939\u0941\u0908 \u0939\u0948\u0964"
+        )
     return _copy(
         profile,
-        "Note on legal sources: I do not have verified statutory text for this kind of case, "
-        "so I have removed the section numbers I could not confirm. " + english_tail,
-        "Legal sources ke baare mein: is tarah ke case ke liye mere paas verified statutory "
-        "text nahi hai, isliye jo section numbers main confirm nahi kar saka unhe hata diya hai. "
-        + hinglish_tail,
-        "\u0915\u093e\u0928\u0942\u0928\u0940 \u0938\u094d\u0930\u094b\u0924\u094b\u0902 \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902: \u0907\u0938 \u0924\u0930\u0939 \u0915\u0947 \u092e\u093e\u092e\u0932\u0947 \u0915\u0947 \u0932\u093f\u090f \u092e\u0947\u0930\u0947 \u092a\u093e\u0938 \u0938\u0924\u094d\u092f\u093e\u092a\u093f\u0924 \u0915\u093e\u0928\u0942\u0928\u0940 \u092a\u093e\u0920 \u0928\u0939\u0940\u0902 \u0939\u0948, \u0907\u0938\u0932\u093f\u090f \u091c\u093f\u0928 \u0938\u0947\u0915\u094d\u0936\u0928 \u0928\u0902\u092c\u0930\u094b\u0902 \u0915\u0940 \u092a\u0941\u0937\u094d\u091f\u093f \u0928\u0939\u0940\u0902 \u0939\u094b \u0938\u0915\u0940 \u0909\u0928\u094d\u0939\u0947\u0902 \u0939\u091f\u093e \u0926\u093f\u092f\u093e \u0939\u0948\u0964 "
-        + devanagari_tail,
+        "Note on legal sources: " + " ".join(english_actions) + " " + english_tail,
+        "Legal sources ke baare mein: " + " ".join(hinglish_actions) + " " + hinglish_tail,
+        "\u0915\u093e\u0928\u0942\u0928\u0940 \u0938\u094d\u0930\u094b\u0924\u094b\u0902 \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902: "
+        + " ".join(devanagari_actions) + " " + devanagari_tail,
     )
 
 
@@ -720,13 +761,90 @@ def _party_needles(text: str) -> set[str]:
     return needles
 
 
+_UNNAMED_CASE_ASSERTION_RE = re.compile(
+    r"\b(?:Supreme Court|High Court|(?:the|a) Court)\s+"
+    r"(?:(?:has\s+)?(?:held|ruled)\b|(?:ruling|judg(?:e)?ment|decision|case)\b"
+    r".{0,100}?\b(?:supports?|confirms?|holds?|held|interprets?|requires?|says?|"
+    r"directly|on\s+this\s+point|you\s+can\s+quote)\b)"
+    r"|\bsettled\s+case\s+law\s+says\b"
+    r"|\bthere\s+is\s+a\s+(?:(?:19|20)\d{2}\s+)?judg(?:e)?ment\b"
+    r".{0,60}?\b(?:directly|on\s+this\s+point|supports?|confirms?|holds?)\b",
+    re.IGNORECASE,
+)
+_CASE_VERIFICATION_PREFIX_RE = re.compile(
+    r"\b(?:whether|if)\b|\b(?:check|verify|search|look\s+up|find)\s+(?:whether|if|that)\b",
+    re.IGNORECASE,
+)
+
+
+def _unnamed_case_assertion(sentence: str) -> bool:
+    """An affirmative court holding/promise, not advice to verify case law."""
+    match = _UNNAMED_CASE_ASSERTION_RE.search(sentence)
+    return bool(match and not _CASE_VERIFICATION_PREFIX_RE.search(sentence[:match.start()]))
+
+
+def _practical_advice_outside_case_claim(sentence: str) -> str:
+    """Keep a separate actionable clause, never the unsupported holding itself."""
+    match = _UNNAMED_CASE_ASSERTION_RE.search(sentence)
+    if match is None:
+        return ""
+    before = sentence[:match.start()]
+    leading = re.fullmatch(
+        r"\s*(?P<advice>(?:check|keep|save|collect|preserve|review)\b[^,;.!?]*)"
+        r",\s*because\s+(?:the\s+)?",
+        before, re.IGNORECASE,
+    )
+    if leading:
+        return leading.group("advice").strip() + "."
+    trailing = re.search(
+        r",\s*so\s+(?P<advice>(?:keep|save|collect|preserve|review|check)\b.*)",
+        sentence[match.end():], re.IGNORECASE,
+    )
+    return trailing.group("advice").strip() if trailing else ""
+
+
+def _strip_unnamed_case_assertions(text: str, redactions: list[Redaction]) -> tuple[str, bool]:
+    parts = _blocks(text)
+    removed: set[int] = set()
+    hit = False
+    for index, part in enumerate(parts):
+        if _is_separator(part) or not part.strip():
+            continue
+        kept_lines: list[str] = []
+        changed = False
+        for line in part.splitlines(keepends=True):
+            body = line.rstrip("\r\n")
+            ending = line[len(body):]
+            sentences = _sentences(body)
+            kept = []
+            for sentence in sentences:
+                if _unnamed_case_assertion(sentence):
+                    hit = True
+                    changed = True
+                    redactions.append(Redaction("case_law", "unnamed_assertion"))
+                    kept.append(_practical_advice_outside_case_claim(sentence))
+                else:
+                    kept.append(sentence)
+            rebuilt = "".join(kept)
+            if rebuilt.strip():
+                kept_lines.append(rebuilt + ending)
+        if changed:
+            parts[index] = "".join(kept_lines)
+            if not parts[index].strip():
+                removed.add(index)
+    return _rejoin(parts, removed, text), hit
+
+
 def _apply_case_law(text: str, profile: Any, redactions: list[Redaction]) -> tuple[str, bool]:
     """Remove the block a judgment citation anchors, plus any later reference to that case.
 
     No case-law corpus exists anywhere in the product (``app/data/`` holds exactly three
     statute files), so this rule needs no allowlist and is unconditional in every domain.
     """
-    if not _case_law_hits(text):
+    if not _case_law_hits(text) and not any(
+        _unnamed_case_assertion(sentence)
+        for line in text.splitlines() for sentence in _sentences(line)
+    ):
         return text, False
 
     needles = _party_needles(text)
@@ -788,7 +906,9 @@ def _apply_case_law(text: str, profile: Any, redactions: list[Redaction]) -> tup
             removed_indices.add(index)
             redactions.append(Redaction("case_law", "orphan_heading"))
 
-    return _rejoin(parts, removed_indices, text), hit
+    result = _rejoin(parts, removed_indices, text)
+    result, unnamed_hit = _strip_unnamed_case_assertions(result, redactions)
+    return result, hit or unnamed_hit
 
 
 def _rejoin(parts: list[str], removed: set[int], original: str) -> str:
@@ -874,7 +994,10 @@ def _apply_statute(text: str, profile: Any, allow: CitationAllowlist,
 
 
 _ACT_CONNECTOR_RE = re.compile(r"[\s,]*(?:of|under|as\s+per|u/s)\s+(?:the\s+)?", re.IGNORECASE)
-_CITATION_LEAD_RE = re.compile(r"[\s,;:'\"(]*(?:sections?|secs?\.?|s\.|§)?[\s.]*\Z", re.IGNORECASE)
+_CITATION_LEAD_RE = re.compile(
+    r"[\s,;:'\"(]*(?:ke|ki|ka)?\s*(?:sections?|secs?\.?|s\.|§)?[\s.]*\Z",
+    re.IGNORECASE,
+)
 
 
 def _named_acts(block: str, position: int, end: int | None = None) -> list[str]:
@@ -907,7 +1030,7 @@ def _named_acts(block: str, position: int, end: int | None = None) -> list[str]:
     candidates = list(ACT_NAME_RE.finditer(before))
     if candidates:
         last = candidates[-1]
-        if _CITATION_LEAD_RE.search(before[last.end():]):
+        if _CITATION_LEAD_RE.fullmatch(before[last.end():]):
             name = _norm_act(last.group(0))
             if len(name) > 6:
                 return [name]
@@ -952,12 +1075,8 @@ _OUTCOME_WORD = (
 _OUTCOME_WORD_RE = re.compile(_OUTCOME_WORD, re.IGNORECASE)
 _PERCENT_RE = re.compile(rf"(?:{APPROX}\s*)?\d{{1,3}}(?:\.\d+)?\s*%", re.IGNORECASE)
 
-# A percentage is a probability claim when a probability NOUN is *attached* to it: as the
-# word that follows it, as the word that precedes it across nothing but a copula, or as its
-# own line's label. "An outcome word somewhere within 70 characters" was never evidence of
-# anything - in real legal prose the outcome word is always nearby ("if you win, the 12% GST
-# is refundable too"), which is exactly why the window deleted correct rates. Attachment,
-# not proximity: the same lesson as `_named_acts`.
+# Decide each figure from its own clause and attached noun, including ordinary words between
+# "chance" and the figure. Outcome words near a rate are not enough to remove that rate.
 # Order matters - the multi-word forms come first, or `chances?` eats "chance" and leaves
 # "of success" stranded behind the removal.
 _PROB_NOUN = (
@@ -968,10 +1087,8 @@ _PROB_NOUN = (
     r"|\u0905\u0935\u0938\u0930|\u0938\u092b\u0932\u0924\u093e)"
 )
 
-# A rate states what it is a rate *of*, and it states it AFTER the sign. The test is
-# lookahead-only on purpose: W1-06 t4's "- **Tour-operator refund:** ~30 % chance," puts a
-# measurand immediately *before* the number, so a look-behind measurand test would veto a
-# genuinely invented probability and break that fixture's redaction count.
+# Rate units may follow the sign; generic quantity words are not a veto when an explicit
+# probability noun governs the figure ("65% refund chance").
 _MEASURAND = (
     r"(?:per\s+(?:annum|month|year|quarter|week|day|unit|kg)|p\.\s?a\.|annually|monthly"
     r"|yearly|quarterly|prati\s+(?:varsh|maah|mah)|sa?alana"
@@ -986,29 +1103,10 @@ _MEASURAND = (
     r"|\u091f\u0948\u0915\u094d\u0938|\u0915\u093f\u0930\u093e\u092f\u093e|\u091b\u0942\u091f"
     r"|\u091c\u0941\u0930\u094d\u092e\u093e\u0928\u093e)"
 )
-# `.match()`-ed at the character right after the `%`. The optional bridge carries the Hindi
-# genitive ("18 % ka byaj") and the English "of the" ("30 % of the refund").
-_MEASURAND_AFTER_RE = re.compile(
-    rf"\s*(?:(?:ka|ki|ke|of|as|on|in|the|a|an"
-    rf"|\u0915\u093e|\u0915\u0940|\u0915\u0947)\s+){{0,3}}{_MEASURAND}\b",
-    re.IGNORECASE,
-)
-
-# Hindi/Hinglish word order puts the probability noun first ("jeetne ki sambhavna 30 % hai"),
-# and "The probability is 30%." has nothing after the sign at all. Only a copula, an
-# approximator or punctuation may sit in the gap, and the gap is bounded, so a noun in an
-# earlier clause cannot reach across and claim the number.
-_PROB_BRIDGE = (
-    rf"(?:[\s:=~*_(\[\u2248{DASH}]"
-    rf"|\b(?:is|are|was|were|be|at|of|about|around|roughly|nearly|approximately|only|just"
-    rf"|maybe|perhaps|hai|hain|ki|ke|ka)\b"
-    rf"|\u0939\u0948\u0902?|\u0915\u093f|\u0932\u0917\u092d\u0917|\u0915\u0930\u0940\u092c)*"
-)
-_PROB_BEFORE_RE = re.compile(rf"\b{_PROB_NOUN}{_PROB_BRIDGE}\Z", re.IGNORECASE)
-_PROB_GAP = 40
-
 _PERCENT_PHRASE_RE = re.compile(
-    rf"(?:{APPROX}\s*)?\d{{1,3}}(?:\.\d+)?\s*%"
+    rf"(?:{APPROX}\s*)?"
+    rf"(?:\d{{1,3}}(?:\.\d+)?\s*%?\s*(?:{DASH_CLASS}|to)\s*)?"
+    rf"\d{{1,3}}(?:\.\d+)?\s*%"
     rf"(?P<prob>\s*{_PROB_NOUN})?"
     rf"(?:\s*[,;])?",
     re.IGNORECASE,
@@ -1019,23 +1117,65 @@ _OUTCOME_LINE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# C4: an explicit probability noun immediately after the figure wins even when a
+# subject-matter word ("refund") comes first. A direct rate unit wins over an earlier
+# probability mention; a generic "of/on the value" after the figure does not.
+_PROB_AFTER_RE = re.compile(
+    rf"\s*(?:(?:refund|deposit|recovery|claim|case|settlement)\s+){{0,2}}{_PROB_NOUN}\b",
+    re.IGNORECASE,
+)
+_DIRECT_MEASURAND_AFTER_RE = re.compile(
+    rf"\s*(?:(?:ka|ki|ke|\u0915\u093e|\u0915\u0940|\u0915\u0947)\s+)?{_MEASURAND}\b",
+    re.IGNORECASE,
+)
+_PROB_NOUN_RE = re.compile(_PROB_NOUN, re.IGNORECASE)
+_STRONG_RATE_LABEL_RE = re.compile(
+    r"\b(?:interest|byaj|gst|tds|tcs|vat|tax|duty|cess|fees?|penalt(?:y|ies))\b"
+    r"|\u092c\u094d\u092f\u093e\u091c|\u091c\u0940\u090f\u0938\u091f\u0940|\u091f\u0948\u0915\u094d\u0938",
+    re.IGNORECASE,
+)
+_CLAUSE_BREAK_RE = re.compile(r"[,;.!?\u0964]")
+_PROB_COMMA_BRIDGE_RE = re.compile(
+    r"\s*(?:(?:is|are|was|were|roughly|about|around|approximately|approx\.?|"
+    r"lagbhag|kareeb|qareeb|hai|hain|the|only|just)\s*)*"
+    r"(?:\u0939\u0948|\u0939\u0948\u0902|\u0932\u0917\u092d\u0917|\u0915\u0930\u0940\u092c)?\s*",
+    re.IGNORECASE,
+)
+
 
 def _percent_role(body: str, match: re.Match[str]) -> str:
-    """What this percentage asserts, read from its own grammar and nothing else.
-
-    ``"measurand"``   - it names what it is a percentage *of*, so it is a rate or a quantum
-                        and never a probability. Decided lookahead-only (see `_MEASURAND`).
-    ``"probability"`` - a probability noun is attached to it, after or immediately before.
-    ``"unknown"``     - neither reading applies. The module's rule 1 then governs: keep the
-                        text and record nothing.
-    """
-    after_pct = match.start() + match.group(0).index("%") + 1
-    if _MEASURAND_AFTER_RE.match(body, after_pct):
-        return "measurand"
-    if match.group("prob"):
+    """Classify this figure by its attached unit and the governing noun in its clause."""
+    after_pct = match.start() + match.group(0).rindex("%") + 1
+    if _PROB_AFTER_RE.match(body, after_pct):
         return "probability"
-    before = _PROB_BEFORE_RE.search(body[:match.start()])
-    if before is not None and match.start() - before.start() <= _PROB_GAP:
+    if _DIRECT_MEASURAND_AFTER_RE.match(body, after_pct):
+        return "measurand"
+    before = body[:match.start()]
+    # A completed figure closes its own assertion. A later refund on the same line must
+    # not inherit the earlier figure's chance noun ("chance 30% and refund 100%").
+    previous_percent = before.rfind("%")
+    if previous_percent >= 0:
+        before = before[previous_percent + 1:]
+    breaks = list(_CLAUSE_BREAK_RE.finditer(before))
+    clause = before[breaks[-1].end():] if breaks else before
+    probability = list(_PROB_NOUN_RE.finditer(clause))
+    if (not probability and breaks and breaks[-1].group() == ","
+            and _PROB_COMMA_BRIDGE_RE.fullmatch(clause)):
+        # A final comma can introduce a short bridge ("chance, roughly 30%"),
+        # or close an aside ("chance, based on the facts, is 30%"). Read the
+        # preceding clause, but let a later rate label outrank the chance noun.
+        earlier = before[:breaks[-1].start()]
+        hard_breaks = list(re.finditer(r"[;.!?\u0964]", earlier))
+        earlier = earlier[hard_breaks[-1].end():] if hard_breaks else earlier
+        probability = list(_PROB_NOUN_RE.finditer(earlier))
+        if probability:
+            rates = list(_STRONG_RATE_LABEL_RE.finditer(earlier))
+            if rates and rates[-1].start() > probability[-1].start():
+                return "measurand"
+    if probability:
+        rates = list(_STRONG_RATE_LABEL_RE.finditer(clause))
+        if rates and rates[-1].start() > probability[-1].start():
+            return "measurand"
         return "probability"
     return "unknown"
 
@@ -1043,12 +1183,9 @@ def _percent_role(body: str, match: re.Match[str]) -> str:
 def _apply_outcome_probability(text: str, redactions: list[Redaction]) -> tuple[str, bool]:
     """Remove a numeric win probability. Nothing in the product computes one.
 
-    Rule 1 is code here, not a comment. A percentage is deleted only when a probability noun
-    is *attached* to it; a percentage that names its own measurand is kept unconditionally;
-    and a percentage that reads neither way is kept **and records no redaction**, so
-    `_outcome_note` can no longer be appended to a reply that made no probability claim.
-    The outcome-word list survives only as the cheap early-out below - its word set is a
-    strict superset of `_PROB_NOUN`, so it can only short-circuit text that would be kept.
+    Classify each figure by its own clause and attached unit. A rate or inconclusive figure
+    stays unchanged without a redaction or note. A standalone probability label is removed
+    with its figure; prose loses only the unsupported numeric probability.
     """
     if not _PERCENT_RE.search(text) or not _OUTCOME_WORD_RE.search(text):
         return text, False
@@ -1062,19 +1199,12 @@ def _apply_outcome_probability(text: str, redactions: list[Redaction]) -> tuple[
             out_lines.append(line)
             continue
         line_match = _OUTCOME_LINE_RE.match(body)
-        if line_match and _OUTCOME_WORD_RE.search(line_match.group("label") or ""):
-            # A `label: value` line is already assertion-shaped - the label *is* the
-            # predicate - but a percentage that states its own unit still vetoes the
-            # deletion. `_OUTCOME_LINE_RE` anchors at end of line, so today nothing can
-            # follow the sign and this veto is defensive; it keeps the rule true if that
-            # anchor is ever loosened. It is deliberately *not* a test of the label, since
-            # W1-06 t4's own invented line is labelled "Tour-operator refund".
+        if line_match and len(_PERCENT_RE.findall(body)) == 1:
             phrase = _PERCENT_PHRASE_RE.search(body)
-            if phrase is None or _percent_role(body, phrase) != "measurand":
+            if phrase is not None and _percent_role(body, phrase) == "probability":
                 redactions.append(Redaction("outcome_probability", "whole_line"))
                 hit = True
                 continue
-
         def replace(match: re.Match[str]) -> str:
             nonlocal hit
             if _percent_role(body, match) != "probability":
@@ -1145,14 +1275,15 @@ _CONTACT_NUMBER_RE = re.compile(
 _EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b")
 _URL_RE = re.compile(r"https?://[^\s<>)\]\"'`]+")
 # Does this span *supply* a place, or does it tell the user to go and find one? A bare
-# hostname, a scheme-ful URL, a PIN code or a street-address shape is a locator the product
+# hostname, a scheme-ful URL, a labelled PIN code or a street-address shape is a locator the product
 # cannot verify. "Confirm the address on its official website" supplies none - it asserts no
 # location at all, so there is nothing to fabricate and nothing to delete. Lives here rather
 # than inside a single rule because it is the same test any fabricated-specificity rule needs.
 _LOCATOR_RE = re.compile(
     r"https?://\S+"
     r"|\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\.(?:gov|nic|org|com|net|edu|in|info)\b"
-    r"|\b[1-9]\d{5}\b"
+    r"|\b(?:PIN(?:\s*(?:code|no\.?))?|postal\s*code|post\s*code|ZIP(?:\s*code)?)\s*[:#-]?\s*[1-9]\d{5}\b"
+    r"|\b[1-9]\d{5}\s*(?:PIN(?:\s*code)?|postal\s*code|post\s*code|ZIP(?:\s*code)?)\b"
     r"|\b\d{1,4}[A-Za-z]?[,/]?\s+(?:[A-Z][\w'’]*\s+){0,3}"
     r"(?:Road|Rd\.?|Marg|Street|St\.?|Nagar|Colony|Lane|Gali|Sector|Block|Chowk|Bhawan"
     r"|Bhavan|Building|Floor|Complex|Circle|Path|Janpath|Cross|Layout|Vihar|Puram)\b",
@@ -1544,7 +1675,16 @@ def guard_reply(reply: str, profile: Any, user_message: str = "") -> GuardResult
     if case_law_hit:
         text = _append_once(text, _case_law_note(profile), _marker("case_law", profile))
     if statute_note:
-        text = _append_once(text, _statute_note(profile, allow), _marker("statute", profile))
+        statute_rules = {item.rule for item in redactions}
+        text = _append_once(
+            text,
+            _statute_note(
+                profile, allow,
+                stripped="statute_unverified" in statute_rules,
+                caveated="statute_unconfirmed_caveated" in statute_rules,
+            ),
+            _marker("statute", profile),
+        )
     if outcome_hit:
         text = _append_once(text, _outcome_note(profile), _marker("outcome", profile))
     if helpline_hit:

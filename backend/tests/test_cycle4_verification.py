@@ -155,6 +155,29 @@ def test_model_payload_does_not_mutate_the_in_memory_context():
     assert context.domain_context["next_fact_candidates"][0]["meaning"] != "mutated"
 
 
+def test_serialized_provider_payload_redacts_jurisdiction_key_without_losing_binding():
+    case = ConversationalLegalAgent()._init_case_profile(
+        "tenant deposit dispute", "d1-jurisdiction", category_override="HOUSING_TENANT"
+    )
+    context = LLMResponseContext(
+        user_message="My landlord kept my deposit.", case_summary={}, workflow={},
+        domain_context=domain_registry.compact_context(case),
+    )
+    original = context.domain_context["jurisdiction"]["fact_key"]
+    serialized = json.dumps(context.model_payload(), ensure_ascii=False)
+    assert '"fact_key"' not in serialized
+    assert f'"{original}"' not in serialized
+    assert context.domain_context["jurisdiction"]["fact_key"] == original
+
+
+def test_document_intake_model_labels_do_not_mutate_persisted_missing_fields():
+    fields = ["user_name", "opposite_party_name", "property_address"]
+    labels = llm_conversation_module._document_missing_labels(fields, "TENANT_DEMAND_NOTICE")
+    assert labels == ["Your full legal name", "Other party name", "Rented property address"]
+    assert fields == ["user_name", "opposite_party_name", "property_address"]
+    assert not any("_" in label or "document:" in label for label in labels)
+
+
 def test_every_other_context_field_still_reaches_the_provider():
     context = response_context_with_candidate()
     payload, dumped = context.model_payload(), context.model_dump(mode="json")

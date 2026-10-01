@@ -294,6 +294,82 @@ def _resolve_llm() -> tuple[object, bool]:
     )
 
 
+# ── Honest outcome detection for the LLM-driven agent path ────────────────────
+#
+# `browser_use.Agent.run()` returns *normally* even when the agent made zero
+# progress: its internal rate-limit handler (browser_use/agent/service.py) catches
+# a provider 429/TPM error, sleeps, retries, and after `max_failures` (default 3)
+# consecutive failures simply stops and returns the history it has - no exception
+# reaches us. On Groq's free tier this is the common case, not the rare one: a
+# browser-automation prompt carries a full page's DOM/accessibility tree, which is
+# far larger than the 8,000 TPM budget this project has hit everywhere else.
+#
+# Before this fix, a normal return was treated as "the form is prepared" with no
+# check on what actually happened, so the user saw a success message ("Review the
+# prepared form") while the agent had never left the portal's landing page.
+
+# Actions that constitute the agent actually doing something to the page, as
+# opposed to just looking at it. Deliberately excludes pure navigation/scroll/wait
+# actions (e.g. "go_to_url", "scroll", "wait") - reaching a page is not filling it.
+_MEANINGFUL_PROGRESS_ACTIONS = frozenset({
+    "input_text", "click_element_by_index", "click_element",
+    "select_dropdown_option", "upload_file", "send_keys",
+    "pause_for_review", "pause_for_sensitive_input",
+})
+
+_RATE_LIMIT_MARKERS = ("tokens per minute", "rate limit", "rate_limit", "429")
+
+
+def _classify_agent_progress(history) -> tuple[bool, bool, list[str]]:
+    """Decide, from positive evidence only, whether the agent made real progress.
+
+    Never infer success from the *absence* of an exception - `history.is_done()`
+    alone is not enough either, since an agent can call `done` having given up.
+    Success requires at least one action that actually touched the page, or our
+    own `pause_for_review`/`pause_for_sensitive_input` controller action firing,
+    which is unambiguous positive evidence regardless of what else happened.
+
+    `history` is whatever `Agent.run()` returned (an `AgentHistoryList`), or in
+    tests, any object exposing the same `action_names()` / `errors()` API - this
+    function touches nothing else, so it needs no browser_use import to test.
+
+    Returns (made_progress, rate_limited, action_names).
+    """
+    try:
+        action_names = list(history.action_names())
+    except Exception:
+        action_names = []
+    try:
+        errors = [str(e) for e in history.errors() if e]
+    except Exception:
+        errors = []
+
+    # Explicit, unambiguous: NyayaBot's own pause action only fires once the
+    # agent has decided the form is ready (or hit a field it must not touch).
+    if "pause_for_review" in action_names or "pause_for_sensitive_input" in action_names:
+        return True, False, action_names
+
+    made_progress = any(name in _MEANINGFUL_PROGRESS_ACTIONS for name in action_names)
+    rate_limited = any(
+        marker in error.lower() for error in errors for marker in _RATE_LIMIT_MARKERS
+    )
+    return made_progress, rate_limited, action_names
+
+
+def _no_progress_message(rate_limited: bool) -> str:
+    """Truthful replacement for the 'prepared form' message when nothing was done."""
+    if rate_limited:
+        return (
+            "The automatic assistant could not get a response in time (the AI service is "
+            "currently rate-limited) and did not prepare this form. Nothing has been filled "
+            "or submitted — you can continue directly in the browser below."
+        )
+    return (
+        "The automatic assistant couldn't complete the form preparation. Nothing has been "
+        "filled or submitted — you can continue directly in the browser below."
+    )
+
+
 # ── Core agent runner ────────────────────────────────────────────────────────
 
 async def run_browser_session(session: BrowserSession) -> None:
@@ -461,6 +537,14 @@ async def run_browser_session(session: BrowserSession) -> None:
             "4. Never submit sensitive user credentials without human review."
         )
 
+        # Whether the run earned a "form is ready for review" message. The
+        # deterministic mock-portal path is untouched by this task and keeps its
+        # existing, already-honest behaviour (it reports exactly how many fields
+        # `_fill_known_fields` filled); only the LLM-agent branch below can flip
+        # this to False, on positive evidence that nothing meaningful happened.
+        agent_made_progress = True
+        agent_rate_limited = False
+
         if deterministic:
             # ── Local mock portal: real Playwright fills on this same page ────
             session.message = f"Filling {session.portal_label} from your profile and this case…"
@@ -481,6 +565,12 @@ async def run_browser_session(session: BrowserSession) -> None:
 
             history = await agent.run(max_steps=25)
 
+            agent_made_progress, agent_rate_limited, action_names = _classify_agent_progress(history)
+            logger.info(
+                "session=%s event=agent_run_finished made_progress=%s rate_limited=%s actions=%s",
+                session.session_id, agent_made_progress, agent_rate_limited, action_names,
+            )
+
             # ── Capture screenshots and action trace ──────────────────────────
             try:
                 screenshots = history.screenshots()
@@ -499,14 +589,30 @@ async def run_browser_session(session: BrowserSession) -> None:
             logger.warning("session=%s event=review_capture_failed type=%s", session.session_id, type(exc).__name__)
 
         # ── Enforce HITL review: Always pause for user approval before done ───
+        #
+        # SUCCESS MUST BE EARNED: a normal return from `agent.run()` is not, on its
+        # own, evidence the form was prepared - see `_classify_agent_progress`. This
+        # branch only ever reaches the "prepared" wording when `agent_made_progress`
+        # is True, which for the LLM-agent path requires at least one real
+        # page-touching action (or our own pause action firing). The deterministic
+        # mock-portal path is unaffected (`agent_made_progress` stays True there).
         if session.status not in (SessionStatus.CANCELLED, SessionStatus.ERROR):
             session.status = SessionStatus.PAUSED
-            session.pause_kind = "review"
-            session.message = (
-                "Review the prepared form and complete any missing fields. Nothing has been submitted. "
-                "Approve review before manually submitting in the browser."
-            )
-            session.steps.append("Prepared form is waiting for human review.")
+            if agent_made_progress:
+                session.pause_kind = "review"
+                session.message = (
+                    "Review the prepared form and complete any missing fields. Nothing has been submitted. "
+                    "Approve review before manually submitting in the browser."
+                )
+                session.steps.append("Prepared form is waiting for human review.")
+            else:
+                # Truthful failure state: the browser is still open and usable for
+                # manual filling, but nothing was prepared and we do not claim it was.
+                session.pause_kind = "no_progress"
+                session.message = _no_progress_message(agent_rate_limited)
+                session.steps.append(
+                    "Automatic form-filling made no confirmed progress on this portal."
+                )
             await _hold_for_manual_submission(session, browser)
             session.status = SessionStatus.CANCELLED
             session.message = "Browser session closed. Portal submission was not confirmed."

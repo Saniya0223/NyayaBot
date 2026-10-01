@@ -62,7 +62,7 @@ from app.schemas.chat import (
     StructuredCaseProfile,
 )
 from app.services.document_registry import DOCUMENT_DEFINITIONS, select_document_for_workflow
-from app.services.document_generation import assess_document_generation, resolve_requested_document
+from app.services.document_generation import FIELD_LABELS, assess_document_generation, resolve_requested_document
 from app.services.professional_help import SIGNAL_FACT_KEYS, asks_about_legal_help, evaluate_professional_help
 from app.schemas.professional_help import ProfessionalHelpLevel
 from app.services.pending_interaction import (
@@ -78,6 +78,21 @@ logger = logging.getLogger("uvicorn.error")
 # test_llm_conversation.py:516's identity-of-dicts membership assertion still holds.
 VERIFIED_PROVISION = "verified_provision"
 OFFICIAL_SOURCE_LINK = "official_source_link"
+
+
+def _document_missing_labels(fields: list[str], doc_type: str | None) -> list[str]:
+    """Translate persisted fact keys to existing document-form labels for model context."""
+    definition = DOCUMENT_DEFINITIONS.get(doc_type)
+    aliases = {"complainant_name": "user_name", "complainant_city": "user_city",
+               "recipient_name": "opposite_party_name"}
+    labels = {
+        aliases.get(field, field): FIELD_LABELS.get(field, field.replace("_", " ").capitalize())
+        for field in (definition.required_fields if definition else [])
+    }
+    return [
+        labels.get(field, FIELD_LABELS.get(field, field.replace("_", " ").capitalize()))
+        for field in fields
+    ]
 
 
 DIRECT_PROFILE_FIELDS = PROFILE_FACT_FIELDS
@@ -409,8 +424,9 @@ class GeminiConversationService:
             # Document fields are supplied separately after the user selects a document.
             missing_for_response: list[str] = []
             if profile.missing_document_fields and profile.key_facts.get("document_intake_active"):
+                doc_type = select_document_for_workflow(profile.category, profile.current_stage_key)
                 missing_for_response.extend(
-                    f"document:{field}" for field in profile.missing_document_fields
+                    _document_missing_labels(profile.missing_document_fields, doc_type)
                 )
             response_context = LLMResponseContext(
                     user_message=req.message,

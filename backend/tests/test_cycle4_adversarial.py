@@ -31,7 +31,7 @@ from app.agents.conversation_agent import ConversationalLegalAgent
 from app.domains import domain_registry
 from app.llm.contracts import LLMResponseContext
 from app.services.model_law_adoption import MODEL_TENANCY_ADOPTION, UNVERIFIED, adoption_status
-from app.services.response_guard import _fact_keys, guard_reply
+from app.services.response_guard import _LOCATOR_RE, _fact_keys, build_allowlist, guard_reply
 
 FIXTURES = json.loads(
     (Path(__file__).parent / "fixtures" / "wave1_replies.json").read_text(encoding="utf-8")
@@ -218,9 +218,6 @@ def test_d1_recorded_vector_is_closed_and_the_backend_copy_survives():
     assert "opposite_party_name" not in json.dumps(payload["domain_context"]["next_fact_candidates"])
 
 
-@pytest.mark.xfail(strict=True, reason="AGENT3 GAP D1-a: domain_context['jurisdiction']"
-                                       "['fact_key'] still ships a raw profile field name to "
-                                       "both providers on every single turn")
 def test_no_raw_profile_field_name_reaches_the_provider_payload():
     """D1 is the *class* 'the model is handed an internal identifier and parrots it', not the
     single field `opposite_party_name`. `compact_context` emits a second one two keys later."""
@@ -236,9 +233,6 @@ def test_no_raw_profile_field_name_reaches_the_provider_payload():
         assert leaked == [], f"{category} leaks {leaked}"
 
 
-@pytest.mark.xfail(strict=True, reason="AGENT3 GAP D1-b: missing_information ships internal "
-                                       "document field names, and the reply-side scrub's "
-                                       "closed set does not contain them")
 def test_document_field_name_parenthetical_is_scrubbed_from_the_reply():
     """`llm_conversation.py:411-413` hands the model `document:complainant_name`. If the model
     parrots it the way it parroted `opposite_party_name`, nothing removes it: the scrubber's
@@ -254,9 +248,16 @@ def test_document_field_name_parenthetical_is_scrubbed_from_the_reply():
 
 def test_c2_recorded_case_law_citation_is_removed():
     source = reply("W1-03-t3")
+    tokens = (
+        verbatim_slice(source, "(2020)", "123") + "123",
+        verbatim_slice(source, "M/s.", "Enterprises") + "Enterprises",
+        verbatim_slice(source, "v.", "Karnataka") + "Karnataka",
+        verbatim_slice(source, "Supreme Court case you can quote", "\n"),
+    )
+    for token in tokens:
+        assert token in source, f"fixture drifted: {token!r}"
     result = guard_reply(source, profile("EMPLOYMENT"))
-    for token in ("(2020) 6 SCC 123", "M. S. R. Enterprises", "v. State of Karnataka",
-                  "Supreme Court case you can quote"):
+    for token in tokens:
         assert token not in result.text, token
     assert "verified case-law database" in result.text
 
@@ -294,9 +295,6 @@ def test_case_law_rule_covers_other_indian_citation_styles(reporter):
     "The Supreme Court has held that a deposit must be returned within one month.",
     "There is a 2019 judgment directly on this point.",
 ])
-@pytest.mark.xfail(strict=True, reason="AGENT3 GAP C2-c3: an unnamed-authority forward reference "
-                                       "fires no rule at all, so unlike W1-03 t3 there is not "
-                                       "even a contradicting disclosure")
 def test_unnamed_authority_forward_reference_at_least_gets_the_disclosure(claim):
     """Agent 2 recorded this as residue only for W1-03 t3, where a *named* case elsewhere in the
     reply happened to trigger the disclosure. Remove the named case and the class is entirely
@@ -307,9 +305,6 @@ def test_unnamed_authority_forward_reference_at_least_gets_the_disclosure(claim)
     assert "verified case-law database" in result.text
 
 
-@pytest.mark.xfail(strict=True, reason="AGENT3 GAP C2-c4: Agent 2's recorded residue - W1-03 t3's "
-                                       "opening promise of a Supreme Court decision survives and "
-                                       "is contradicted by the appended disclosure")
 def test_w1_03_t3_forward_reference_sentence_does_not_survive():
     source = reply("W1-03-t3")
     promise = verbatim_slice(source, "and a Supreme Court decision", "\n")
@@ -317,10 +312,63 @@ def test_w1_03_t3_forward_reference_sentence_does_not_survive():
     assert promise not in result.text
 
 
+@pytest.mark.parametrize("discussion", [
+    "How can I verify a High Court judgment on this issue?",
+    "Check whether a Supreme Court decision supports this before citing it.",
+])
+def test_generic_case_law_verification_discussion_is_preserved(discussion):
+    result = guard_reply(discussion, profile("HOUSING_TENANT"))
+    assert result.text == discussion
+    assert "case_law" not in result.rules()
+
+
+def test_unnamed_case_law_assertion_preserves_adjacent_advice_and_is_idempotent():
+    text = "A High Court ruling supports this. Keep your payment receipts and messages."
+    case = profile("HOUSING_TENANT")
+    result = guard_reply(text, case)
+    assert "A High Court ruling supports this" not in result.text
+    assert "Keep your payment receipts and messages." in result.text
+    assert result.text.count("verified case-law database") == 1
+    assert guard_reply(result.text, case).text == result.text
+
+
+def test_forward_verification_advice_does_not_license_earlier_court_claim():
+    text = "A High Court ruling supports this; please verify it before citing. Keep payment proof."
+    result = guard_reply(text, profile("HOUSING_TENANT"))
+    assert "A High Court ruling supports this" not in result.text
+    assert "Keep payment proof." in result.text
+    assert result.text.count("verified case-law database") == 1
+
+
+def test_unnamed_court_claim_after_unrelated_check_is_removed_without_losing_advice():
+    text = ("Check your bank statement, because the Supreme Court has held that deposits "
+            "must be returned.")
+    result = guard_reply(text, profile("HOUSING_TENANT"))
+    assert "the Supreme Court has held" not in result.text
+    assert "Check your bank statement" in result.text
+    assert "verified case-law database" in result.text
+
+
+def test_unnamed_supreme_court_has_ruled_claim_is_removed():
+    text = "The Supreme Court has ruled that deposits must be refunded within one month."
+    result = guard_reply(text, profile("HOUSING_TENANT"))
+    assert "The Supreme Court has ruled" not in result.text
+    assert "verified case-law database" in result.text
+
+
+def test_unnamed_court_claim_keeps_same_sentence_evidence_advice():
+    text = "A High Court ruling supports your claim, so keep your receipts and messages."
+    result = guard_reply(text, profile("HOUSING_TENANT"))
+    assert "A High Court ruling supports your claim" not in result.text
+    assert "keep your receipts and messages" in result.text
+    assert "verified case-law database" in result.text
+
+
 # ============================================================ C2(a) - fabricated statute
 
 def test_c2_recorded_fabricated_section_is_removed_with_its_quoted_text():
     source = reply("W1-03-t3")
+    assert "Section" + NARROW_NBSP + "9(1)" in source
     result = guard_reply(source, profile("EMPLOYMENT"))
     assert "Section 9(1)" not in result.text
     assert "Section" + NARROW_NBSP + "9(1)" not in result.text
@@ -360,13 +408,37 @@ def test_naming_the_real_applicable_act_does_not_cause_deletion(token, text):
     assert "statute_unverified" not in result.rules()
 
 
-@pytest.mark.xfail(strict=True, reason="AGENT3 GAP C2-a3: on the caveat-only path the appended "
-                                       "note tells the user sections were removed when none were")
 def test_statute_note_does_not_claim_a_removal_that_never_happened():
     case = profile("HOUSING_TENANT", user_state="Rajasthan", legal_sources=TENANCY_SOURCES)
     result = guard_reply("Eviction grounds are in Section 13 of the applicable rent law.", case)
     assert result.rules() == ("statute_unconfirmed_caveated",)
     assert "removed the section numbers" not in result.text
+
+
+@pytest.mark.parametrize("language,script,removed,kept", [
+    ("english", "roman", "removed the section numbers", "kept the"),
+    ("hinglish", "roman", "hata diya hai", "reply mein rakhe hain"),
+    ("hindi", "devanagari", "\u0939\u091f\u093e \u0926\u093f\u092f\u093e \u0939\u0948",
+     "\u0909\u0924\u094d\u0924\u0930 \u092e\u0947\u0902 \u0930\u0916\u0947 \u0939\u0948\u0902"),
+])
+@pytest.mark.parametrize("scenario,source", [
+    ("caveated", "Section 142 may be relevant to your complaint."),
+    ("stripped", "Section 9(1) of the Code on Wages, 2019 fixes the wage period."),
+    ("mixed", "Section 142 may be relevant. Section 9(1) of the Code on Wages, 2019 "
+     "fixes the wage period."),
+])
+def test_c2_a3_statute_note_describes_only_the_actions_taken(
+    language, script, removed, kept, scenario, source,
+):
+    case = profile("CONSUMER", language_style=language, script_style=script)
+    result = guard_reply(source, case)
+    assert (removed in result.text) == (scenario in {"stripped", "mixed"})
+    assert (kept in result.text) == (scenario in {"caveated", "mixed"})
+    assert ("statute_unverified" in result.rules()) == (scenario in {"stripped", "mixed"})
+    assert ("statute_unconfirmed_caveated" in result.rules()) == (scenario in {"caveated", "mixed"})
+    assert ("Section 142" in result.text) == (scenario in {"caveated", "mixed"})
+    assert "http" not in result.text
+    assert guard_reply(result.text, case).text == result.text
 
 
 # ============================================================ C4 - win probability
@@ -464,9 +536,14 @@ def test_procedural_advice_survives_the_constructed_authority_rule():
 def test_m7_recorded_numbers_are_removed_and_the_real_ones_kept():
     fake_rbi = NB_HYPHEN.join(["1800", "11", "001", "112"])
     fake_sbi = NB_HYPHEN.join(["1800", "11", "222", "222"])
+    source_t2 = reply("W1-04-t2")
+    source_t3 = reply("W1-04-t3")
+    assert fake_rbi in source_t2
+    assert fake_sbi in source_t3
+    assert "https://www.rbi.org.in/Scripts/Complaints.aspx" in source_t3
     case = profile("CYBER_FRAUD", language_style="hinglish")
-    t2 = guard_reply(reply("W1-04-t2"), case)
-    t3 = guard_reply(reply("W1-04-t3"), case)
+    t2 = guard_reply(source_t2, case)
+    t3 = guard_reply(source_t3, case)
     assert fake_rbi not in t2.text
     assert fake_sbi not in t3.text
     assert "1930" in t2.text
@@ -572,9 +649,6 @@ def test_parenthesised_act_name_is_caveated_not_deleted(token, text):
 
 # ------------------------------------------------- C4-1 residue: the whole-line rule
 
-@pytest.mark.xfail(strict=True, reason="C4-1 residue: _OUTCOME_LINE_RE decides from a "
-                                      "90-character label window, which is _WINDOW under "
-                                      "another name")
 @pytest.mark.parametrize("text", [
     "**Interest on a favourable order:** 18%",
     "Interest you can claim on a favourable order: 18%",
@@ -600,8 +674,6 @@ def test_c4_a_rate_at_the_end_of_a_line_survives_an_outcome_word_in_its_label(te
     assert result.redactions == ()
 
 
-@pytest.mark.xfail(strict=True, reason="C4-2 residue: the same whole-line rule, in the "
-                                      "normal Hindi/Hinglish rate layout")
 @pytest.mark.parametrize("text", [
     "Jeetne par milne wala byaj: 18%",
     "\u091c\u0940\u0924\u0928\u0947 \u092a\u0930 \u092e\u093f\u0932\u0928\u0947 "
@@ -618,8 +690,6 @@ def test_c4_a_devanagari_rate_survives_when_its_measurand_sits_in_the_label(text
     assert "18%" in result.text, f"correct rate deleted: {result.text!r}"
 
 
-@pytest.mark.xfail(strict=True, reason="C4-1's double fault: a rate list loses two bullets "
-                                      "and gains a probability note it never earned")
 def test_c4_a_markdown_rate_list_keeps_every_rate_and_earns_no_probability_note():
     """The double fault cycle 6 set out to close, reproduced on the shape the product
     actually emits rates in. Two of four bullets are deleted and the reply is then told
@@ -643,8 +713,6 @@ def test_c4_a_markdown_rate_list_keeps_every_rate_and_earns_no_probability_note(
 
 # ------------------------------------------- C4 under-filter opened by removing _WINDOW
 
-@pytest.mark.xfail(strict=True, reason="C4 now under-filters: a fabricated win probability "
-                                      "in ordinary prose reaches the user")
 @pytest.mark.parametrize("text", [
     "Rough chance of a favourable outcome: about 30% in your case.",
     "Your chance of a favourable order is roughly 30% here.",
@@ -674,8 +742,6 @@ def test_c4_a_win_probability_in_ordinary_prose_is_still_removed(text):
     assert "outcome_probability" in result.rules()
 
 
-@pytest.mark.xfail(strict=True, reason="the measurand-after veto is abusable: a quantity "
-                                      "noun after the sign makes a probability unkillable")
 @pytest.mark.parametrize("text", [
     "I estimate a 65% refund chance in your matter.",
     "There is a 40% refund chance if you file within the limitation period.",
@@ -696,6 +762,62 @@ def test_c4_a_measurand_after_the_number_does_not_rescue_a_win_probability(text)
     """
     result = guard_reply(text, profile("CONSUMER"))
     assert "%" not in result.text, f"invented win probability survived: {result.text!r}"
+
+
+@pytest.mark.parametrize("text,is_probability", [
+    ("I estimate a 30% refund chance for this claim.", True),
+    ("The requested remedy is a 100% refund.", False),
+    ("Your odds of success are 30\u201340% on these facts.", True),
+    ("If you win, statutory interest ranges from 9\u201312% per annum.", False),
+])
+def test_c4_a_probability_and_rate_contrasts_include_ranges(text, is_probability):
+    result = guard_reply(text, profile("CONSUMER"))
+    if is_probability:
+        assert "%" not in result.text
+        assert "outcome_probability" in result.rules()
+    else:
+        assert result.text == text
+        assert result.redactions == ()
+
+
+@pytest.mark.parametrize("text", [
+    "Your chance of winning is 30% and the refund is 100% of the amount paid.",
+    "Jeetne ke chances 30% hain aur refund 100% hai.",
+    "\u091c\u0940\u0924\u0928\u0947 \u0915\u0940 \u0938\u0902\u092d\u093e\u0935\u0928\u093e "
+    "30% \u0939\u0948 \u0914\u0930 \u0930\u093f\u092b\u0902\u0921 100% \u0939\u094b\u0917\u093e.",
+    "- **Win chance:** 30% and **Refund:** 100%.",
+])
+def test_c4_a_conjoined_refund_percentage_survives_probability_removal(text):
+    result = guard_reply(text, profile("CONSUMER"))
+    assert "30%" not in result.text, f"invented chance survived: {result.text!r}"
+    assert "100%" in result.text, f"legitimate refund deleted: {result.text!r}"
+    assert "outcome_probability" in result.rules()
+
+
+@pytest.mark.parametrize("text", [
+    "Your chance, based on these facts, is 30%.",
+    "Jeetne ki sambhavna, aapke facts ke hisab se, 30% hai.",
+    "\u091c\u0940\u0924\u0928\u0947 \u0915\u0940 \u0938\u0902\u092d\u093e\u0935\u0928\u093e, "
+    "\u0907\u0938 \u092e\u093e\u092e\u0932\u0947 \u092e\u0947\u0902, 30% \u0939\u0948.",
+])
+def test_c4_a_probability_with_explanatory_commas_is_removed(text):
+    result = guard_reply(text, profile("CONSUMER"))
+    assert "30%" not in result.text, f"invented chance survived: {result.text!r}"
+    assert "outcome_probability" in result.rules()
+
+
+def test_c4_a_interest_rate_after_uncertain_chance_and_aside_is_unchanged():
+    text = "Your chance is uncertain, but interest, if awarded, is 18%."
+    result = guard_reply(text, profile("CONSUMER"))
+    assert result.text == text
+    assert result.redactions == ()
+
+
+def test_c4_a_chance_with_one_explanatory_comma_is_removed():
+    text = "Your chance of success, roughly 30%."
+    result = guard_reply(text, profile("CONSUMER"))
+    assert "30%" not in result.text
+    assert "outcome_probability" in result.rules()
 
 
 # ------------------------------------------------------------- C2-a2 residue and widening
@@ -726,8 +848,6 @@ def test_c2_a2_a_real_state_rent_act_outside_the_corpus_family_name_is_not_delet
     assert "Section 13" in result.text, f"correct State law deleted: {result.text!r}"
 
 
-@pytest.mark.xfail(strict=True, reason="build_allowlist's label split widened licensed(): a "
-                                      "fabricated State adoption of the MTA is now accepted")
 @pytest.mark.parametrize("act", [
     "Rajasthan Model Tenancy Act, 2022",
     "Jaipur Model Tenancy Act, 2024",
@@ -750,10 +870,75 @@ def test_c2_a2_a_fabricated_state_model_tenancy_act_is_not_accepted_as_verified(
         f"fabricated Act accepted as verified: {result.rules()!r}")
 
 
+def test_c2_a2_a_only_the_canonical_model_tenancy_name_licenses_section_11():
+    allow = build_allowlist(tenancy_profile())
+    assert allow.licensed("11", ["model tenancy act"])
+    assert allow.licensed("11", ["model tenancy act 2021"])
+    for name in (
+        "rajasthan model tenancy act 2022",
+        "jaipur model tenancy act 2024",
+        "fictional model tenancy act of narnia",
+        "model tenancy act 2022",
+    ):
+        assert not allow.licensed("11", [name]), name
+
+    result = guard_reply(
+        "Section 11 of the Model Tenancy Act, 2021 concerns the security deposit.",
+        tenancy_profile(),
+    )
+    assert "Section 11" in result.text
+    assert "statute_unverified" not in result.rules()
+    assert "model_law_adoption_caveat" in result.rules()
+
+
+@pytest.mark.parametrize("act", [
+    "Model Tenancy Act (Rajasthan), 2022",
+    "Model Tenancy Act (Narnia edition), 2024",
+    "Model Tenancy Act (2024)",
+    "Model Tenancy Act: Rajasthan 2022",
+])
+def test_c2_a2_a_fabricated_model_act_suffix_must_not_be_positively_licensed(act):
+    """The Act after `of the` includes the qualifier; matching only through `Act` is
+    insufficient evidence that the exact canonical model law was named."""
+    text = f"Section 11 of the {act} requires the deposit back."
+    result = guard_reply(text, tenancy_profile())
+    assert any(rule.startswith("statute") for rule in result.rules()), (
+        f"fabricated Act accepted as verified: {result.rules()!r}")
+
+
+def test_c2_a2_a_lowercase_fabricated_model_act_must_not_be_bare_section():
+    text = "Section 11 of the rajasthan model tenancy act, 2022 requires the deposit back."
+    result = guard_reply(text, tenancy_profile())
+    assert any(rule.startswith("statute") for rule in result.rules()), (
+        f"fabricated Act accepted as verified: {result.rules()!r}")
+
+
+@pytest.mark.parametrize("category, text, section", [
+    ("CYBER_FRAUD", "Section 66D of the Information Technology Act (2000) covers "
+     "cheating by personation.", "Section 66D"),
+    ("POLICE_COMPLAINT", "Section 173 of the Bharatiya Nagarik Suraksha Sanhita (2023) "
+     "governs the FIR.", "Section 173"),
+])
+def test_c2_a2_a_curated_citation_with_parenthesized_year_is_not_deleted(
+    category, text, section,
+):
+    result = guard_reply(text, profile(category))
+    assert section in result.text, f"curated citation deleted: {result.text!r}"
+
+
+@pytest.mark.parametrize("act", [
+    "Model Tenancy Act [Rajasthan], 2022",
+    "Model Tenancy Act - Rajasthan, 2022",
+])
+def test_c2_a2_a_other_qualifiers_cannot_inherit_model_law_license(act):
+    text = f"Section 11 of the {act} governs deposits."
+    result = guard_reply(text, tenancy_profile())
+    assert any(rule.startswith("statute") for rule in result.rules()), (
+        f"qualified Act positively licensed: {result.rules()!r}")
+
+
 # ------------------------------------------------------- H4-2: _LOCATOR_RE over-matches
 
-@pytest.mark.xfail(strict=True, reason="_LOCATOR_RE's PIN alternative is any 6-digit run, so "
-                                      "a rupee amount deletes the advice around it")
 @pytest.mark.parametrize("text", [
     "Confirm on the Jaipur Rent Authority website whether the 250000 deposit you paid "
     "crosses the pecuniary limit.",
@@ -775,16 +960,31 @@ def test_h4_2_a_six_digit_rupee_amount_is_not_a_locator(text):
     assert "constructed_authority_contact" not in result.rules()
 
 
+@pytest.mark.parametrize("text", [
+    "The Jaipur Rent Authority website lists office PIN 302005 for filing.",
+    "The Jaipur Rent Authority website lists its office at 12 Ashok Nagar Road.",
+])
+def test_h4_2_a_explicit_postal_or_street_locator_remains_guarded(text):
+    assert _LOCATOR_RE.search(text)
+    result = guard_reply(text, tenancy_profile())
+    assert text not in result.text
+    assert "constructed_authority_contact" in result.rules()
+
+
+@pytest.mark.parametrize("locator", [
+    "https://rent-authority.example.gov.in/office",
+    "rent-authority.example.gov.in",
+    "PIN code: 302005",
+    "302005 PIN",
+])
+def test_h4_2_a_url_hostname_and_labelled_pin_are_locators(locator):
+    assert _LOCATOR_RE.search(locator)
+
+
 # ------------------------------------------- a passing lock, not a gap: byte-faithfulness
 
 def test_c2_recorded_case_law_is_removed_in_the_fixtures_own_bytes():
-    """`test_c2_recorded_case_law_citation_is_removed` above spells its tokens with ASCII
-    spaces, but W1-03 t3 writes them with U+202F, so three of its four `not in` assertions
-    are vacuous - they would hold whatever the guard did. The behaviour is genuinely locked
-    in `test_response_guard.py` (which folds the code points first); this test locks it here
-    too, in the fixture's own bytes, so the file does not depend on a retyped spelling.
-    Nothing is weakened: the original assertions stand untouched.
-    """
+    """A second byte-faithful lock for the W1-03 citation and later short-form reference."""
     source = reply("W1-03-t3")
     tokens = (f"(2020){NARROW_NBSP}6{NARROW_NBSP}SCC{NARROW_NBSP}123",
               f"M.{NARROW_NBSP}S.{NARROW_NBSP}R.{NARROW_NBSP}Enterprises",

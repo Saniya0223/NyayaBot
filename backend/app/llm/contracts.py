@@ -217,6 +217,9 @@ class LLMResponseContext(BaseModel):
         domain_context = payload.get("domain_context")
         if not isinstance(domain_context, dict):
             return payload
+        jurisdiction = domain_context.get("jurisdiction")
+        if isinstance(jurisdiction, dict):
+            jurisdiction.pop("fact_key", None)
         candidates = domain_context.get("next_fact_candidates")
         if not isinstance(candidates, list):
             return payload

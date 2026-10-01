@@ -121,21 +121,27 @@ def test_fixtures_kept_their_real_code_points():
 
 def test_w1_03_t3_fabricated_supreme_court_citation_is_removed():
     """DoD #3. W1-03 t3, verbatim, EMPLOYMENT - a healthy non-degraded turn."""
-    result = guard_reply(reply("W1-03-t3"), profile("EMPLOYMENT"))
+    source = reply("W1-03-t3")
+    source_flat = loose(source)
+    removed = ("(2020) 6 SCC 123", "M. S. R. Enterprises", "M.S.R. Enterprises",
+               "v. State of Karnataka", "Supreme Court case you can quote", "The Court held")
+    for token in removed:
+        assert token in source_flat, f"fixture drifted: {token!r}"
+    result = guard_reply(source, profile("EMPLOYMENT"))
     flat = loose(result.text)
-    assert "(2020) 6 SCC 123" not in flat
-    assert "M. S. R. Enterprises" not in flat
-    assert "M.S.R. Enterprises" not in flat
-    assert "v. State of Karnataka" not in flat
-    assert "Supreme Court case you can quote" not in flat
-    assert "The Court held" not in flat
+    for token in removed:
+        assert token not in flat, token
     assert "verified case-law database" in result.text
     assert "case_law" in result.rules()
 
 
 def test_w1_03_t3_unverifiable_statute_and_its_invented_quote_are_removed():
     """DoD #4. The section token and the fabricated verbatim quote go; the prose stays."""
-    result = guard_reply(reply("W1-03-t3"), profile("EMPLOYMENT"))
+    source = reply("W1-03-t3")
+    source_flat = loose(source)
+    for token in ("Section 9(1)", "Section 9", "Wages shall be paid in full"):
+        assert token in source_flat, f"fixture drifted: {token!r}"
+    result = guard_reply(source, profile("EMPLOYMENT"))
     flat = loose(result.text)
     assert "Section 9(1)" not in flat
     assert "Section 9" not in flat
@@ -245,6 +251,7 @@ def test_w1_06_t4_invented_win_percentages_are_all_removed():
     """DoD #6, against the real U+2248 / U+202F bytes."""
     source = reply("W1-06-t4")
     assert source.count("%") == 4
+    assert "Rough chance of a favourable outcome" in source
     result = guard_reply(source, profile("CONSUMER", user_city="Pune",
                                         user_state="Maharashtra", disputed_amount=62000.0))
     assert "%" not in result.text
@@ -279,6 +286,7 @@ def test_legitimate_percentages_pass_through_byte_identical(text):
 def test_w1_02_t1_model_tenancy_act_gains_a_caveat_and_loses_the_cite_instruction():
     """DoD #7, verbatim W1-02 t1, user_state=Rajasthan."""
     source = reply("W1-02-t1")
+    assert "hawala de rahe hain" in source
     result = guard_reply(source, tenancy_profile())
     # The provision itself is never deleted - it is the product's only real tenancy content.
     assert "Section 11" in loose(result.text)
@@ -297,6 +305,8 @@ def test_w1_02_t1_model_tenancy_act_gains_a_caveat_and_loses_the_cite_instructio
 def test_w1_02_t2_loses_the_invented_authority_website_and_keeps_the_praised_reasoning():
     """DoD #7. The jurisdiction passage was singled out for praise in report section 5."""
     source = reply("W1-02-t2")
+    assert "Rajasthan State Rent Authority ke website" in loose(source)
+    assert "Jaipur Municipal Corporation" in source
     result = guard_reply(source, tenancy_profile())
     assert "Section 30" in loose(result.text)
     assert "Rajasthan State Rent Authority ke website" not in loose(result.text)
@@ -340,7 +350,9 @@ def test_adoption_register_carries_no_unsourced_claim():
 
 def test_w1_04_t2_invented_toll_free_number_is_removed_and_1930_survives():
     """DoD #8, with the U+2011 form of 1800-11-001-112."""
-    result = guard_reply(reply("W1-04-t2"), cyber_profile())
+    source = reply("W1-04-t2")
+    assert FAKE_RBI_NUMBER in source
+    result = guard_reply(source, cyber_profile())
     assert FAKE_RBI_NUMBER not in result.text
     assert "1800" not in result.text
     assert "1930 helpline" in loose(result.text)
@@ -352,7 +364,10 @@ def test_w1_04_t2_invented_toll_free_number_is_removed_and_1930_survives():
 
 def test_w1_04_t3_invented_bank_helpline_goes_and_the_named_service_stays():
     """DoD #8: the off-allowlist rbi.org.in path goes; the service name is kept."""
-    result = guard_reply(reply("W1-04-t3"), cyber_profile())
+    source = reply("W1-04-t3")
+    assert FAKE_SBI_NUMBER in source
+    assert "https://www.rbi.org.in/Scripts/Complaints.aspx" in source
+    result = guard_reply(source, cyber_profile())
     assert FAKE_SBI_NUMBER not in result.text
     assert "1800" not in result.text
     assert "24-hour helpline" in loose(result.text)
