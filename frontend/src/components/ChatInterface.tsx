@@ -355,7 +355,7 @@ export default function ChatInterface({
               const isUser = message.sender === 'user';
               return (
                 <article key={message.id} className={`flex gap-2.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
-                  {!isUser && <Image src="/nyayabot-mascot-avatar-v2.png" alt="" width={36} height={36} className="mt-0.5 size-9 shrink-0 rounded-full border border-[#f1dc9e] object-cover" />}
+                  {!isUser && <Image src="/nyayabot-voice-orb.png" alt="" width={36} height={36} className="mt-0.5 size-9 shrink-0 rounded-full border border-[#f1dc9e] object-cover" />}
                   <div className={`max-w-[86%] sm:max-w-[78%] ${isUser ? 'items-end' : 'items-start'} flex flex-col gap-2`}>
                     <div className={`rounded-2xl px-4 py-3 text-[13px] leading-6 ${isUser ? 'rounded-tr-md bg-[#171717] text-white' : 'rounded-tl-md border border-[#eeeae3] bg-[#fdfcf9] text-[#383530]'}`}>
                       {isUser ? <p className="whitespace-pre-wrap">{message.text}</p> : <FormattedMessage text={message.text} />}
