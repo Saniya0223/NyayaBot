@@ -3,16 +3,18 @@
 import asyncio
 import json
 import logging
+import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
 from groq import APIConnectionError, APIStatusError, APITimeoutError, AsyncGroq, AuthenticationError, RateLimitError
+from pydantic import ValidationError
 
 from app.agents.conversation_agent import ConversationalLegalAgent
-from app.config import settings
-from app.llm.contracts import LLMExtractionContext, LLMProviderError, LLMRateLimitedError
+from app.config import Settings, settings
+from app.llm.contracts import LLMExtractionContext, LLMProviderError, LLMRateLimitedError, LLMTransientError
 from app.llm.groq_provider import GroqProvider
 from app.schemas.chat import ChatTurnRequest, PendingInteraction
 from app.services.language_style import LanguageScript
@@ -75,6 +77,11 @@ def test_sdk_retries_are_disabled(provider):
     assert provider._client.max_retries == 0
 
 
+def test_groq_connection_has_more_than_sdk_default_five_seconds(provider):
+    assert provider._client.timeout.connect == min(15.0, settings.LLM_TIMEOUT_SECONDS)
+    assert provider._client.timeout.read == settings.LLM_TIMEOUT_SECONDS
+
+
 @pytest.mark.parametrize("seconds", [5, 40])
 def test_long_rate_limit_is_one_attempt_and_no_sleep(provider, sleep, caplog, seconds):
     provider._client.chat.completions.create.side_effect = status_error(headers={"retry-after": str(seconds)})
@@ -130,6 +137,62 @@ def test_retry_threshold_is_configurable(provider, sleep, monkeypatch):
         extract(provider)
     assert provider._client.chat.completions.create.await_count == 1
     sleep.assert_not_awaited()
+
+
+def test_default_wait_cap_covers_the_per_minute_token_window():
+    """The cap used to be bounded to 0-2 s (default 1 s). One turn is two Groq calls
+    totalling ~10-13k tokens against the free tier's 8,000 tokens/minute, so the
+    second call is routinely told to wait 5-50 s, and every such turn fell back to
+    limited demo mode - including a plain "hi". The default must now cover that
+    window, and the bound must still stop an unbounded wait."""
+    field = Settings.model_fields["GROQ_RATE_LIMIT_MAX_RETRY_WAIT_SECONDS"]
+    if "GROQ_RATE_LIMIT_MAX_RETRY_WAIT_SECONDS" not in os.environ:
+        assert field.default == 60.0
+    assert Settings(GROQ_RATE_LIMIT_MAX_RETRY_WAIT_SECONDS=120).GROQ_RATE_LIMIT_MAX_RETRY_WAIT_SECONDS == 120
+    for out_of_bounds in (-1, 121, 3600):
+        with pytest.raises(ValidationError):
+            Settings(GROQ_RATE_LIMIT_MAX_RETRY_WAIT_SECONDS=out_of_bounds)
+
+
+@pytest.mark.parametrize("seconds", ["6", "24", "49"])
+def test_per_minute_rate_limit_waits_and_retries_once_under_the_default_cap(provider, sleep, caplog, monkeypatch, seconds):
+    """Waits Groq actually returned for the per-minute window in QA wave 1. Each
+    retry there that waited the full retry-after succeeded."""
+    monkeypatch.setattr(settings, "GROQ_RATE_LIMIT_MAX_RETRY_WAIT_SECONDS", 60.0)
+    provider._client.chat.completions.create.side_effect = [
+        status_error(headers={"retry-after": seconds}), completion(),
+    ]
+    with caplog.at_level(logging.WARNING, logger="uvicorn.error"):
+        assert extract(provider).facts.disputed_amount == 12000
+    assert provider._client.chat.completions.create.await_count == 2
+    sleep.assert_awaited_once_with(float(seconds))
+    assert "decision=retry_once" in caplog.text
+
+
+@pytest.mark.parametrize("seconds", ["156", "1645"])
+def test_hourly_or_daily_cap_still_falls_back_immediately_under_the_default_cap(provider, sleep, monkeypatch, seconds):
+    """Retry-after values from QA wave 1 that were not the per-minute window.
+    Waiting minutes inside one chat request is never right."""
+    monkeypatch.setattr(settings, "GROQ_RATE_LIMIT_MAX_RETRY_WAIT_SECONDS", 60.0)
+    provider._client.chat.completions.create.side_effect = status_error(headers={"retry-after": seconds})
+    with pytest.raises(LLMRateLimitedError):
+        extract(provider)
+    assert provider._client.chat.completions.create.await_count == 1
+    sleep.assert_not_awaited()
+
+
+def test_failure_log_records_the_numeric_http_status_of_a_bare_status_error(provider, sleep, caplog):
+    """QA wave 1 logged three extraction failures as a bare APIStatusError, which
+    hides whether Groq said 413 (request too large for the token limit) or
+    something else. The status is now logged - numbers only, no body."""
+    provider._client.chat.completions.create.side_effect = status_error(APIStatusError, 413)
+    with caplog.at_level(logging.WARNING, logger="uvicorn.error"), pytest.raises(LLMProviderError) as raised:
+        extract(provider)
+    assert not isinstance(raised.value, (LLMRateLimitedError, LLMTransientError))
+    assert provider._client.chat.completions.create.await_count == 1
+    sleep.assert_not_awaited()
+    assert "error_type=APIStatusError http_status=413" in caplog.text
+    assert "private-" not in caplog.text
 
 
 def test_exhausted_request_quota_prevents_early_retry_even_with_short_retry_after(provider, sleep):
@@ -192,10 +255,12 @@ def test_timeouts_remain_distinct_and_bounded(provider, sleep, caplog, error):
     provider._client.chat.completions.create.side_effect = error
     with caplog.at_level(logging.WARNING, logger="uvicorn.error"), pytest.raises(LLMProviderError, match="timed out") as raised:
         extract(provider)
+    assert isinstance(raised.value, LLMTransientError)
     assert not isinstance(raised.value, LLMRateLimitedError)
     assert provider._client.chat.completions.create.await_count == 2
     sleep.assert_awaited_once_with(0.4)
     assert "event=groq_rate_limit" not in caplog.text
+    assert "elapsed_seconds=" in caplog.text
 
 
 @pytest.mark.parametrize("error", [
@@ -226,8 +291,11 @@ def test_normal_success_is_one_attempt(provider, sleep):
     sleep.assert_not_awaited()
 
 
-@pytest.mark.parametrize("retry_after, succeeds, expected_attempts", [("40", False, 1), ("0.2", True, 2), ("0.2", False, 2)])
-def test_real_sdk_has_no_hidden_retries_using_mock_http_transport(sleep, retry_after, succeeds, expected_attempts):
+@pytest.mark.parametrize("retry_after, succeeds, expected_attempts", [("1645", False, 1), ("0.2", True, 2), ("0.2", False, 2)])
+def test_real_sdk_has_no_hidden_retries_using_mock_http_transport(sleep, monkeypatch, retry_after, succeeds, expected_attempts):
+    # Pinned to the production default so the "long" case (a real hourly/daily
+    # retry-after from QA wave 1) is beyond the cap whatever the local env says.
+    monkeypatch.setattr(settings, "GROQ_RATE_LIMIT_MAX_RETRY_WAIT_SECONDS", 60.0)
     requests = []
 
     def handler(request):

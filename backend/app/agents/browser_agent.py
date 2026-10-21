@@ -29,6 +29,7 @@ import asyncio
 import base64
 import logging
 import os
+import re
 import socket
 import sys
 import tempfile
@@ -37,6 +38,10 @@ import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
+from urllib.parse import urlparse
+
+from app.services.form_filler import fill_page
+from app.services.form_navigator import MAX_NAV_STEPS, navigate_once, settle_page
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -83,6 +88,10 @@ class BrowserSession:
     pause_kind: Optional[str] = None
     # Local mock portal only: form field name -> value, filled by Playwright without an LLM.
     fill_values: Optional[dict[str, str]] = field(default=None, repr=False)
+    # Real portals: structured case values for rule-based filling (key -> text).
+    case_data: Optional[dict[str, str]] = field(default=None, repr=False)
+    entry_hints: tuple[str, ...] = ()
+    entry_avoid: tuple[str, ...] = ()
     # Internal asyncio primitives (not serialised to the client)
     _approve_event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
     _cancel_event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
@@ -106,6 +115,9 @@ def create_session(
     portal_url: str,
     task: str,
     fill_values: Optional[dict[str, str]] = None,
+    case_data: Optional[dict[str, str]] = None,
+    entry_hints: tuple[str, ...] = (),
+    entry_avoid: tuple[str, ...] = (),
 ) -> BrowserSession:
     session = BrowserSession(
         session_id=str(uuid.uuid4()),
@@ -117,6 +129,9 @@ def create_session(
         current_url=portal_url,
         task=task,
         fill_values=fill_values,
+        case_data=case_data,
+        entry_hints=entry_hints,
+        entry_avoid=entry_avoid,
     )
     _sessions[session.session_id] = session
     return session
@@ -170,8 +185,13 @@ _SUBMISSION_GUARD = """
   const finalAction = (node) => {
     const label = [node?.innerText, node?.value, node?.getAttribute?.('aria-label')]
       .filter(Boolean).join(' ').toLowerCase();
-    return /\\b(submit|register complaint|file complaint|lodge complaint|pay now)\\b/.test(label);
+    return /\\b(submit|register complaint|file complaint|lodge complaint|pay now|pay|payment|make payment|proceed to pay)\\b/.test(label);
   };
+  // A <button> with no type attribute reports type "submit" by default, even when it
+  // is not inside a form and submits nothing (React pop-ups and menus are full of
+  // them). Only a submit control that belongs to a form can submit one.
+  const submitsForm = (node) =>
+    (node.type === 'submit' || node.type === 'image') && Boolean(node.form);
   document.addEventListener('submit', (event) => {
     if (!window.__NYAYA_ALLOW_FINAL_SUBMIT__) {
       event.preventDefault(); event.stopImmediatePropagation();
@@ -180,7 +200,7 @@ _SUBMISSION_GUARD = """
   document.addEventListener('click', (event) => {
     const button = event.target?.closest?.('button, input[type=submit], [role=button]');
     if (button && !window.__NYAYA_ALLOW_FINAL_SUBMIT__ &&
-        (button.type === 'submit' || finalAction(button))) {
+        (submitsForm(button) || finalAction(button))) {
       event.preventDefault(); event.stopImmediatePropagation();
     }
   }, true);
@@ -225,11 +245,19 @@ async def _hold_for_manual_submission(session: BrowserSession, browser) -> None:
     for page in context.pages:
         await page.evaluate("window.__NYAYA_ALLOW_FINAL_SUBMIT__ = true")
     session.status = SessionStatus.APPROVED
-    session.message = (
-        "Review approved. You may submit manually in the live browser. "
-        "NyayaBot cannot confirm whether the portal accepted it. Close this panel when finished."
-    )
-    session.steps.append("User approved manual submission; the agent remains stopped.")
+    if session.pause_kind == "no_progress":
+        # Nothing was prepared, so there is no review to approve; say so plainly.
+        session.message = (
+            "Nothing was filled automatically. You can fill the form yourself in the live browser. "
+            "NyayaBot cannot confirm whether the portal accepted anything. Close this panel when finished."
+        )
+        session.steps.append("User took over manually; nothing had been prepared automatically.")
+    else:
+        session.message = (
+            "Review approved. You may submit manually in the live browser. "
+            "NyayaBot cannot confirm whether the portal accepted it. Close this panel when finished."
+        )
+        session.steps.append("User approved manual submission; the agent remains stopped.")
     await session._cancel_event.wait()
 
 
@@ -356,6 +384,248 @@ def _classify_agent_progress(history) -> tuple[bool, bool, list[str]]:
     return made_progress, rate_limited, action_names
 
 
+# ── Diagnostics (log-only; none of this changes what the session does) ───────
+#
+# Auto-Fill failures were invisible: the agent swallows its own errors and returns
+# normally, and nothing recorded which portal was chosen or whether a login page
+# was in the way. These helpers write short, sanitised log lines so a failed run
+# can be diagnosed from the backend terminal. They never raise.
+
+_MAX_LOGGED_AGENT_ERRORS = 3
+_MAX_ERROR_CHARS = 300
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+# 6+ digits, allowing spaces or dashes between them (phone, account, Aadhaar, PIN+).
+_LONG_NUMBER_RE = re.compile(r"\d(?:[\s-]?\d){5,}")
+_LOGIN_URL_HINTS = ("login", "signin", "sign-in", "sign_in", "logon", "auth", "otp", "captcha", "register")
+
+
+def _safe_error_excerpt(text: str) -> str:
+    """Collapse whitespace, mask emails and long digit runs, and cap the length."""
+    cleaned = " ".join(str(text).split())
+    cleaned = _EMAIL_RE.sub("<email>", cleaned)
+    cleaned = _LONG_NUMBER_RE.sub("<number>", cleaned)
+    return cleaned[:_MAX_ERROR_CHARS]
+
+
+def summarise_agent_errors(history, limit: int = _MAX_LOGGED_AGENT_ERRORS) -> list[str]:
+    """First few distinct errors from an agent run, sanitised, with repeat counts.
+
+    Returns [] for a clean run or a malformed `history`. A repeated provider error
+    (e.g. the same 400 on every step) shows once as "... [x7]" rather than flooding
+    the log.
+    """
+    try:
+        raw = [str(item) for item in history.errors() if item]
+    except Exception:
+        return []
+    counts: dict[str, int] = {}
+    for item in raw:
+        excerpt = _safe_error_excerpt(item)
+        counts[excerpt] = counts.get(excerpt, 0) + 1
+    return [
+        f"{excerpt} [x{count}]" if count > 1 else excerpt
+        for excerpt, count in list(counts.items())[:limit]
+    ]
+
+
+_PAGE_SIGNALS_JS = """
+(() => {
+  const visible = el => el.getClientRects().length > 0;
+  const describe = el => [el.id, el.name, el.placeholder, el.getAttribute('aria-label'),
+    el.getAttribute('alt'), el.getAttribute('src'), el.className]
+    .filter(v => typeof v === 'string' && v).join(' ').toLowerCase();
+  const inputs = Array.from(document.querySelectorAll('input, textarea, select'))
+    .filter(el => el.type !== 'hidden' && visible(el));
+  return {
+    inputs: inputs.length,
+    password: inputs.filter(el => el.type === 'password').length,
+    otp: inputs.filter(el => /otp|one.?time/.test(describe(el))).length,
+    captcha: Array.from(document.querySelectorAll('input, img, canvas, iframe'))
+      .filter(el => visible(el) && /captcha/.test(describe(el))).length,
+  };
+})()
+"""
+
+
+def _is_login_wall(signals: dict) -> bool:
+    """Does this page need the user to sign in or verify before a form can appear?
+
+    A password or OTP field always means the user must act. A CAPTCHA only counts
+    on a sparse, login-style page: a real complaint form can also end in a CAPTCHA,
+    and pausing before filling it would be wrong. A login-looking URL path only
+    counts when the page has (almost) no fields, because paths like "/Register"
+    also belong to genuine complaint forms.
+    """
+    inputs = signals.get("inputs", 0)
+    return bool(
+        signals.get("password", 0)
+        or signals.get("otp", 0)
+        or (signals.get("captcha", 0) and inputs <= 3)
+        or (signals.get("url_hint") and inputs <= 1)
+    )
+
+
+async def _page_login_signals(page) -> dict:
+    """Counts of password / OTP / CAPTCHA elements on the current page, for logging.
+
+    Reads element counts and the URL *path* only - never values, never the query
+    string. Returns {"error": "<ExceptionName>"} if the page cannot be inspected.
+    """
+    try:
+        raw = await page.evaluate(_PAGE_SIGNALS_JS)
+        signals = {key: int(raw.get(key, 0) or 0) for key in ("inputs", "password", "otp", "captcha")}
+        parsed = urlparse(str(getattr(page, "url", "") or ""))
+        path = (parsed.path or "").lower()
+        signals["url_hint"] = any(hint in path for hint in _LOGIN_URL_HINTS)
+        signals["host"] = parsed.hostname or ""
+        signals["likely_login_wall"] = _is_login_wall(signals)
+        return signals
+    except Exception as exc:  # noqa: BLE001 - diagnostics must never break a session
+        return {"error": type(exc).__name__}
+
+
+async def _log_page_signals(session: "BrowserSession", page, stage: str) -> None:
+    signals = await _page_login_signals(page)
+    if "error" in signals:
+        logger.info(
+            "session=%s event=portal_page_signals stage=%s inspect_error=%s",
+            session.session_id, stage, signals["error"],
+        )
+        return
+    logger.info(
+        "session=%s event=portal_page_signals stage=%s host=%s inputs=%s password=%s otp=%s "
+        "captcha=%s url_hint=%s likely_login_wall=%s",
+        session.session_id, stage, signals["host"], signals["inputs"], signals["password"],
+        signals["otp"], signals["captcha"], signals["url_hint"], signals["likely_login_wall"],
+    )
+
+
+_LOGIN_PAUSE_MESSAGE = (
+    "This portal is asking you to sign in or verify yourself before the form appears. "
+    "Log in directly in the browser window - NyayaBot never sees or stores your password, "
+    "OTP or CAPTCHA. When the complaint form is showing, click Continue."
+)
+_MAX_LOGIN_PAUSES = 3
+
+
+async def _hold_for_login(session: "BrowserSession", get_page, max_rounds: int = _MAX_LOGIN_PAUSES) -> int:
+    """Pause for the user to sign in whenever the current page is a login wall.
+
+    Runs before the browser agent, so no model tokens are spent on a page that only
+    the user can get past. Returns how many times it paused. Re-checks after each
+    Continue because a portal can show several steps (login, then OTP). Gives up
+    after `max_rounds` pauses: the user said they are done, so the agent proceeds
+    rather than asking forever. If the page cannot be inspected it proceeds without
+    pausing - not knowing is not a reason to block the run. Cancel propagates as
+    asyncio.CancelledError, like the other pauses.
+    """
+    rounds = 0
+    while True:
+        page = await get_page()
+        signals = await _page_login_signals(page) if page is not None else {"error": "NoPage"}
+        if "error" in signals or not signals["likely_login_wall"]:
+            break
+        if rounds >= max_rounds:
+            logger.info("session=%s event=login_pause_limit_reached rounds=%s", session.session_id, rounds)
+            session.steps.append("Continuing after several sign-in pauses.")
+            break
+        rounds += 1
+        try:
+            session.screenshot_b64 = await _take_screenshot(page)
+            session.review_fields = await _collect_review_fields(page)
+        except Exception as exc:  # noqa: BLE001 - the pause matters more than the picture
+            logger.warning("session=%s event=screenshot_failed type=%s", session.session_id, type(exc).__name__)
+        session.status = SessionStatus.PAUSED
+        session.pause_kind = "login"
+        session.message = _LOGIN_PAUSE_MESSAGE
+        session.steps.append("Waiting for you to sign in on the portal.")
+        logger.info(
+            "session=%s event=paused_for_login round=%s host=%s password=%s otp=%s captcha=%s",
+            session.session_id, rounds, signals["host"], signals["password"], signals["otp"], signals["captcha"],
+        )
+        await _wait_for_continue_or_cancel(session)
+        session.status = SessionStatus.RUNNING
+        session.pause_kind = None
+        session.message = "Continuing…"
+        session.steps.append("Sign-in step completed by you.")
+    return rounds
+
+
+async def _click_toward_form(session: "BrowserSession", browser, visited: set[str], settle_seconds: float):
+    """One rule-based click toward the form; follows a link that opened a new tab."""
+    page = await browser.get_current_page()
+    context = getattr(browser, "browser_context", None)
+    tabs_before = len(context.pages) if context is not None else 0
+    result = await navigate_once(
+        page, hints=session.entry_hints, avoid=session.entry_avoid, visited=visited,
+        session_id=session.session_id, settle_seconds=settle_seconds,
+    )
+    if result.clicked and context is not None and len(context.pages) > tabs_before:
+        try:
+            await browser.switch_tab(len(context.pages) - 1)
+        except Exception as exc:  # noqa: BLE001 - staying on the old tab beats failing the run
+            logger.warning("session=%s event=nav_tab_switch_failed type=%s", session.session_id, type(exc).__name__)
+    return result
+
+
+async def _drive_to_form(session: "BrowserSession", browser, *, settle_seconds: float = 1.0) -> tuple[int, int, int]:
+    """Get from the landing page to a filled form using rules only. No model, no tokens.
+
+    Each round: pause if the page needs the user to sign in, try to fill a form that
+    is already showing, and if there is none click the one link that clearly leads
+    toward it, then look again. Stops as soon as something was filled, when no clear
+    link remains, or after MAX_NAV_STEPS attempts. Returns
+    (fields_filled, sign_in_pauses, clicks). Fields filled == 0 means the caller may
+    fall back to the browser agent. Cancel propagates; everything else is contained.
+    """
+    login_pauses = clicks = attempts = 0
+    visited: set[str] = set()
+    while True:
+        # Client-rendered portals (Angular, React) draw after the load event; scanning
+        # too early finds an empty page and gives up.
+        try:
+            await settle_page(await browser.get_current_page(), seconds=settle_seconds)
+        except Exception:  # noqa: BLE001 - settling is best effort
+            pass
+        login_pauses += await _hold_for_login(session, browser.get_current_page)
+        if not session.case_data:
+            return 0, login_pauses, clicks
+        session.message = f"Filling {session.portal_label} from your profile and this case…"
+        try:
+            page = await browser.get_current_page()
+            report = await fill_page(page, session.case_data, session_id=session.session_id)
+        except Exception as exc:  # noqa: BLE001 - fall back to the agent, never fail the session
+            logger.warning("session=%s event=rule_fill_failed type=%s", session.session_id, type(exc).__name__)
+            return 0, login_pauses, clicks
+        if report.filled_count:
+            shown = ", ".join(report.filled[:8]) + ("…" if report.filled_count > 8 else "")
+            session.steps.append(f"Filled {report.filled_count} field(s) from your profile and this case: {shown}.")
+            if report.left_for_user:
+                session.steps.append(f"{len(report.left_for_user)} field(s) left for you to complete.")
+            if report.sensitive:
+                session.steps.append("Password, OTP, CAPTCHA and ID fields are left for you.")
+            logger.info("session=%s event=agent_skipped reason=rule_fill_filled filled=%s clicks=%s",
+                        session.session_id, report.filled_count, clicks)
+            return report.filled_count, login_pauses, clicks
+        if attempts >= MAX_NAV_STEPS:
+            logger.info("session=%s event=nav_limit_reached attempts=%s", session.session_id, attempts)
+            return 0, login_pauses, clicks
+        session.message = f"Looking for the complaint form on {session.portal_label}…"
+        try:
+            result = await _click_toward_form(session, browser, visited, settle_seconds)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("session=%s event=nav_failed type=%s", session.session_id, type(exc).__name__)
+            return 0, login_pauses, clicks
+        if result.reason in {"no_candidate", "scan_failed"}:
+            return 0, login_pauses, clicks
+        attempts += 1
+        if result.clicked:
+            clicks += 1
+            session.steps.append(f"Clicked “{result.text}” to reach the complaint form.")
+
+
 def _no_progress_message(rate_limited: bool) -> str:
     """Truthful replacement for the 'prepared form' message when nothing was done."""
     if rate_limited:
@@ -393,6 +663,12 @@ async def run_browser_session(session: BrowserSession) -> None:
         # ── LLM (Groq / Gemini) — not needed for the deterministic mock portal ──
         deterministic = session.fill_values is not None
         llm, is_groq = (None, False) if deterministic else _resolve_llm()
+        logger.info(
+            "session=%s event=browser_session_config category=%s portal_host=%s mode=%s agent_model=%s",
+            session.session_id, session.category or "-", urlparse(session.portal_url).hostname,
+            "deterministic" if deterministic else "agent",
+            None if deterministic else getattr(llm, "model", None),
+        )
 
         # ── Browser — visible + remote-debugging enabled for live CDP panel ──
         cdp_port = _find_free_port()
@@ -445,6 +721,7 @@ async def run_browser_session(session: BrowserSession) -> None:
             await page.goto(session.portal_url, wait_until="domcontentloaded", timeout=30000)
             session.current_url = page.url
             session.steps.append(f"Opened {session.portal_label}.")
+            await _log_page_signals(session, page, "portal_opened")
         except Exception as exc:
             logger.warning("session=%s event=portal_open_failed type=%s", session.session_id, type(exc).__name__)
             session.steps.append(f"{session.portal_label} did not finish loading in the embedded browser.")
@@ -524,9 +801,24 @@ async def run_browser_session(session: BrowserSession) -> None:
             session.pause_kind = None
             session.steps.append("User completed the manual step; agent resumed.")
 
+        # ── Python first: sign-in pauses, button clicks to reach the form, then filling ──
+        # No model, no tokens. The agent below only runs if this could not fill anything.
+        rule_filled = login_pauses = nav_clicks = 0
+        if not deterministic:
+            rule_filled, login_pauses, nav_clicks = await _drive_to_form(session, browser)
+
         # ── Build the full task prompt with explicit URL ──────────────────────
+        if login_pauses or nav_clicks:
+            # The user has signed in and/or NyayaBot has clicked past the landing page.
+            # Sending the agent back to the home page would waste a step and drop that state.
+            opening = (
+                f"The browser is already open on {session.portal_label}, past its landing page or "
+                "sign-in. Continue from the current page; do not go back to the home page unless you must.\n"
+            )
+        else:
+            opening = f"Go to {session.portal_url}\n"
         full_task = (
-            f"Go to {session.portal_url}\n"
+            f"{opening}"
             f"Once the page loads, find the complaint or grievance registration section.\n"
             f"Fill in the complaint form fields with the following details:\n"
             f"{session.task}\n\n"
@@ -549,6 +841,8 @@ async def run_browser_session(session: BrowserSession) -> None:
             # ── Local mock portal: real Playwright fills on this same page ────
             session.message = f"Filling {session.portal_label} from your profile and this case…"
             await _fill_known_fields(page, session)
+        elif rule_filled:
+            logger.info("session=%s event=agent_skipped reason=rule_fill_filled filled=%s", session.session_id, rule_filled)
         else:
             # ── Run the agent ────────────────────────────────────────────────
             agent_kwargs = {
@@ -570,6 +864,11 @@ async def run_browser_session(session: BrowserSession) -> None:
                 "session=%s event=agent_run_finished made_progress=%s rate_limited=%s actions=%s",
                 session.session_id, agent_made_progress, agent_rate_limited, action_names,
             )
+            # The agent swallows its own errors and returns normally, so this is the
+            # only place the real cause (model rejected the request, rate limit, ...)
+            # becomes visible. Sanitised and capped; see summarise_agent_errors.
+            for sample in summarise_agent_errors(history):
+                logger.warning("session=%s event=agent_error_sample error=%s", session.session_id, sample)
 
             # ── Capture screenshots and action trace ──────────────────────────
             try:
@@ -582,6 +881,7 @@ async def run_browser_session(session: BrowserSession) -> None:
         try:
             page = await browser.get_current_page()
             if page:
+                await _log_page_signals(session, page, "after_run")
                 if not session.screenshot_b64:
                     session.screenshot_b64 = await _take_screenshot(page)
                 session.review_fields = await _collect_review_fields(page)

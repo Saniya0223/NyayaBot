@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 class ProfileUpdate(BaseModel):
     full_name: str = Field(min_length=2, max_length=255)
     date_of_birth: date
+    gender: Literal["woman", "man", "non_binary", "another_gender", "prefer_not_to_say"] | None = None
     phone: str | None = Field(default=None, max_length=20)
     state: str | None = Field(default=None, max_length=100)
     city: str | None = Field(default=None, max_length=100)
@@ -41,6 +42,7 @@ class ProfileResponse(BaseModel):
     id: str
     full_name: str
     date_of_birth: str | None
+    gender: str | None
     email: str
     phone: str | None
     state: str | None

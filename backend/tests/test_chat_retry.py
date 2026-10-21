@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from app import main
 from app.db.models import ChatCaseSessionModel, UserMemoryModel
 from app.db.session import SessionLocal
-from app.llm.contracts import CaseExtraction, LLMRateLimitedError, ProviderStatus
+from app.llm.contracts import CaseExtraction, LLMRateLimitedError, LLMTransientError, ProviderStatus
 from app.services.chat_retry import RETRY_STATE_KEY
 
 
@@ -30,6 +30,8 @@ class StageProvider:
     def __init__(self):
         self.extraction_failures = 0
         self.chat_failures = 0
+        self.extraction_timeouts = 0
+        self.chat_timeouts = 0
         self.extractions = []
         self.chats = []
         self.started = None
@@ -38,6 +40,9 @@ class StageProvider:
 
     async def extract_case_updates(self, context):
         self.extractions.append(context.model_dump(mode="json"))
+        if self.extraction_timeouts:
+            self.extraction_timeouts -= 1
+            raise LLMTransientError("Mock extraction timeout")
         if self.extraction_failures:
             self.extraction_failures -= 1
             raise LLMRateLimitedError("Mock extraction 429")
@@ -54,6 +59,9 @@ class StageProvider:
 
     async def chat(self, context):
         self.chats.append(context.model_dump(mode="json"))
+        if self.chat_timeouts:
+            self.chat_timeouts -= 1
+            raise LLMTransientError("Mock final chat timeout")
         if self.chat_failures:
             self.chat_failures -= 1
             raise LLMRateLimitedError("Mock final chat 429")
@@ -168,6 +176,37 @@ def test_extraction_retry_reuses_original_message_context_and_ids(rig):
     assert_control_is_not_content(reloaded, case_id, provider, rag_queries)
     with SessionLocal() as db:
         assert db.query(UserMemoryModel).filter_by(user_id=user_id).count() == 0
+
+
+def test_extraction_timeout_can_retry_original_turn_without_new_chat_content(rig):
+    client, provider, rag_queries, applications, _ = rig
+    provider.extraction_timeouts = 1
+    failed = send(client)
+    assert failed["llm_mode"] == "limited_demo"
+    assert failed["retry_action"]["message_id"] == failed["message_id"]
+    assert failed["quick_replies"] == ["Try Groq again"]
+    result = retry(client, failed)
+    assert result["llm_mode"] == "groq"
+    assert [item["user_message"] for item in provider.extractions] == [ORIGINAL, ORIGINAL]
+    assert len(applications) == 1
+    assert_control_is_not_content(client, failed["case_profile"]["case_id"], provider, rag_queries)
+
+
+def test_final_chat_timeout_retries_only_response_generation(rig):
+    client, provider, rag_queries, applications, _ = rig
+    provider.chat_timeouts = 1
+    failed = send(client)
+    assert failed["llm_mode"] == "limited_demo"
+    assert failed["retry_action"]["message_id"] == failed["message_id"]
+    before, _ = saved(failed["case_profile"]["case_id"])
+    result = retry(client, failed)
+    after, _ = saved(failed["case_profile"]["case_id"])
+    assert result["llm_mode"] == "groq"
+    assert len(provider.extractions) == len(applications) == 1
+    assert len(provider.chats) == 2
+    assert consequential(after) == consequential(before)
+    assert rag_queries == [ORIGINAL]
+    assert_control_is_not_content(client, failed["case_profile"]["case_id"], provider, rag_queries)
 
 
 def test_final_chat_retry_does_not_reapply_state_or_rag_and_is_idempotent(rig, monkeypatch):

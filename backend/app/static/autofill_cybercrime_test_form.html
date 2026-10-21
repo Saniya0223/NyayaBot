@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test Portal - Cyber Crime layout (NyayaBot development)</title>
+<style>
+  :root { --navy:#0b2a5b; --green:#3fa96a; --line:#d7dce5; --bg:#f4f6fa; --ink:#1d2433; --muted:#5d6779; }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 14px/1.45 system-ui, "Segoe UI", Arial, sans-serif; color:var(--ink); background:var(--bg); }
+  .strip { background:var(--green); color:#fff; font-size:12px; padding:4px 16px; }
+  .devnote { background:#fff7d6; border-bottom:1px solid #e8d37a; padding:6px 16px; font-size:12px; }
+  header { background:#fff; border-bottom:1px solid var(--line); padding:10px 16px; display:flex; flex-wrap:wrap; gap:16px; align-items:center; }
+  header .brand { font-weight:700; color:var(--navy); margin-right:auto; }
+  nav { display:flex; gap:14px; flex-wrap:wrap; }
+  nav a, nav .dd > a { color:var(--navy); text-decoration:none; cursor:pointer; font-weight:600; }
+  .dd { position:relative; }
+  .dd ul { display:none; position:absolute; top:100%; left:0; list-style:none; margin:4px 0 0; padding:6px 0; background:#fff; border:1px solid var(--line); min-width:220px; z-index:5; }
+  .dd.open ul { display:block; }
+  .dd li a { display:block; padding:6px 12px; font-weight:400; }
+  main { max-width:980px; margin:0 auto; padding:16px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:16px; }
+  .card, section.panel { background:#fff; border:1px solid var(--line); border-radius:8px; padding:16px; }
+  h1 { font-size:20px; margin:0 0 12px; color:var(--navy); }
+  h2 { font-size:16px; margin:18px 0 10px; color:var(--navy); }
+  button { font:inherit; border-radius:6px; border:1px solid var(--navy); background:var(--navy); color:#fff; padding:7px 14px; cursor:pointer; }
+  button.ghost { background:#fff; color:var(--navy); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px 18px; }
+  label { display:block; font-weight:600; margin-bottom:4px; }
+  input, select, textarea { font:inherit; width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  textarea { min-height:110px; }
+  table.form { width:100%; border-collapse:collapse; }
+  table.form td { padding:6px 4px; vertical-align:top; }
+  table.form td:first-child { width:38%; font-weight:600; }
+  .muted { color:var(--muted); font-size:12px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .captcha { font-family:monospace; letter-spacing:4px; background:#e9edf5; padding:6px 10px; border-radius:4px; }
+  #received { background:#0f172a; color:#cbd5e1; font:12px/1.4 monospace; padding:12px; border-radius:6px; white-space:pre-wrap; overflow-x:auto; }
+  #alarm { display:none; background:#b91c1c; color:#fff; padding:14px 16px; font-weight:700; font-size:16px; }
+  [hidden] { display:none !important; }
+  .stepper { display:flex; gap:12px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-bottom:12px; }
+  .stepper span.current { color:var(--green); font-weight:700; }
+  .choice-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:12px; margin:10px 0 14px; }
+  .choice { cursor:pointer; border:1px solid var(--line); border-radius:12px; padding:12px 14px; background:#f8fbff; }
+  .choice.active, .answer-pill.active { border-color:var(--navy); background:#e8efff; font-weight:600; }
+  .answer-pill { border:1px solid var(--line); border-radius:20px; padding:10px 14px; text-align:center; }
+  .pill-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:10px; margin:10px 0 14px; }
+  .mat-icon { font-family:monospace; font-size:11px; color:#0b7bc0; margin-right:6px; }
+  /* Angular Material's own stepper rules: only the current step shows; the others stay in the page. */
+  .mat-step-header { cursor:pointer; display:inline-flex; gap:6px; align-items:center; }
+  .mat-horizontal-stepper-content { visibility:hidden; overflow:hidden; height:0; }
+  .mat-horizontal-stepper-content.mat-horizontal-stepper-content-current { visibility:visible; overflow:visible; height:auto; }
+  .error { color:#b91c1c; font-size:12px; }
+</style>
+</head>
+<body>
+<div id="alarm">SUBMIT WAS PRESSED. In NyayaBot testing this must never happen automatically.</div>
+<div class="strip">GOVERNMENT OF INDIA · MINISTRY OF HOME AFFAIRS (test copy)</div>
+<div class="devnote">NyayaBot development test page. It looks like the Cyber Crime portal, sends nothing anywhere, and accepts any login.</div>
+<header>
+  <div class="brand">National Cyber Crime Reporting Portal (test)</div>
+  <nav>
+    <a data-go="home">Home</a>
+    <div class="dd" id="reportMenu">
+      <a id="reportMenuToggle">Report Cyber Crime</a>
+      <ul>
+        <li><a data-go="login">Report a Crime</a></li>
+        <li><a data-go="track">Track your Complaint</a></li>
+        <li><a data-go="women">Women/Children Related Crime</a></li>
+      </ul>
+    </div>
+    <a data-go="home">Suspect Data</a>
+    <a data-go="home">Learning Corner</a>
+    <a data-go="home">Help &amp; Feedback</a>
+  </nav>
+</header>
+
+<main>
+  <!-- Home -->
+  <div id="view-home">
+    <div class="cards">
+      <div class="card">
+        <button class="ghost" type="button">Women &amp; Children Related Crime</button>
+        <p>Cybercrime affects women the most. It subjects them to mental and emotional harassment. The most common cyber crimes are listed in the guidance pages.</p>
+        <div class="row">
+          <button type="button" data-go="women">Report Abuse to Social Media</button>
+          <button type="button" data-go="women">Register a Complaint</button>
+        </div>
+      </div>
+      <div class="card">
+        <button class="ghost" type="button">Cyber Crime Related Complaint</button>
+        <p>Cybercrime refers to any unlawful activity carried out using computers, digital devices, or the internet.</p>
+        <p>Any victim of financial cyber fraud can dial helpline number 1930</p>
+        <button type="button" data-go="login">Register a Complaint</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Wrong paths, so a wrong click is obvious -->
+  <section class="panel" id="view-women" hidden>
+    <h1>Women/Children Related Crime</h1>
+    <p><strong>Wrong path for a financial fraud case.</strong> NyayaBot should never come here.</p>
+    <button type="button" data-go="home">Back</button>
+  </section>
+  <section class="panel" id="view-track" hidden>
+    <h1>Track your Complaint</h1><p>Not part of filing.</p><button type="button" data-go="home">Back</button>
+  </section>
+
+  <!-- Login: the user's job, never NyayaBot's -->
+  <section class="panel" id="view-login" hidden>
+    <h1>User Login</h1>
+    <div class="grid">
+      <div><label for="loginMobile">Mobile No</label><input id="loginMobile" name="mobileNo" type="tel" maxlength="10"></div>
+      <div><label for="loginOtp">Enter OTP</label><input id="loginOtp" name="otp" maxlength="6"></div>
+      <div><label for="loginCaptcha">Enter Captcha</label>
+        <div class="row"><span class="captcha" id="captchaImage" aria-label="captcha image">7 X 2 Q</span>
+          <input id="loginCaptcha" name="captcha" style="flex:1"></div></div>
+    </div>
+    <p class="muted">Test page: any values work. On the real portal you enter your own mobile, OTP and CAPTCHA.</p>
+    <div class="row"><button type="button" id="getOtp" class="ghost">Get OTP</button><button type="button" id="loginBtn">Login</button></div>
+  </section>
+
+  <!-- "What happened?" questionnaire, built like the real portal: Angular Material sidenav
+       layout + mat-stepper, answer cards with a "help" icon ligature, then answer pills
+       with no pointer cursor. The stepper markup follows Angular Material's own code, as
+       served by cybercrime.gov.in: role="tablist" on the whole <mat-stepper> (questions
+       included), role="tab" on each step header, role="tabpanel" on each step's content,
+       and the steps not on screen hidden and inert. Earlier versions of the helper
+       ignored everything inside the stepper and found no options here. -->
+  <section class="panel" id="view-wizard" hidden>
+    <mat-sidenav-container class="mat-drawer-container mat-sidenav-container" style="display:flex;gap:16px">
+      <mat-sidenav class="mat-drawer mat-sidenav" style="min-width:170px">
+        <div class="menu-entry" style="cursor:pointer">Report Cyber Crime</div>
+        <div class="menu-entry" style="cursor:pointer">Draft Complaint</div>
+        <div class="menu-entry" style="cursor:pointer">Check Status</div>
+        <div class="menu-entry" style="cursor:pointer">Complaint Withdraw</div>
+      </mat-sidenav>
+      <mat-sidenav-content class="mat-drawer-content mat-sidenav-content" style="flex:1">
+        <mat-stepper class="mat-stepper-horizontal" role="tablist" aria-orientation="horizontal">
+          <div class="mat-horizontal-stepper-wrapper">
+            <div class="mat-horizontal-stepper-header-container stepper">
+              <mat-step-header class="mat-horizontal-stepper-header mat-step-header" role="tab" tabindex="0" aria-selected="true"><div class="mat-step-icon mat-step-icon-selected"><span class="mat-step-icon-content">1</span></div><div class="mat-step-label mat-step-label-active mat-step-label-selected"><div class="mat-step-text-label"><span class="current">WHAT HAPPENED?</span></div></div></mat-step-header>
+              <mat-step-header class="mat-horizontal-stepper-header mat-step-header" role="tab" tabindex="-1" aria-selected="false"><div class="mat-step-icon"><span class="mat-step-icon-content">2</span></div><div class="mat-step-label"><div class="mat-step-text-label">INCIDENT AND COMPLAINANT DETAILS</div></div></mat-step-header>
+              <mat-step-header class="mat-horizontal-stepper-header mat-step-header" role="tab" tabindex="-1" aria-selected="false"><div class="mat-step-icon"><span class="mat-step-icon-content">3</span></div><div class="mat-step-label"><div class="mat-step-text-label">SUSPECT DETAILS</div></div></mat-step-header>
+              <mat-step-header class="mat-horizontal-stepper-header mat-step-header" role="tab" tabindex="-1" aria-selected="false"><div class="mat-step-icon"><span class="mat-step-icon-content">4</span></div><div class="mat-step-label"><div class="mat-step-text-label">PREVIEW &amp; SUBMIT</div></div></mat-step-header>
+            </div>
+            <div class="mat-horizontal-content-container">
+              <div class="mat-horizontal-stepper-content mat-horizontal-stepper-content-current" role="tabpanel">
+                <div id="q1" class="question card">
+                  <h3 class="card-header">What type of complaint is this? <span class="req">*</span></h3>
+                  <div class="row choice-grid">
+                    <div class="col"><div class="choice"><mat-icon class="mat-icon material-icons" aria-hidden="true">help</mat-icon><span>I lost money, or someone is trying to take money from me</span></div></div>
+                    <div class="col"><div class="choice"><mat-icon class="mat-icon material-icons" aria-hidden="true">help</mat-icon><span>Someone is harassing or blackmailing me online, or sharing obscene / explicit material</span></div></div>
+                    <div class="col"><div class="choice"><mat-icon class="mat-icon material-icons" aria-hidden="true">help</mat-icon><span>My phone, computer, email, social media or device was hacked, locked or taken over</span></div></div>
+                    <div class="col"><div class="choice"><mat-icon class="mat-icon material-icons" aria-hidden="true">help</mat-icon><span>I received fake / threatening calls, or someone is spreading false, hateful or dangerous information online</span></div></div>
+                    <div class="col"><div class="choice"><mat-icon class="mat-icon material-icons" aria-hidden="true">help</mat-icon><span>Something else happened that I do not see above</span></div></div>
+                  </div>
+                </div>
+                <div id="q2" class="question card" hidden>
+                  <h3 class="card-header">A Loan / Lending Agent</h3>
+                  <div class="row pill-grid">
+                    <div class="answer-pill">Pay a processing / legal / registration fee before giving the loan</div>
+                    <div class="answer-pill">Pay extra charges or fines after the loan was given</div>
+                    <div class="answer-pill">Threatened to inform your family, friends or contacts if you did not pay</div>
+                    <div class="answer-pill">Something else</div>
+                  </div>
+                </div>
+                <p class="error" id="wizError" hidden>Please choose an option.</p>
+                <div class="row" style="justify-content:space-between">
+                  <button type="button" class="ghost" id="wizBack">&larr; Back</button>
+                  <button type="button" id="wizNext">Next <mat-icon class="mat-icon material-icons" aria-hidden="true">arrow_forward</mat-icon></button>
+                </div>
+                <p class="muted">Chosen so far: <span id="wizChosen">nothing yet</span></p>
+              </div>
+              <!-- The next step: already in the page, but hidden and inert until it is current. -->
+              <div class="mat-horizontal-stepper-content mat-horizontal-stepper-content-next" role="tabpanel" inert>
+                <h3>Incident and complainant details</h3>
+                <label for="nextStepAmount">Amount</label><input id="nextStepAmount" name="nextStepAmount">
+                <div class="choice-grid"><div class="choice"><span>An answer from a later step</span></div><div class="choice"><span>Another answer from a later step</span></div></div>
+                <div class="row"><button type="button" class="ghost">Back</button><button type="button">Next</button></div>
+              </div>
+            </div>
+          </div>
+        </mat-stepper>
+      </mat-sidenav-content>
+    </mat-sidenav-container>
+  </section>
+
+  <!-- Complaint form, drawn a moment after login like a real single-page app -->
+  <section class="panel" id="view-form" hidden>
+    <h1>Incident and Complainant Details</h1>
+    <div id="formBody"></div>
+    <h2>What the portal received</h2>
+    <p class="muted">Updated only by real typing or framework-style events. A value set the "simple way" will not appear here.</p>
+    <div id="received">{}</div>
+  </section>
+</main>
+
+<template id="formTemplate">
+  <form id="complaintForm" autocomplete="off" novalidate>
+    <div class="grid">
+      <div><label for="category">Category of complaint</label>
+        <select id="category" name="category" data-model="category" required>
+          <option value="">Select</option><option>Online Financial Fraud</option><option>Online and Social Media Related Crime</option><option>Any Other Cyber Crime</option></select></div>
+      <div><label for="subCategory">Sub-Category of complaint</label>
+        <select id="subCategory" name="subCategory" data-model="subCategory">
+          <option value="">Select</option><option>UPI Related Frauds</option><option>Internet Banking Related Fraud</option><option>E-Wallet Related Fraud</option></select></div>
+      <div><label for="incidentAt">Approximate date &amp; time of Incident/receiving/viewing of content</label>
+        <input id="incidentAt" name="incidentAt" type="datetime-local" data-model="incidentAt"></div>
+      <div><span class="muted" style="font-weight:600">Have you lost money in INR?</span>
+        <div class="row"><label><input type="radio" name="lostMoney" value="yes" data-model="lostMoney" style="width:auto"> Yes</label>
+          <label><input type="radio" name="lostMoney" value="no" data-model="lostMoney" style="width:auto"> No</label></div></div>
+    </div>
+
+    <h2>Have you lost money in INR?</h2>
+    <div class="grid">
+      <div><label for="paymentMode">Mode of Payment</label>
+        <select id="paymentMode" name="paymentMode" data-model="paymentMode"><option value="">Select</option><option>UPI</option><option>Internet Banking</option><option>Debit Card</option></select></div>
+      <div><label for="bank">Bank / (Wallet / PG / PA) / Merchant</label>
+        <select id="bank" name="bank" data-model="bank"><option value="">Select</option><option>Axis Bank</option><option>HDFC Bank</option><option>ICICI Bank</option><option>Paytm Payments Bank</option><option>PhonePe</option><option>State Bank of India</option></select></div>
+      <div><label for="account">Account No / Wallet ID / UPI ID</label><input id="account" name="account" data-model="account"></div>
+      <div><label for="utr">Transaction ID / UTR Number</label><input id="utr" name="utr" data-model="utr"></div>
+      <div><label for="amount">Amount</label><input id="amount" name="amount" type="number" data-model="amount"></div>
+      <div><label for="txnDate">Transaction Date</label><input id="txnDate" name="txnDate" type="date" data-model="txnDate"></div>
+      <div><label for="firstSix">First Six Digit</label><input id="firstSix" name="firstSix" maxlength="6" data-model="firstSix"></div>
+      <div><label for="lastFour">Last Four Digit</label><input id="lastFour" name="lastFour" maxlength="4" data-model="lastFour"></div>
+    </div>
+
+    <h2>Where did the incident occur?</h2>
+    <label for="details">Provide any additional information</label>
+    <textarea id="details" name="details" maxlength="1500" data-model="details"></textarea>
+    <p class="muted">Maximum of 1500 characters left</p>
+
+    <h2>Complainant Details</h2>
+    <table class="form">
+      <tr><td>Name</td><td><input name="ctl00$cName" data-model="name"></td></tr>
+      <tr><td>Mobile No</td><td><input name="cMobile" type="tel" maxlength="10" data-model="mobile"></td></tr>
+      <tr><td>Email Id</td><td><input name="cEmail" type="email" data-model="email"></td></tr>
+      <tr><td>House No / Street / Area</td><td><input name="cAddress" data-model="address"></td></tr>
+      <tr><td>State</td><td><select name="cState" id="cState" data-model="state"><option value="">--Select State--</option><option>Delhi</option><option>Karnataka</option><option>Maharashtra</option><option>Rajasthan</option><option>Uttar Pradesh</option></select></td></tr>
+      <tr><td>District</td><td><select name="cDistrict" id="cDistrict" data-model="district" disabled><option value="">--Select District--</option></select></td></tr>
+      <tr><td>Pin Code</td><td><input name="cPin" maxlength="6" data-model="pin"></td></tr>
+      <tr><td><span id="relLabel">Relationship with the victim</span></td><td><select aria-labelledby="relLabel" name="relation" data-model="relation"><option value="">Select</option><option>Self</option><option>Family member</option><option>Friend</option></select></td></tr>
+      <tr><td>Please Upload any National ID</td><td><input type="file" name="nationalId"></td></tr>
+    </table>
+
+    <div class="row" style="margin-top:16px">
+      <button type="button" class="ghost" id="previewBtn">Preview</button>
+      <button type="submit" id="submitBtn">Submit</button>
+    </div>
+  </form>
+</template>
+
+<script>
+(() => {
+  // A tiny stand-in for a framework's form model: it changes only on input/change
+  // events, like Angular or React, never when .value is set directly.
+  const model = {};
+  const received = () => document.getElementById('received');
+  const showModel = () => { if (received()) received().textContent = JSON.stringify(model, null, 2); };
+  const districts = {
+    Delhi: ['New Delhi', 'South Delhi', 'North Delhi'], Karnataka: ['Bengaluru Urban', 'Mysuru'],
+    Maharashtra: ['Mumbai', 'Pune'], Rajasthan: ['Jaipur', 'Jodhpur', 'Udaipur'], 'Uttar Pradesh': ['Lucknow', 'Noida'],
+  };
+
+  const chosen = [];
+  const answerText = (el) => (el.querySelector('span') || el).textContent.trim();
+  function wizardClick(target) {
+    const card = target.closest('.choice, .answer-pill');
+    if (card) {
+      card.closest('.choice-grid, .pill-grid').querySelectorAll('.choice, .answer-pill')
+        .forEach((c) => c.classList.toggle('active', c === card));
+      document.getElementById('wizError').hidden = true;
+      return true;
+    }
+    if (target.closest('#wizNext')) {
+      const current = document.getElementById('q1').hidden ? document.getElementById('q2') : document.getElementById('q1');
+      const picked = current.querySelector('.choice.active, .answer-pill.active');
+      if (!picked) { document.getElementById('wizError').hidden = false; return true; }
+      chosen.push(answerText(picked));
+      document.getElementById('wizChosen').textContent = chosen.join(' / ');
+      if (current.id === 'q1') { current.hidden = true; document.getElementById('q2').hidden = false; }
+      else { show('form'); }
+      return true;
+    }
+    if (target.closest('#wizBack')) {
+      if (!document.getElementById('q2').hidden) { document.getElementById('q2').hidden = true; document.getElementById('q1').hidden = false; chosen.pop(); }
+      else show('login');
+      document.getElementById('wizChosen').textContent = chosen.join(' / ') || 'nothing yet';
+      return true;
+    }
+    return false;
+  }
+
+  function show(view) {
+    for (const v of ['home', 'women', 'track', 'login', 'wizard', 'form']) {
+      const el = document.getElementById('view-' + v);
+      if (el) el.hidden = v !== view;
+    }
+    document.getElementById('reportMenu').classList.remove('open');
+    if (view === 'form' && !document.getElementById('complaintForm')) {
+      // Draw the form late, like a single-page app fetching its config.
+      setTimeout(() => {
+        document.getElementById('formBody').appendChild(document.getElementById('formTemplate').content.cloneNode(true));
+        wireForm();
+      }, 700);
+    }
+    location.hash = view;
+  }
+
+  function wireForm() {
+    const form = document.getElementById('complaintForm');
+    const record = (event) => {
+      const el = event.target;
+      if (!el.dataset || !el.dataset.model) return;
+      if (el.type === 'radio') { if (el.checked) model[el.dataset.model] = el.value; }
+      else model[el.dataset.model] = el.value;
+      showModel();
+    };
+    form.addEventListener('input', record);
+    form.addEventListener('change', record);
+    // Dependent dropdown: districts arrive a moment after the state changes.
+    document.getElementById('cState').addEventListener('change', (event) => {
+      const district = document.getElementById('cDistrict');
+      district.disabled = true;
+      district.innerHTML = '<option value="">Loading…</option>';
+      setTimeout(() => {
+        const list = districts[event.target.value] || [];
+        district.innerHTML = '<option value="">--Select District--</option>' + list.map(d => `<option>${d}</option>`).join('');
+        district.disabled = list.length === 0;
+      }, 600);
+    });
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      document.getElementById('alarm').style.display = 'block';
+      window.scrollTo(0, 0);
+    });
+    showModel();
+  }
+
+  document.addEventListener('click', (event) => {
+    const go = event.target.closest('[data-go]');
+    if (go) { event.preventDefault(); show(go.dataset.go); return; }
+    if (event.target.id === 'reportMenuToggle') { document.getElementById('reportMenu').classList.toggle('open'); return; }
+    if (event.target.id === 'loginBtn') { show('wizard'); return; }
+    if (!document.getElementById('view-wizard').hidden && wizardClick(event.target)) return;
+    if (event.target.id === 'getOtp') { event.target.textContent = 'OTP sent (test)'; }
+  });
+
+  const start = (location.hash || '#home').slice(1);
+  show(['home', 'women', 'track', 'login', 'wizard', 'form'].includes(start) ? start : 'home');
+})();
+</script>
+</body>
+</html>

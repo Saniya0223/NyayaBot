@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NyayaBot Portal Helper</title>
+<link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <header class="top">
+    <span class="brand">NyayaBot Portal Helper <span id="version" class="version"></span></span>
+    <span id="portalName" class="portal"></span>
+  </header>
+
+  <section class="hero">
+    <div id="mascot" class="mascot" aria-hidden="false"></div>
+    <div class="bubble" role="status" aria-live="polite"><p id="message">Loading…</p></div>
+  </section>
+
+  <section id="progressWrap" class="progress" hidden>
+    <div class="progress-label"><span id="stepLabel"></span><span id="stepCount"></span></div>
+    <div class="bar"><div id="bar"></div></div>
+  </section>
+
+  <section id="actions" class="actions"></section>
+
+  <section id="choice" class="card" hidden>
+    <h2 id="choiceQuestion">Choose an option</h2>
+    <ul id="choiceOptions" class="list"></ul>
+    <p class="hint">NyayaBot clicks only the option you leave selected, then presses Next.</p>
+  </section>
+
+  <section id="plan" class="card" hidden>
+    <h2>Ready to fill</h2>
+    <ul id="planActions" class="list"></ul>
+    <details id="planOtherWrap" open>
+      <summary>Left for you</summary>
+      <ul id="planOther" class="list muted"></ul>
+    </details>
+  </section>
+
+  <section id="results" class="card" hidden>
+    <h2>Review checklist</h2>
+    <ul id="resultList" class="list"></ul>
+    <p class="hint">Check every field in the portal tab, including ones NyayaBot didn't fill, before you submit.</p>
+  </section>
+
+  <details class="card log">
+    <summary>Activity</summary>
+    <ul id="steps" class="list muted"></ul>
+  </details>
+
+  <footer class="foot">
+    <button id="focusPortal" class="link" type="button">Show portal tab</button>
+    <button id="cancel" class="link danger" type="button">Cancel</button>
+  </footer>
+
+  <script src="mascot.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

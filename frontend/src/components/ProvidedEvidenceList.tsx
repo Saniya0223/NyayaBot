@@ -89,14 +89,14 @@ export default function ProvidedEvidenceList({ documents, compact = false, onRev
           const hasDetail = document.processing_status === 'COMPLETED' || document.processing_status === 'FAILED';
           const analysisFailed = document.processing_status === 'COMPLETED' && document.analysis_status === 'FAILED';
           return (
-            <li key={document.id} className={compact ? 'text-[11px] text-[#526159]' : 'rounded-lg bg-[#f7faf8] px-3 py-2 text-xs text-[#526159]'}>
+            <li key={document.id} className={compact ? 'text-[11px] text-[#5e5a53]' : 'rounded-lg bg-[#fdfbf6] px-3 py-2 text-xs text-[#5e5a53]'}>
               <div className="flex items-center gap-2">
-                <FileText className={`${compact ? 'size-3.5' : 'size-4'} shrink-0 text-[#2f755b]`} />
-                <span className="min-w-0 flex-1 truncate font-semibold text-[#34443c]" title={document.name}>{document.name}</span>
-                <span className="text-[9px] uppercase text-[#96a19b]">{document.name.split('.').pop()}</span>
+                <FileText className={`${compact ? 'size-3.5' : 'size-4'} shrink-0 text-[#9d6b00]`} />
+                <span className="min-w-0 flex-1 truncate font-semibold text-[#383530]" title={document.name}>{document.name}</span>
+                <span className="text-[9px] uppercase text-[#a39a8e]">{document.name.split('.').pop()}</span>
               </div>
               {line.text ? (
-                <p className={`mt-0.5 flex items-center gap-1 pl-5 text-[10px] ${line.tone === 'error' ? 'text-[#a2473a]' : line.tone === 'busy' ? 'text-[#2f755b]' : 'text-[#87938d]'}`}>
+                <p className={`mt-0.5 flex items-center gap-1 pl-5 text-[10px] ${line.tone === 'error' ? 'text-[#a2473a]' : line.tone === 'busy' ? 'text-[#9d6b00]' : 'text-[#999187]'}`}>
                   {line.tone === 'busy' ? <LoaderCircle className="size-3 animate-spin" /> : null}{line.text}
                 </p>
               ) : null}
@@ -104,15 +104,15 @@ export default function ProvidedEvidenceList({ documents, compact = false, onRev
               {analysisFailed ? <p className="pl-5 text-[10px] text-[#a2473a]">AI analysis failed; the extracted text is kept.</p> : null}
               {document.processing_status === 'COMPLETED' && document.failed_pages?.length ? <p className="pl-5 text-[10px] text-[#a2473a]">Could not read page{document.failed_pages.length === 1 ? '' : 's'} {document.failed_pages.join(', ')}.</p> : null}
               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 pl-5 text-[10px] font-semibold">
-                <a href={absoluteDocumentUrl(document.download_url)} className="text-[#2f755b] hover:underline">View document</a>
-                {hasDetail ? <button type="button" onClick={() => setOpenDetail(document)} className="text-[#2f755b] hover:underline">View extracted information</button> : null}
+                <a href={absoluteDocumentUrl(document.download_url)} className="text-[#9d6b00] hover:underline">View document</a>
+                {hasDetail ? <button type="button" onClick={() => setOpenDetail(document)} className="text-[#9d6b00] hover:underline">View extracted information</button> : null}
                 {document.retryable ? (
                   <button type="button" disabled={busy === document.id} onClick={() => void retry(document)} className="text-[#a2473a] hover:underline disabled:opacity-50">
                     {document.processing_status === 'NOT_PROCESSED' ? 'Process' : analysisFailed || document.analysis_status === 'LIMITED' ? 'Retry analysis' : 'Retry'}
                   </button>
                 ) : null}
                 {onReviewed && reviewable && document.review_status === 'PENDING' ? (
-                  <button type="button" disabled={busy === document.id} onClick={() => void review(document)} className="text-[#174e3b] hover:underline disabled:opacity-50">Review {reviewable} detail{reviewable === 1 ? '' : 's'} in chat</button>
+                  <button type="button" disabled={busy === document.id} onClick={() => void review(document)} className="text-[#181818] hover:underline disabled:opacity-50">Review {reviewable} detail{reviewable === 1 ? '' : 's'} in chat</button>
                 ) : null}
               </div>
             </li>

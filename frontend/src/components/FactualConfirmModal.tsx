@@ -59,16 +59,16 @@ export default function FactualConfirmModal({ profile, docType, docLabel, onClos
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-[#10241d]/50 p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="document-dialog-title">
-      <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-[24px] border border-[#dbe4de] bg-white shadow-2xl">
-        <header className="flex items-center justify-between border-b border-[#e3e9e5] px-5 py-4">
-          <div className="flex items-center gap-3"><FileText className="size-5 text-[#174e3b]" /><div><h2 id="document-dialog-title" className="text-sm font-bold text-[#21312a]">{document ? document.title : `Confirm details for ${docLabel}`}</h2><p className="text-[11px] text-[#74817a]">Nothing is filed or sent automatically.</p></div></div>
+    <div className="fixed inset-0 z-50 grid place-items-center bg-[#171717]/50 p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="document-dialog-title">
+      <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-[24px] border border-[#e9e3d7] bg-white shadow-2xl">
+        <header className="flex items-center justify-between border-b border-[#eee8dd] px-5 py-4">
+          <div className="flex items-center gap-3"><FileText className="size-5 text-[#181818]" /><div><h2 id="document-dialog-title" className="text-sm font-bold text-[#222222]">{document ? document.title : `Confirm details for ${docLabel}`}</h2><p className="text-[11px] text-[#8a837a]">Nothing is filed or sent automatically.</p></div></div>
           <button type="button" onClick={onClose} aria-label="Close document dialog"><X className="size-5" /></button>
         </header>
         <div className="soft-scrollbar flex-1 overflow-y-auto space-y-5 p-5 sm:p-6">
           {isLoading ? <p role="status">Loading document requirements…</p> : null}
           {!document && assessment ? <>
-            <p className="rounded-xl bg-[#f1f7f3] p-3 text-xs text-[#52655b]">Review all details, including any personal information prefilled from your profile. Change anything that is not right before generating. Nothing is sent or filed automatically.</p>
+            <p className="rounded-xl bg-[#fff8e5] p-3 text-xs text-[#52655b]">Review all details, including any personal information prefilled from your profile. Change anything that is not right before generating. Nothing is sent or filed automatically.</p>
             {assessment.blockers.length ? <p role="alert" className="text-xs text-[#a2473a]">{assessment.blockers.join(' ')}</p> : null}
             <section aria-label="Required document details"><h3 className="mb-3 text-xs font-bold">Required details</h3><div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{requiredFields.map((field) => <Field key={field.key} label={field.label} value={values[field.key] ?? ''} required dataType={field.data_type} onChange={(value) => setValues((current) => ({ ...current, [field.key]: value }))} />)}</div></section>
             {optionalFields.length ? <section aria-label="Optional document details"><h3 className="mb-1 text-xs font-bold">Optional details</h3><p className="mb-3 text-xs text-[#6b7870]">Review any prefilled values, or leave optional details blank.</p><div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{optionalFields.map((field) => <Field key={field.key} label={field.label} value={values[field.key] ?? ''} required={false} dataType={field.data_type} onChange={(value) => setValues((current) => ({ ...current, [field.key]: value }))} />)}</div></section> : null}
@@ -76,9 +76,9 @@ export default function FactualConfirmModal({ profile, docType, docLabel, onClos
           {error ? <p role="alert" className="rounded-xl bg-[#fff0ed] p-3 text-xs text-[#a2473a]">{error}</p> : null}
           {document ? <div className="space-y-3"><p className="flex items-center gap-2 text-xs font-bold text-[#2e6d53]"><Check className="size-4" />Draft generated</p><div className="min-h-[350px] overflow-x-auto rounded-xl border border-[#d9dedb] bg-white p-7 font-serif text-xs leading-6 text-black" dangerouslySetInnerHTML={{ __html: document.content_html }} /></div> : null}
         </div>
-        <footer className="flex items-center justify-between gap-3 border-t border-[#e3e9e5] bg-[#fbfcfb] px-5 py-4">
-          <button type="button" onClick={onClose} className="text-xs font-semibold text-[#66736d]">{document ? 'Done' : 'Cancel'}</button>
-          {!document ? <button type="button" onClick={() => void createDocument()} disabled={!requiredComplete || isGenerating} className="flex items-center gap-2 rounded-xl bg-[#174e3b] px-4 py-2.5 text-xs font-bold text-white disabled:bg-[#bdc9c2]">{isGenerating ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4" />}{isGenerating ? 'Generating…' : 'Confirm & generate'}</button> : <div className="flex gap-2"><button type="button" onClick={() => openDownload(document.docx_download_url)} className="flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold"><Download className="size-4" />DOCX</button><button type="button" onClick={() => openDownload(document.pdf_download_url)} className="flex items-center gap-2 rounded-xl bg-[#174e3b] px-3 py-2 text-xs font-bold text-white"><Download className="size-4" />PDF</button></div>}
+        <footer className="flex items-center justify-between gap-3 border-t border-[#eee8dd] bg-[#fefcf8] px-5 py-4">
+          <button type="button" onClick={onClose} className="text-xs font-semibold text-[#716c64]">{document ? 'Done' : 'Cancel'}</button>
+          {!document ? <button type="button" onClick={() => void createDocument()} disabled={!requiredComplete || isGenerating} className="flex items-center gap-2 rounded-xl bg-[#181818] px-4 py-2.5 text-xs font-bold text-white disabled:bg-[#ded7c9]">{isGenerating ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4" />}{isGenerating ? 'Generating…' : 'Confirm & generate'}</button> : <div className="flex gap-2"><button type="button" onClick={() => openDownload(document.docx_download_url)} className="flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold"><Download className="size-4" />DOCX</button><button type="button" onClick={() => openDownload(document.pdf_download_url)} className="flex items-center gap-2 rounded-xl bg-[#181818] px-3 py-2 text-xs font-bold text-white"><Download className="size-4" />PDF</button></div>}
         </footer>
       </div>
     </div>
@@ -86,6 +86,6 @@ export default function FactualConfirmModal({ profile, docType, docLabel, onClos
 }
 
 function Field({ label, value, required, dataType, onChange }: { label: string; value: string; required: boolean; dataType: string; onChange: (value: string) => void }) {
-  const className = 'mt-1.5 w-full rounded-xl border border-[#ccd8d1] bg-white px-3.5 py-2.5 text-sm font-medium text-[#24322c] focus:border-[#5d8c73] focus:outline-none';
-  return <label className="block text-[11px] font-bold text-[#405048]">{label}{required ? ' *' : ' (optional)'}{dataType === 'multiline' ? <textarea value={value} onChange={(event) => onChange(event.target.value)} required={required} rows={4} className={className} /> : <input value={value} onChange={(event) => onChange(event.target.value)} required={required} inputMode={dataType === 'number' ? 'decimal' : undefined} className={className} />}</label>;
+  const className = 'mt-1.5 w-full rounded-xl border border-[#ded7c9] bg-white px-3.5 py-2.5 text-sm font-medium text-[#252525] focus:border-[#bb9134] focus:outline-none';
+  return <label className="block text-[11px] font-bold text-[#48443d]">{label}{required ? ' *' : ' (optional)'}{dataType === 'multiline' ? <textarea value={value} onChange={(event) => onChange(event.target.value)} required={required} rows={4} className={className} /> : <input value={value} onChange={(event) => onChange(event.target.value)} required={required} inputMode={dataType === 'number' ? 'decimal' : undefined} className={className} />}</label>;
 }

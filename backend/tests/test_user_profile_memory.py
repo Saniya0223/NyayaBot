@@ -23,16 +23,20 @@ def test_profile_validation_and_owner_scoped_memory():
     bob = signed_in('profilebob')
     assert alice.get('/api/v1/profile').json()['email'] == 'profilealice@example.com'
     payload = {
-        'full_name': 'Alice Sharma', 'date_of_birth': '1999-04-03', 'phone': '9876543210',
+        'full_name': 'Alice Sharma', 'date_of_birth': '1999-04-03', 'gender': 'woman', 'phone': '9876543210',
         'state': 'Rajasthan', 'city': 'Jaipur', 'pin_code': '302001',
         'full_address': '12 Test Lane', 'preferred_language': 'hinglish',
     }
     updated = alice.put('/api/v1/profile', json=payload)
     assert updated.status_code == 200
     assert updated.json()['date_of_birth'] == '1999-04-03'
+    assert updated.json()['gender'] == 'woman'
+    assert alice.get('/api/v1/profile').json()['gender'] == 'woman'
     assert updated.json()['email'] == 'profilealice@example.com'
     assert alice.put('/api/v1/profile', json={**payload, 'pin_code': '123'}).status_code == 422
     assert alice.put('/api/v1/profile', json={**payload, 'date_of_birth': '2099-01-01'}).status_code == 422
+    assert alice.put('/api/v1/profile', json={**payload, 'gender': 'invalid'}).status_code == 422
+    assert alice.put('/api/v1/profile', json={**payload, 'gender': None}).json()['gender'] is None
 
     created = alice.post('/api/v1/profile/memories', json={'category': 'preference', 'text': 'Explain simply'})
     assert created.status_code == 201
@@ -96,7 +100,7 @@ def test_existing_user_table_gets_additive_profile_columns(tmp_path):
         connection.execute(text("INSERT INTO users VALUES ('legacy', 'Legacy User', 'legacy@example.com')"))
     apply_additive_migrations(engine)
     columns = {column['name'] for column in inspect(engine).get_columns('users')}
-    assert {'date_of_birth', 'pin_code', 'full_address', 'preferred_language'} <= columns
+    assert {'date_of_birth', 'gender', 'pin_code', 'full_address', 'preferred_language'} <= columns
     with engine.connect() as connection:
         assert connection.execute(text("SELECT full_name FROM users WHERE id='legacy'")).scalar() == 'Legacy User'
 

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RBI CMS layout (NyayaBot local test)</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; color: #22303c; background: #f4f5f7; font: 14px/1.5 system-ui, "Segoe UI", sans-serif; }
+  .banner { padding: 8px 20px; background: #fff2cc; border-bottom: 1px solid #e5cf78; }
+  header { display: flex; gap: 14px; align-items: center; padding: 10px 20px; background: #1d3557; color: #fff; }
+  header strong { margin-right: auto; }
+  header a { color: #fff; text-decoration: none; }
+  main { max-width: 980px; margin: 0 auto; padding: 18px; }
+  section, form > fieldset { background: #fff; border: 1px solid #d8dde3; border-radius: 6px; padding: 18px; margin: 14px 0; }
+  .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 18px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  label { font-weight: 600; }
+  input, select, textarea { width: 100%; padding: 8px; border: 1px solid #aab4bf; border-radius: 4px; font: inherit; }
+  textarea { min-height: 110px; }
+  [role="combobox"] { padding: 8px; border: 1px solid #aab4bf; border-radius: 4px; background: #fff; }
+  .test-list { border: 1px solid #aab4bf; background: #fff; }
+  .test-list [role=option] { padding: 6px 10px; cursor: pointer; }
+  button { padding: 8px 14px; border: 0; border-radius: 4px; color: #fff; background: #1d6fb8; cursor: pointer; }
+  #received { white-space: pre-wrap; padding: 12px; color: #dce7f5; background: #132337; }
+  #alarm { display: none; padding: 15px; color: #fff; background: #a62121; font-weight: 700; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div id="alarm">SUBMIT WAS PRESSED. The helper must never do this.</div>
+<div class="banner">Local development stand-in for RBI CMS. The live site's exact wording could not be read in advance,
+  so this page uses common complaint-form wording. Fake data only; nothing is sent anywhere.</div>
+<header>
+  <strong>RBI Complaint Management System (test)</strong>
+  <nav aria-label="Main menu"><a href="#home">Home</a> <a href="#track">Track Your Complaint</a> <a href="#faq">FAQs</a></nav>
+</header>
+<main>
+  <section id="homeView">
+    <h1>Reserve Bank – Integrated Ombudsman Scheme</h1>
+    <p>Complain here if your bank did not reply within 30 days or you are not satisfied with its reply.</p>
+    <button type="button" id="fileComplaint">File A Complaint</button>
+  </section>
+
+  <!-- Mobile verification: the user's job, never NyayaBot's. -->
+  <section id="verifyView" hidden>
+    <h2>Verify your mobile number</h2>
+    <div class="row">
+      <div class="field"><label for="verifyMobile">Mobile Number</label><input id="verifyMobile" type="tel" maxlength="10"></div>
+      <div class="field"><label for="verifyOtp">Enter OTP</label><input id="verifyOtp" name="otp" maxlength="6"></div>
+    </div>
+    <p><button type="button" id="verifyBtn">Verify</button></p>
+  </section>
+
+  <form id="complaintForm" autocomplete="off" hidden>
+    <h1>File A Complaint</h1>
+    <fieldset>
+      <legend>Complainant Details</legend>
+      <div class="row">
+        <div class="field"><label for="cName">Name</label><input id="cName" name="name"></div>
+        <div class="field"><label for="cGender">Gender</label><select id="cGender" name="gender"><option value="">Select</option><option>Male</option><option>Female</option><option>Other</option></select></div>
+        <div class="field"><label for="cMobile">Mobile Number</label><input id="cMobile" name="mobile" type="tel" maxlength="10"></div>
+        <div class="field"><label for="cEmail">Email</label><input id="cEmail" name="email" type="email"></div>
+        <div class="field"><label for="cAddress">Address</label><input id="cAddress" name="address" maxlength="200"></div>
+        <div class="field"><label for="cState">State</label><select id="cState" name="state"><option value="">Select</option><option>Delhi</option><option>Maharashtra</option><option>Rajasthan</option></select></div>
+        <div class="field"><label for="cPin">Pincode</label><input id="cPin" name="pincode" maxlength="6"></div>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Details of the Complaint</legend>
+      <div class="row">
+        <div class="field"><label for="reType">Type of Regulated Entity</label>
+          <select id="reType" name="entityType"><option value="">Select</option><option>Bank</option><option>NBFC</option>
+            <option>Payment System Participant</option><option>Credit Information Company</option></select></div>
+        <div class="field"><label for="reName">Name of the Regulated Entity</label>
+          <div id="reName" role="combobox" aria-label="Name of the Regulated Entity" data-model="entityName"
+               data-options="Axis Bank|HDFC Bank|ICICI Bank|Paytm Payments Bank|State Bank of India">Select</div></div>
+        <div class="field"><label for="branch">Branch</label><input id="branch" name="branch"></div>
+        <div class="field"><label for="acct">Account Number</label><input id="acct" name="account"></div>
+        <div class="field"><label for="txnDate">Date of Transaction</label><input id="txnDate" name="txnDate" type="date"></div>
+        <div class="field"><label for="txnId">Transaction ID / UTR</label><input id="txnId" name="txnId"></div>
+        <div class="field"><label for="amount">Amount Involved</label><input id="amount" name="amount" type="number"></div>
+        <div class="field"><label for="category">Complaint Category</label>
+          <select id="category" name="category"><option value="">Select</option><option>ATM / Debit Card</option>
+            <option>Mobile / Electronic Banking</option><option>Credit Card</option><option>Loans and Advances</option><option>Deposit Accounts</option></select></div>
+        <div class="field"><label for="reDate">Date of complaint lodged with the Regulated Entity</label><input id="reDate" name="reDate" type="date"></div>
+        <div class="field"><label for="reRef">Complaint reference number given by the Regulated Entity</label><input id="reRef" name="reRef"></div>
+        <div class="field"><label for="facts">Facts of the complaint</label><textarea id="facts" name="facts" maxlength="2000"></textarea></div>
+        <div class="field"><label for="relief">Relief sought</label><input id="relief" name="relief"></div>
+      </div>
+      <p>Is the subject matter of the complaint pending before any court, tribunal or arbitrator?</p>
+      <label><input type="radio" name="pending" value="yes"> Yes</label> <label><input type="radio" name="pending" value="no"> No</label>
+    </fieldset>
+    <p><button type="submit" id="submitBtn">Submit</button></p>
+  </form>
+
+  <section><h2>What the portal received</h2><pre id="received">{}</pre></section>
+</main>
+<script>
+(() => {
+  const model = {};
+  const render = () => { document.getElementById('received').textContent = JSON.stringify(model, null, 2); };
+  const show = (view) => {
+    document.getElementById('homeView').hidden = view !== 'home';
+    document.getElementById('verifyView').hidden = view !== 'verify';
+    document.getElementById('complaintForm').hidden = view !== 'form';
+  };
+  document.getElementById('fileComplaint').addEventListener('click', () => show('verify'));
+  document.getElementById('verifyBtn').addEventListener('click', () => show('form'));
+  const form = document.getElementById('complaintForm');
+  const record = (event) => {
+    const el = event.target;
+    if (!el.name || (el.type === 'radio' && !el.checked)) return;
+    model[el.name] = el.value;
+    render();
+  };
+  form.addEventListener('input', record);
+  form.addEventListener('change', record);
+  form.addEventListener('submit', (event) => { event.preventDefault(); document.getElementById('alarm').style.display = 'block'; });
+  // A searchable bank list like the live site's: opens on mouse-down, closes on Escape.
+  const closeLists = () => document.querySelectorAll('.test-list').forEach((list) => list.remove());
+  document.querySelectorAll('[role=combobox][data-options]').forEach((box) => {
+    box.addEventListener('mousedown', () => {
+      closeLists();
+      const list = document.createElement('div');
+      list.className = 'test-list';
+      list.setAttribute('role', 'listbox');
+      for (const text of box.dataset.options.split('|')) {
+        const option = document.createElement('div');
+        option.setAttribute('role', 'option');
+        option.textContent = text;
+        option.addEventListener('click', () => { box.textContent = text; model[box.dataset.model] = text; closeLists(); render(); });
+        list.appendChild(option);
+      }
+      box.after(list);
+    });
+  });
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeLists(); });
+  const start = location.hash.slice(1);
+  show(['verify', 'form'].includes(start) ? start : 'home');
+})();
+</script>
+</body>
+</html>

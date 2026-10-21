@@ -1,19 +1,25 @@
 'use client';
 
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+import Image from 'next/image';
 import {
   ArrowUp,
-  Bot,
   FileText,
   LoaderCircle,
-  Paperclip,
+  Pause,
+  Play,
   Plus,
+  RotateCcw,
   ShieldCheck,
   Sparkles,
+  Square,
   UserRound,
+  Volume2,
 } from 'lucide-react';
 import { API_BASE_URL, ChatMessageItem, fetchLLMStatus, LLMStatus, retryChatStage, sendChatMessage, StructuredCaseProfile } from '@/lib/api';
 import { openEligibleDocumentHandoff, routeDocumentAction } from '@/lib/documentHandoff';
+import FormattedMessage from './FormattedMessage';
+import VoiceChatOrb from './VoiceChatOrb';
 
 interface ChatInterfaceProps {
   activeProfile?: StructuredCaseProfile | null;
@@ -34,31 +40,6 @@ const suggestions = [
   'I was cheated through UPI.',
 ];
 
-// Gemini replies arrive as markdown. Emphasis markers must be stripped or they
-// render as literal asterisks in the chat bubble.
-function stripEmphasis(value: string) {
-  return value.replace(/\*\*/g, '').replace(/\*([^*]+)\*/g, '$1');
-}
-
-function BotMessageContent({ text }: { text: string }) {
-  return (
-    <div className="space-y-2.5">
-      {text.split('\n').filter(Boolean).map((line, index) => {
-        const cleaned = line.trim();
-        if (cleaned.startsWith('### ')) {
-          return <h3 key={`${cleaned}-${index}`} className="pt-1 text-xs font-bold uppercase tracking-[0.08em] text-[#174e3b]">{stripEmphasis(cleaned.slice(4))}</h3>;
-        }
-        // Gemini emits '*' bullets; '•' and '-' also appear in fallback copy.
-        const bullet = /^([•*-])\s+/.exec(cleaned);
-        if (bullet) {
-          return <p key={`${cleaned}-${index}`} className="flex gap-2"><span className="text-[#2f755b]">•</span><span>{stripEmphasis(cleaned.slice(bullet[0].length))}</span></p>;
-        }
-        return <p key={`${cleaned}-${index}`}>{stripEmphasis(cleaned)}</p>;
-      })}
-    </div>
-  );
-}
-
 export default function ChatInterface({
   activeProfile,
   initialCaseId,
@@ -76,17 +57,62 @@ export default function ChatInterface({
   const [sendError, setSendError] = useState<string | null>(null);
   const [llmStatus, setLLMStatus] = useState<LLMStatus | null>(null);
   const [statusUnreachable, setStatusUnreachable] = useState(false);
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [voiceSessionKey, setVoiceSessionKey] = useState(0);
+  const [responseToSpeak, setResponseToSpeak] = useState<{ id: string; messageId: string; text: string } | null>(null);
+  const [playbackCommand, setPlaybackCommand] = useState<{ id: number; action: 'pause' | 'resume' | 'stop' } | null>(null);
+  const [playback, setPlayback] = useState<{ messageId: string; status: 'preparing' | 'playing' | 'paused'; provider?: 'sarita' | 'browser' } | null>(null);
+  const [playbackError, setPlaybackError] = useState<{ messageId: string; text: string } | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const mountedRef = useRef(true);
   const messageSequence = useRef(0);
   const requestInFlight = useRef(false);
+  const voiceOpenRef = useRef(false);
+  const voiceBusyRef = useRef(false);
+  const speechSequence = useRef(0);
+  const playbackCommandSequence = useRef(0);
+
+  function requestSpokenReply(text: string, messageId: string) {
+    speechSequence.current += 1;
+    setPlaybackError(null);
+    setResponseToSpeak({ id: `speech-${speechSequence.current}`, messageId, text });
+  }
+
+  function controlPlayback(action: 'pause' | 'resume' | 'stop') {
+    playbackCommandSequence.current += 1;
+    setPlaybackCommand({ id: playbackCommandSequence.current, action });
+  }
+
+  function handlePlaybackChange(messageId: string | null, status: 'idle' | 'preparing' | 'playing' | 'paused', error?: string, provider?: 'sarita' | 'browser') {
+    setPlayback(messageId && status !== 'idle' ? { messageId, status, provider } : null);
+    if (error && messageId) setPlaybackError({ messageId, text: error });
+  }
+
+  function setVoiceModeOpen(open: boolean) {
+    voiceOpenRef.current = open;
+    setVoiceOpen(open);
+    if (!open) setResponseToSpeak(null);
+  }
+
+  function setVoiceRecordingBusy(busy: boolean) {
+    voiceBusyRef.current = busy;
+    setVoiceBusy(busy);
+  }
 
   function handleNewCaseClick() {
     setMessages([]);
     setCaseId(undefined);
     setInputText('');
     setSendError(null);
+    setResponseToSpeak(null);
+    setPlayback(null);
+    setPlaybackError(null);
+    setPlaybackCommand(null);
+    setVoiceModeOpen(false);
+    setVoiceRecordingBusy(false);
+    setVoiceSessionKey((current) => current + 1);
     if (onNewCase) onNewCase();
   }
 
@@ -125,8 +151,9 @@ export default function ChatInterface({
 
   async function handleSend(textOverride?: string) {
     const text = (textOverride ?? inputText).trim();
-    if (!text || isSending || requestInFlight.current) return;
+    if (!text || isSending || requestInFlight.current || voiceBusyRef.current) return;
     requestInFlight.current = true;
+    controlPlayback('stop');
 
     messageSequence.current += 1;
     const userMessage: ChatMessageItem = { id: `user-${messageSequence.current}`, sender: 'user', text };
@@ -143,7 +170,7 @@ export default function ChatInterface({
       setLLMStatus((current) => ({
         provider: response.llm_provider,
         model: response.llm_model || current?.model || 'unknown',
-        configured: response.llm_mode !== 'limited_demo',
+        configured: response.llm_mode !== 'limited_demo' || Boolean(current?.configured),
         mode: response.llm_mode,
         message: response.llm_mode !== 'limited_demo'
           ? `This response was generated through the backend ${response.llm_provider || 'AI'} API.`
@@ -166,6 +193,9 @@ export default function ChatInterface({
           retry_action: response.retry_action,
         },
       ]);
+      if (voiceOpenRef.current) {
+        requestSpokenReply(response.reply_text, response.message_id);
+      }
     } catch (error: unknown) {
       // Log the real, non-sensitive failure so URL/schema/CORS faults are
       // diagnosable instead of hidden behind the generic bubble below.
@@ -190,6 +220,7 @@ export default function ChatInterface({
   async function handleRetry(message: ChatMessageItem) {
     if (!caseId || !message.retry_action || isSending || requestInFlight.current) return;
     requestInFlight.current = true;
+    controlPlayback('stop');
     setSendError(null);
     setIsSending(true);
     try {
@@ -200,7 +231,7 @@ export default function ChatInterface({
       setLLMStatus((current) => ({
         provider: response.llm_provider,
         model: response.llm_model || current?.model || 'unknown',
-        configured: response.llm_mode !== 'limited_demo',
+        configured: response.llm_mode !== 'limited_demo' || Boolean(current?.configured),
         mode: response.llm_mode,
         message: response.llm_mode !== 'limited_demo'
           ? `This response was generated through the backend ${response.llm_provider || 'AI'} API.`
@@ -214,6 +245,9 @@ export default function ChatInterface({
         quick_replies: response.quick_replies, suggested_action: response.suggested_action,
         retry_action: response.retry_action,
       } : item));
+      if (voiceOpenRef.current) {
+        requestSpokenReply(response.reply_text, response.message_id);
+      }
     } catch (error: unknown) {
       if (mountedRef.current) setSendError(error instanceof Error ? error.message : 'Could not retry this turn.');
     } finally {
@@ -223,9 +257,6 @@ export default function ChatInterface({
   }
 
   const isLLMActive = llmStatus?.mode === 'groq' || llmStatus?.mode === 'gemini';
-  const providerLabel = llmStatus?.provider
-    ? llmStatus.provider.charAt(0).toUpperCase() + llmStatus.provider.slice(1)
-    : 'AI';
 
   // The backend status endpoint is the only source of truth. A failed fetch means
   // the API is unreachable, which must not be reported as a missing key.
@@ -233,19 +264,9 @@ export default function ChatInterface({
     ? 'Backend unreachable'
     : llmStatus
       ? isLLMActive
-        ? providerLabel
+        ? null
         : 'Limited demo'
       : 'Checking';
-
-  const statusDetail = statusUnreachable
-    ? `Cannot reach ${API_BASE_URL}`
-    : llmStatus
-      ? isLLMActive
-        ? `${llmStatus.model} · English · Hindi · Hinglish`
-        : llmStatus.configured
-          ? 'Provider unavailable this turn · local workflow fallback'
-          : `${providerLabel} key required · local workflow fallback`
-      : 'Checking provider status';
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -270,46 +291,32 @@ export default function ChatInterface({
   }
 
   return (
-    <section className="flex h-full min-h-[620px] flex-col overflow-hidden rounded-[26px] border border-[#dbe4de] bg-white paper-shadow" aria-label="Conversation with NyayaBot">
-      <header className="flex items-center justify-between border-b border-[#e4eae6] px-4 py-3.5 sm:px-5">
+    <section className="flex h-full min-h-[620px] flex-col overflow-hidden rounded-[26px] border border-[#ebe6dc] bg-white paper-shadow" aria-label="Conversation with NyayaBot">
+      <header className="flex items-center justify-between border-b border-[#eee8dd] px-4 py-3.5 sm:px-5">
         <div className="flex items-center gap-3">
-          <span className="grid size-9 place-items-center rounded-xl bg-[#e8f2ec] text-[#174e3b]"><Bot className="size-[18px]" aria-hidden="true" /></span>
+          <Image src="/nyayabot-mascot-avatar-v2.png" alt="NyayaBot mascot" width={44} height={44} className="size-11 shrink-0 rounded-full border border-[#f1dc9e] object-cover" />
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-sm font-bold text-[#1c2b25]">Ask NyayaBot</h2>
-              <span
-                className={`flex items-center gap-1 text-[10px] font-semibold ${isLLMActive ? 'text-[#34705a]' : 'text-[#9a681c]'}`}
-                title={llmStatus?.message || 'Checking AI provider status'}
-              >
-                <span className={`size-1.5 rounded-full ${isLLMActive ? 'bg-[#3ca276]' : 'bg-[#d89a32]'}`} />
-                {statusLabel}
-              </span>
+              <h2 className="text-sm font-bold text-[#222222]">Ask NyayaBot</h2>
+              {statusLabel ? (
+                <span className="flex items-center gap-1 text-[10px] font-semibold text-[#9a681c]" title={llmStatus?.message || 'Checking AI provider status'}>
+                  <span className="size-1.5 rounded-full bg-[#d89a32]" />
+                  {statusLabel}
+                </span>
+              ) : null}
             </div>
-            <p className="text-[11px] text-[#738079]">
-              {statusDetail}
-            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={handleNewCaseClick}
-            className="flex items-center gap-1.5 rounded-xl border border-[#dce5df] bg-[#f7faf8] px-3 py-2 text-xs font-semibold text-[#174e3b] transition hover:border-[#b9ccc0] hover:bg-[#ebf4ef] active:scale-[0.98]"
+            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#fff4c4] to-[#ffea97] px-3 py-2 text-xs font-semibold text-[#1b1b1b] transition hover:from-[#ffedaa] hover:to-[#ffdf6d] active:scale-[0.98]"
             title="Start a new case conversation"
             aria-label="Start a new case"
           >
             <Plus className="size-3.5" aria-hidden="true" />
             <span className="hidden sm:inline">New case</span>
-          </button>
-          <button
-            type="button"
-            onClick={onOpenUploadModal}
-            disabled={!caseId}
-            className="flex items-center gap-2 rounded-xl border border-[#dce5df] px-3 py-2 text-xs font-semibold text-[#4d5d55] transition hover:border-[#b9ccc0] hover:bg-[#f5f8f6] disabled:opacity-45"
-            aria-label={caseId ? 'Upload a document' : 'Start a case before uploading'}
-          >
-            <Paperclip className="size-4" aria-hidden="true" />
-            <span className="hidden sm:inline">Add evidence</span>
           </button>
         </div>
       </header>
@@ -317,11 +324,11 @@ export default function ChatInterface({
       <div className="soft-scrollbar flex-1 overflow-y-auto px-4 py-5 sm:px-6">
         {messages.length === 0 ? (
           <div className="mx-auto flex min-h-full max-w-2xl flex-col justify-center py-5">
-            <div className="mb-5 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.13em] text-[#2f755b]">
+            <div className="mb-5 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.13em] text-[#9d6b00]">
               <Sparkles className="size-4" aria-hidden="true" /> Start in your own words
             </div>
-            <h1 className="max-w-xl text-4xl font-bold tracking-[-0.045em] text-[#17231f] sm:text-5xl">What happened?</h1>
-            <p className="mt-4 max-w-xl text-sm leading-6 text-[#65736d] sm:text-[15px]">
+            <h1 className="max-w-xl text-4xl font-bold tracking-[-0.045em] text-[#171717] sm:text-5xl">What happened?</h1>
+            <p className="mt-4 max-w-xl text-sm leading-6 text-[#716c64] sm:text-[15px]">
               Describe your legal problem in your own words. You can write in English, Hindi, or Hinglish.
             </p>
             <div className="mt-7 flex flex-wrap gap-2" aria-label="Example legal problems">
@@ -331,14 +338,14 @@ export default function ChatInterface({
                   type="button"
                   onClick={() => void handleSend(suggestion)}
                   disabled={isSending}
-                  className="rounded-full border border-[#d8e2dc] bg-[#fafcfb] px-3.5 py-2 text-left text-xs font-medium text-[#4e5f57] transition hover:border-[#9eb9aa] hover:bg-[#edf5f0] hover:text-[#174e3b]"
+                  className="rounded-full border border-[#e3dccf] bg-[#fffdf8] px-3.5 py-2 text-left text-xs font-medium text-[#55514a] transition hover:border-[#d9bd6b] hover:bg-[#fff8e2] hover:text-[#181818]"
                 >
                   {suggestion}
                 </button>
               ))}
             </div>
-            <div className="mt-8 flex items-start gap-2.5 rounded-2xl bg-[#f5f8f6] p-3.5 text-[11px] leading-5 text-[#68766f]">
-              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-[#2f755b]" aria-hidden="true" />
+            <div className="mt-8 flex items-start gap-2.5 rounded-2xl bg-[#fcfaf5] p-3.5 text-[11px] leading-5 text-[#746f67]">
+              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-[#9d6b00]" aria-hidden="true" />
               <span>Share only what is needed. Aadhaar, PAN, and card numbers are masked before intake processing.</span>
             </div>
           </div>
@@ -348,16 +355,16 @@ export default function ChatInterface({
               const isUser = message.sender === 'user';
               return (
                 <article key={message.id} className={`flex gap-2.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
-                  {!isUser && <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl bg-[#e8f2ec] text-[#174e3b]"><Bot className="size-4" aria-hidden="true" /></span>}
+                  {!isUser && <Image src="/nyayabot-mascot-avatar-v2.png" alt="" width={36} height={36} className="mt-0.5 size-9 shrink-0 rounded-full border border-[#f1dc9e] object-cover" />}
                   <div className={`max-w-[86%] sm:max-w-[78%] ${isUser ? 'items-end' : 'items-start'} flex flex-col gap-2`}>
-                    <div className={`rounded-2xl px-4 py-3 text-[13px] leading-6 ${isUser ? 'rounded-tr-md bg-[#174e3b] text-white' : 'rounded-tl-md border border-[#e1e8e4] bg-[#fbfcfb] text-[#34433c]'}`}>
-                      {isUser ? <p className="whitespace-pre-wrap">{message.text}</p> : <BotMessageContent text={message.text} />}
+                    <div className={`rounded-2xl px-4 py-3 text-[13px] leading-6 ${isUser ? 'rounded-tr-md bg-[#171717] text-white' : 'rounded-tl-md border border-[#eeeae3] bg-[#fdfcf9] text-[#383530]'}`}>
+                      {isUser ? <p className="whitespace-pre-wrap">{message.text}</p> : <FormattedMessage text={message.text} />}
                       {message.suggested_action ? (
-                        <div className="mt-4 border-t border-[#dce6e0] pt-3">
+                        <div className="mt-4 border-t border-[#e9e3d7] pt-3">
                           <button
                             type="button"
                             onClick={() => handleDocumentAction(message.suggested_action!)}
-                            className="flex w-full items-center justify-between gap-3 rounded-xl bg-[#174e3b] px-3.5 py-2.5 text-left text-xs font-bold text-white transition hover:bg-[#103c2d]"
+                            className="flex w-full items-center justify-between gap-3 rounded-xl bg-[#181818] px-3.5 py-2.5 text-left text-xs font-bold text-white transition hover:bg-[#080808]"
                           >
                             <span className="flex items-center gap-2"><FileText className="size-4" aria-hidden="true" />{message.suggested_action.label}</span>
                             <span aria-hidden="true">→</span>
@@ -375,23 +382,42 @@ export default function ChatInterface({
                               type="button"
                               onClick={() => { if (retryControl) void handleRetry(message); else void handleSend(reply); }}
                               disabled={isSending || (retryControl && !message.retry_action)}
-                              title={retryControl && !message.retry_action ? 'This older response has no saved retry stage. Send the original message again.' : undefined}
-                              className="rounded-full border border-[#d8e2dc] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#526159] transition hover:border-[#9eb9aa] hover:bg-[#eef5f1] hover:text-[#174e3b] disabled:opacity-50"
+                              aria-label={retryControl ? 'Retry failed response' : undefined}
+                              title={retryControl ? (message.retry_action ? 'Retry failed response' : 'This older response has no saved retry stage. Send the original message again.') : undefined}
+                              className="rounded-full border border-[#e3dccf] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#5e5a53] transition hover:border-[#d9bd6b] hover:bg-[#fff7df] hover:text-[#181818] disabled:opacity-50"
                             >
-                              {reply}
+                              {retryControl ? <RotateCcw className="size-4" aria-hidden="true" /> : reply}
                             </button>
                           );
                         })}
                       </div>
                     ) : null}
+                    {!isUser && message.text && (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {playback?.messageId === message.id ? (
+                          <>
+                            {playback.status === 'preparing' ? <span role="status" className="inline-flex items-center gap-1 px-2 py-1 text-[11px] text-[#76684c]"><LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> Preparing Sarita…</span> :
+                              <button type="button" onClick={() => controlPlayback(playback.status === 'paused' ? 'resume' : 'pause')} className="inline-flex items-center gap-1 rounded-full bg-[#fff4d6] px-2 py-1 text-[11px] font-medium text-[#5b421d] transition hover:bg-[#ffe8a4]" aria-label={playback.status === 'paused' ? 'Resume reading this reply' : 'Pause reading this reply'}>
+                                {playback.status === 'paused' ? <Play className="size-3.5" aria-hidden="true" /> : <Pause className="size-3.5" aria-hidden="true" />}
+                                {playback.status === 'paused' ? 'Resume' : 'Pause'}
+                              </button>}
+                            <button type="button" onClick={() => controlPlayback('stop')} className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] text-[#76684c] transition hover:bg-[#fff4d6]" aria-label="Stop reading this reply"><Square className="size-3" aria-hidden="true" /> Stop</button>
+                            {playback.provider && <span className="text-[10px] text-[#8b8170]">{playback.provider === 'sarita' ? 'Sarita' : 'Browser voice'}</span>}
+                          </>
+                        ) : (
+                          <button type="button" onClick={() => requestSpokenReply(message.text, message.id)} className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] text-[#76684c] transition hover:bg-[#fff4d6] hover:text-[#30250f]" aria-label="Read this reply aloud" title="Uses Sarita when configured (reply text sent to Shunya Labs), otherwise your browser voice"><Volume2 className="size-3.5" aria-hidden="true" /> Read aloud</button>
+                        )}
+                        {playbackError?.messageId === message.id && <span role="alert" className="text-[11px] text-[#a24335]">{playbackError.text}</span>}
+                      </div>
+                    )}
                   </div>
-                  {isUser && <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl bg-[#eef1ef] text-[#5b6962]"><UserRound className="size-4" aria-hidden="true" /></span>}
+                  {isUser && <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-full bg-[#fff2bd] text-[#2d291f]"><UserRound className="size-4" aria-hidden="true" /></span>}
                 </article>
               );
             })}
             {isSending ? (
-              <div className="flex items-center gap-2.5 text-xs text-[#6f7c75]" role="status">
-                <span className="grid size-8 place-items-center rounded-xl bg-[#e8f2ec] text-[#174e3b]"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" /></span>
+              <div className="flex items-center gap-2.5 text-xs text-[#817b72]" role="status">
+                <span className="grid size-9 place-items-center rounded-full bg-[#fff2bd] text-[#171717]"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" /></span>
                 <span>Understanding your situation and updating the case…</span>
               </div>
             ) : null}
@@ -400,23 +426,48 @@ export default function ChatInterface({
         )}
       </div>
 
-      <form onSubmit={submit} className="border-t border-[#e3e9e5] bg-[#fbfcfb] p-3 sm:p-4">
-        <div className="flex items-end gap-2 rounded-2xl border border-[#ccd9d1] bg-white p-2 shadow-sm focus-within:border-[#69917d] focus-within:ring-4 focus-within:ring-[#e8f2ec]">
+      <form onSubmit={submit} className="relative border-t border-[#eee8dd] bg-[#fefcf8] p-3 sm:p-4">
+        <div className="flex items-end gap-2 rounded-2xl border border-[#ded7c9] bg-white p-2 shadow-sm focus-within:border-[#c9a34d] focus-within:ring-4 focus-within:ring-[#fff3c6]">
+          <button
+            type="button"
+            onClick={onOpenUploadModal}
+            disabled={!caseId}
+            className="grid size-10 shrink-0 place-items-center rounded-xl border border-[#e9e3d7] text-[#514b40] transition hover:border-[#dec88e] hover:bg-[#fff5d6] disabled:opacity-45"
+            aria-label={caseId ? 'Add evidence' : 'Start a case before adding evidence'}
+            title={caseId ? 'Add evidence' : 'Start a case before adding evidence'}
+          >
+            <Plus className="size-5" aria-hidden="true" />
+          </button>
           <textarea
             ref={inputRef}
             rows={1}
             value={inputText}
             onChange={(event) => setInputText(event.target.value)}
             onKeyDown={handleKeyDown}
+            readOnly={voiceBusy}
             placeholder="Describe what happened…"
             aria-label="Describe your legal problem"
-            className="max-h-28 min-h-11 flex-1 resize-none bg-transparent px-2.5 py-2 text-sm leading-6 text-[#1d2b25] placeholder:text-[#98a39e] focus:outline-none"
+            className="max-h-28 min-h-11 flex-1 resize-none bg-transparent px-2.5 py-2 text-sm leading-6 text-[#222222] placeholder:text-[#aaa299] focus:outline-none"
           />
-          <button type="submit" disabled={!inputText.trim() || isSending} className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#174e3b] text-white transition hover:bg-[#103c2d] disabled:bg-[#c9d2cd]" aria-label="Send message">
+          <VoiceChatOrb
+            key={voiceSessionKey}
+            isOpen={voiceOpen}
+            isSending={isSending}
+            caseId={caseId}
+            draftText={inputText}
+            onOpenChange={setVoiceModeOpen}
+            onTranscriptChange={setInputText}
+            onTranscriptReady={() => inputRef.current?.focus()}
+            onBusyChange={setVoiceRecordingBusy}
+            responseToSpeak={responseToSpeak}
+            playbackCommand={playbackCommand}
+            onPlaybackChange={handlePlaybackChange}
+          />
+          <button type="submit" disabled={!inputText.trim() || isSending || voiceBusy} className="grid size-10 shrink-0 place-items-center rounded-full bg-[#ffdd5d] text-[#181818] transition hover:bg-[#ffd23a] disabled:bg-[#e9e2d2]" aria-label="Send message">
             <ArrowUp className="size-[18px]" aria-hidden="true" />
           </button>
         </div>
-        <div className="mt-2 flex items-center justify-between px-1 text-[10px] text-[#87938d]">
+        <div className="mt-2 flex items-center justify-between px-1 text-[10px] text-[#999187]">
           <span>Enter to send · Shift + Enter for a new line</span>
           {sendError ? <span role="alert" className="text-[#a14d42]">{sendError}</span> : <span>Information, not representation</span>}
         </div>

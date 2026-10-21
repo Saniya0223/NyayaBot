@@ -21,6 +21,13 @@ class PortalTarget:
     # Fields the agent must NOT fill — user fills these themselves in the browser
     sensitive_fields: list[str] = field(default_factory=list)
     notes: str = ""                 # Extra hints for the LLM agent
+    # Regexes (on lower-cased, punctuation-free link text) for the click that leads
+    # from the landing page toward the form. Only add one that was seen on the real
+    # portal; the generic navigator rules cover common wording.
+    entry_hints: tuple[str, ...] = ()
+    # Regexes (same text form) for links that must never be taken on this portal,
+    # matched against the link text plus the card it sits in.
+    entry_avoid: tuple[str, ...] = ()
 
 
 # ── Registry ────────────────────────────────────────────────────────────────
@@ -48,6 +55,11 @@ _PORTAL_MAP: dict[str, PortalTarget] = {
     "cybercrime": PortalTarget(
         url="https://cybercrime.gov.in/",
         label="National Cyber Crime Reporting Portal",
+        # From the portal's own page text: the home page has a "Cyber Crime Related
+        # Complaint" card and a separate "Women & Children Related Crime" card, both
+        # with a "Register a Complaint" button, plus a "Report Cyber Crime" menu.
+        entry_hints=(r"^register a complaint$",),
+        entry_avoid=(r"\bwomen\b", r"\bchild(ren)?\b", r"\banonymous(ly)?\b", r"\bsocial media\b"),
         task_template=(
             "File a cyber crime complaint on cybercrime.gov.in. "
             "Victim name: {complainant_name}. "
@@ -116,6 +128,9 @@ _PORTAL_MAP: dict[str, PortalTarget] = {
     "employment": PortalTarget(
         url="https://samadhan.labour.gov.in/",
         label="Samadhan — Ministry of Labour",
+        # Seen on the live landing page: a pop-up whose button reads
+        # "Click here to continue with this new portal".
+        entry_hints=(r"continue with this new portal",),
         task_template=(
             "File a labour grievance on samadhan.labour.gov.in. "
             "Worker name: {complainant_name}. "
@@ -147,9 +162,35 @@ _FALLBACK = PortalTarget(
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
+# NyayaBot case categories (domain ids, e.g. "CYBER_FRAUD") -> _PORTAL_MAP key.
+# _PORTAL_MAP was keyed by portal names ("cybercrime", "tenant"), which no case
+# category ever matched, so cyber-fraud and tenant cases silently went to the
+# generic CPGRAMS fallback. A category absent from this table (and from
+# _PORTAL_MAP) deliberately falls back; see POLICE_COMPLAINT below.
+_CATEGORY_TO_PORTAL_KEY: dict[str, str] = {
+    "consumer": "consumer",
+    "employment": "employment",
+    "cyber_fraud": "cybercrime",
+    "housing_tenant": "tenant",
+    # POLICE_COMPLAINT is intentionally NOT mapped. The "police" entry is an eCourts
+    # case-status lookup (search by name / CNR), but the POLICE_COMPLAINT domain is
+    # help with a police refusal to register an FIR. Sending that user to a case
+    # status search would be the wrong task, so it keeps the general fallback until
+    # a suitable portal is chosen.
+}
+
+
+def _normalise_category(category: str | None) -> str:
+    return "_".join((category or "").lower().replace("-", " ").split())
+
+
 def select_portal(category: str | None) -> PortalTarget:
-    """Return the best portal target for the given NyayaBot case category."""
-    key = (category or "").lower().strip()
+    """Return the best portal target for the given NyayaBot case category.
+
+    Accepts a case category ("CYBER_FRAUD") or a portal key ("cybercrime").
+    """
+    key = _normalise_category(category)
+    key = _CATEGORY_TO_PORTAL_KEY.get(key, key)
     return _PORTAL_MAP.get(key, _FALLBACK)
 
 

@@ -7,10 +7,11 @@ import { loginAccount, NyayaUser, signupAccount } from '@/lib/auth';
 
 interface LoginGateProps {
   onLoginSuccess: (user: NyayaUser) => void;
+  initialTab?: 'signin' | 'signup';
 }
 
-export default function LoginGate({ onLoginSuccess }: LoginGateProps) {
-  const [tab, setTab] = useState<'signin' | 'signup'>('signin');
+export default function LoginGate({ onLoginSuccess, initialTab = 'signin' }: LoginGateProps) {
+  const [tab, setTab] = useState<'signin' | 'signup'>(initialTab);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -58,30 +59,30 @@ export default function LoginGate({ onLoginSuccess }: LoginGateProps) {
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-10rem)] items-center justify-center px-4 py-8 sm:px-6">
-      <div className="w-full max-w-[460px] overflow-hidden rounded-[28px] border border-[#dbe4de] bg-white p-6 paper-shadow sm:p-8">
+    <div className="mx-auto flex min-h-[calc(100vh-9rem)] w-full max-w-[1480px] items-center justify-center px-4 py-10 sm:px-6">
+      <div className="w-full max-w-[460px] overflow-hidden rounded-[28px] border border-[#e9e3d7] bg-white p-6 paper-shadow sm:p-8">
         {/* Brand Header */}
         <div className="text-center">
-          <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-[#174e3b] text-white shadow-md">
+          <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-[#181818] text-white shadow-md">
             <Scale className="size-6" aria-hidden="true" />
           </div>
-          <h1 className="mt-4 text-2xl font-bold tracking-tight text-[#17231f]">
+          <h1 className="mt-4 text-2xl font-bold tracking-tight text-[#171717]">
             Welcome to NyayaBot
           </h1>
-          <p className="mt-1.5 text-xs text-[#6b7872]">
+          <p className="mt-1.5 text-xs text-[#777169]">
             Turn your story into an actionable legal plan & official notices
           </p>
         </div>
 
         {/* Tab Switcher */}
-        <div className="mt-6 flex rounded-xl border border-[#dde5e0] bg-[#f5f8f6] p-1">
+        <div className="mt-6 flex rounded-xl border border-[#eae4d9] bg-[#fcfaf5] p-1">
           <button
             type="button"
             onClick={() => { setTab('signin'); setError(''); }}
             className={`flex-1 rounded-lg py-2 text-xs font-bold transition-all ${
               tab === 'signin'
-                ? 'bg-white text-[#174e3b] shadow-sm'
-                : 'text-[#6b7872] hover:text-[#17231f]'
+                ? 'bg-white text-[#181818] shadow-sm'
+                : 'text-[#777169] hover:text-[#171717]'
             }`}
           >
             Sign In
@@ -91,8 +92,8 @@ export default function LoginGate({ onLoginSuccess }: LoginGateProps) {
             onClick={() => { setTab('signup'); setError(''); }}
             className={`flex-1 rounded-lg py-2 text-xs font-bold transition-all ${
               tab === 'signup'
-                ? 'bg-white text-[#174e3b] shadow-sm'
-                : 'text-[#6b7872] hover:text-[#17231f]'
+                ? 'bg-white text-[#181818] shadow-sm'
+                : 'text-[#777169] hover:text-[#171717]'
             }`}
           >
             Create Account
@@ -110,9 +111,9 @@ export default function LoginGate({ onLoginSuccess }: LoginGateProps) {
         <form onSubmit={handleSubmit} className="mt-5 space-y-3.5">
           {tab === 'signup' && (
             <div>
-              <label className="block text-xs font-semibold text-[#293931]">Full Name</label>
+              <label className="block text-xs font-semibold text-[#292929]">Full Name</label>
               <div className="relative mt-1">
-                <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-[#87968e]">
+                <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-[#9a9288]">
                   <User className="size-4" />
                 </span>
                 <input
@@ -120,16 +121,16 @@ export default function LoginGate({ onLoginSuccess }: LoginGateProps) {
                   placeholder="e.g. Rahul Sharma"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full rounded-xl border border-[#dbe4de] bg-[#fbfdfc] py-2.5 pl-9 pr-3 text-xs text-[#17231f] transition placeholder:text-[#9bb0a5] focus:border-[#174e3b] focus:bg-white focus:outline-none"
+                  className="w-full rounded-xl border border-[#e9e3d7] bg-[#fffdf8] py-2.5 pl-9 pr-3 text-xs text-[#171717] transition placeholder:text-[#aca295] focus:border-[#181818] focus:bg-white focus:outline-none"
                 />
               </div>
             </div>
           )}
 
           <div>
-            <label className="block text-xs font-semibold text-[#293931]">Email Address</label>
+            <label className="block text-xs font-semibold text-[#292929]">Email Address</label>
             <div className="relative mt-1">
-              <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-[#87968e]">
+              <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-[#9a9288]">
                 <Mail className="size-4" />
               </span>
               <input
@@ -138,15 +139,15 @@ export default function LoginGate({ onLoginSuccess }: LoginGateProps) {
                 placeholder="name@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-xl border border-[#dbe4de] bg-[#fbfdfc] py-2.5 pl-9 pr-3 text-xs text-[#17231f] transition placeholder:text-[#9bb0a5] focus:border-[#174e3b] focus:bg-white focus:outline-none"
+                className="w-full rounded-xl border border-[#e9e3d7] bg-[#fffdf8] py-2.5 pl-9 pr-3 text-xs text-[#171717] transition placeholder:text-[#aca295] focus:border-[#181818] focus:bg-white focus:outline-none"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-[#293931]">Password</label>
+            <label className="block text-xs font-semibold text-[#292929]">Password</label>
             <div className="relative mt-1">
-              <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-[#87968e]">
+              <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-[#9a9288]">
                 <Lock className="size-4" />
               </span>
               <input
@@ -155,12 +156,12 @@ export default function LoginGate({ onLoginSuccess }: LoginGateProps) {
                 placeholder="••••••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-xl border border-[#dbe4de] bg-[#fbfdfc] py-2.5 pl-9 pr-10 text-xs text-[#17231f] transition placeholder:text-[#9bb0a5] focus:border-[#174e3b] focus:bg-white focus:outline-none"
+                className="w-full rounded-xl border border-[#e9e3d7] bg-[#fffdf8] py-2.5 pl-9 pr-10 text-xs text-[#171717] transition placeholder:text-[#aca295] focus:border-[#181818] focus:bg-white focus:outline-none"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute inset-y-0 right-0 flex items-center pr-3 text-[#87968e] hover:text-[#293931]"
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-[#9a9288] hover:text-[#292929]"
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
@@ -171,20 +172,20 @@ export default function LoginGate({ onLoginSuccess }: LoginGateProps) {
           <button
             type="submit"
             disabled={submitting}
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-[#174e3b] py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#103c2d] active:scale-[0.99] disabled:cursor-wait disabled:opacity-70"
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-[#181818] py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#080808] active:scale-[0.99] disabled:cursor-wait disabled:opacity-70"
           >
             <span>{submitting ? 'Checking securely…' : tab === 'signin' ? 'Sign In to NyayaBot' : 'Create My Account'}</span>
             {submitting ? <LoaderCircle className="size-3.5 animate-spin" /> : <ArrowRight className="size-3.5" />}
           </button>
         </form>
 
-        <p className="mt-5 rounded-xl border border-[#dce5df] bg-[#f5f8f6] px-3.5 py-2.5 text-center text-[11px] leading-5 text-[#68766f]">
+        <p className="mt-5 rounded-xl border border-[#e9e3d7] bg-[#fcfaf5] px-3.5 py-2.5 text-center text-[11px] leading-5 text-[#746f67]">
           Guest case storage is temporarily disabled so no private cases can be shared between visitors.
         </p>
 
         {/* Security badge */}
-        <div className="mt-5 flex items-center justify-center gap-1.5 text-[11px] text-[#6b7872]">
-          <ShieldCheck className="size-3.5 text-[#2f755b]" />
+        <div className="mt-5 flex items-center justify-center gap-1.5 text-[11px] text-[#777169]">
+          <ShieldCheck className="size-3.5 text-[#9d6b00]" />
           <span>Secure server session · Passwords stay out of browser storage</span>
         </div>
       </div>

@@ -5,6 +5,7 @@ import re
 import uuid
 import logging
 from datetime import datetime
+from pathlib import Path
 from typing import List
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, status
@@ -18,6 +19,8 @@ from app.auth import get_current_user
 from app.auth_routes import router as auth_router
 from app.profile_routes import router as profile_router
 from app.browser_routes import router as browser_router
+from app.autofill_routes import router as autofill_router
+from app.voice_routes import router as voice_router
 from app.services.browser_runtime import browser_runtime_status
 from app.agents.conversation_agent import conversational_agent
 from app.agents.intake_node import IntakeFactExtractor
@@ -27,6 +30,7 @@ from app.config import settings
 from app.llm.contracts import ProviderStatus
 from app.llm.factory import get_llm_provider
 from app.db.models import (
+    AutofillSessionModel,
     CaseModel,
     CaseTimelineEventModel,
     ChatCaseSessionModel,
@@ -113,6 +117,8 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(profile_router)
 app.include_router(browser_router)
+app.include_router(autofill_router)
+app.include_router(voice_router)
 
 
 @app.on_event("startup")
@@ -133,11 +139,35 @@ async def log_auto_fill_browser_runtime() -> None:
         logging.getLogger("uvicorn.error").warning("Auto-Fill runtime diagnostic unavailable")
 
 
+# Extension endpoints authenticated only by a Bearer session code (never the cookie).
+# POST /api/v1/autofill/session is deliberately absent: it uses the login cookie.
+_EXTENSION_BEARER_WRITES = frozenset({
+    ("POST", "/api/v1/autofill/plan"),
+    ("POST", "/api/v1/autofill/navigate"),
+    ("POST", "/api/v1/autofill/choose"),
+    ("POST", "/api/v1/autofill/report"),
+    ("DELETE", "/api/v1/autofill/session"),
+})
+
+
+def _is_extension_bearer_write(request: Request) -> bool:
+    return (
+        (request.method, request.url.path) in _EXTENSION_BEARER_WRITES
+        and request.headers.get("authorization", "").lower().startswith("bearer ")
+    )
+
+
 @app.middleware("http")
 async def reject_untrusted_write_origins(request: Request, call_next):
     """Block browser cookie-authenticated writes from untrusted origins."""
 
     origin = request.headers.get("origin")
+    if _is_extension_bearer_write(request):
+        # The Fill on Portal extension calls these from a chrome-extension:// origin.
+        # They ignore the login cookie and authenticate only with the session code in
+        # the Authorization header, which another site cannot attach to a forged
+        # request, so the cross-site risk this check guards against does not apply.
+        return await call_next(request)
     if origin and request.method not in {"GET", "HEAD", "OPTIONS"}:
         api_origin = f"{request.url.scheme}://{request.url.netloc}"
         allowed = (
@@ -950,6 +980,48 @@ def get_chat_case(
         case_profile=_load_chat_profile(record),
         messages=_messages_for_session(record),
     )
+
+
+@app.delete("/api/v1/chat/cases/{case_id}", status_code=204)
+def delete_chat_case(
+    case_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    """Permanently remove an owned chat case and its stored attachments."""
+    record = _get_owned_chat_record(db, case_id, current_user)
+    case = _get_owned_case(db, case_id, current_user)
+
+    evidence_root = Path(settings.STORAGE_DIR, "evidence").resolve()
+    document_root = Path(settings.STORAGE_DIR, "documents").resolve()
+    files_to_remove: set[Path] = set()
+    for evidence in case.evidence_files:
+        path = Path(evidence.file_path).resolve()
+        if path.parent == evidence_root:
+            files_to_remove.add(path)
+    for document in case.documents:
+        pdf_name = os.path.basename(document.pdf_download_url or document.pdf_filename or "")
+        if not pdf_name.lower().endswith(".pdf"):
+            continue
+        for name in (pdf_name, f"{Path(pdf_name).stem}.docx"):
+            path = (document_root / name).resolve()
+            if path.parent == document_root:
+                files_to_remove.add(path)
+
+    db.query(AutofillSessionModel).filter(
+        AutofillSessionModel.case_id == case_id,
+        AutofillSessionModel.user_id == current_user.id,
+    ).delete(synchronize_session=False)
+    db.delete(record)
+    db.flush()
+    db.delete(case)
+    db.commit()
+
+    for path in files_to_remove:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            logger.warning("case_id=%s event=case_storage_cleanup_failed", case_id)
 
 
 @app.post("/api/v1/chat/cases/{case_id}/summary", response_model=CaseSummaryResponse)

@@ -26,6 +26,7 @@ def apply_additive_migrations(engine: Engine) -> None:
                 connection.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR(512)"))
             for column, sql_type in (
                 ("date_of_birth", "VARCHAR(10)"),
+                ("gender", "VARCHAR(30)"),
                 ("pin_code", "VARCHAR(6)"),
                 ("full_address", "VARCHAR(500)"),
                 ("preferred_language", "VARCHAR(20)"),

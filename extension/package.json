@@ -1,0 +1,12 @@
+{
+  "name": "nyayabot-portal-helper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "NyayaBot Portal Helper Chrome extension. Tests run offline in a simulated page; no browser needed.",
+  "scripts": {
+    "test": "node --test tests/page.test.js tests/background.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0"
+  }
+}

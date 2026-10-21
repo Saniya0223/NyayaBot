@@ -6,12 +6,12 @@ import CaseWorkspacePanel from '@/components/CaseWorkspacePanel';
 import ChatInterface from '@/components/ChatInterface';
 import DocumentIntelligenceModal from '@/components/DocumentIntelligenceModal';
 import FactualConfirmModal from '@/components/FactualConfirmModal';
-import LoginGate from '@/components/LoginGate';
+import GuestLanding from '@/components/GuestLanding';
 import { useAuth } from '@/components/AuthProvider';
 import { ChatMessageItem, fetchChatCase, StructuredCaseProfile } from '@/lib/api';
 
 export default function HomeChatPage() {
-  const { user: currentUser, loading: checkingAuth, setUser } = useAuth();
+  const { user: currentUser, loading: checkingAuth } = useAuth();
   const [profile, setProfile] = useState<StructuredCaseProfile | null>(null);
   const [initialMessages, setInitialMessages] = useState<ChatMessageItem[]>([]);
   const [restoring, setRestoring] = useState(true);
@@ -66,30 +66,23 @@ export default function HomeChatPage() {
 
   if (checkingAuth) {
     return (
-      <div className="mx-auto grid min-h-[calc(100vh-9rem)] max-w-[1480px] place-items-center px-4 text-sm text-[#718078]">
+      <div className="mx-auto grid min-h-[calc(100vh-9rem)] max-w-[1480px] place-items-center px-4 text-sm text-[#817b72]">
         Reopening your case securely…
       </div>
     );
   }
 
   if (!currentUser) {
-    return (
-      <LoginGate
-        onLoginSuccess={(nextUser) => {
-          setProfile(null);
-          setInitialMessages([]);
-          setInjectedMessage(undefined);
-          setDocumentModal({ open: false, type: '', label: '' });
-          setUploadOpen(false);
-          setUser(nextUser);
-        }}
-      />
-    );
+    const requestedCase = new URLSearchParams(window.location.search).get('case');
+    const loginHref = requestedCase && /^[0-9a-f-]{36}$/i.test(requestedCase)
+      ? `/login?next=${encodeURIComponent(`/?case=${requestedCase}`)}`
+      : '/login';
+    return <GuestLanding loginHref={loginHref} />;
   }
 
   if (restoring) {
     return (
-      <div className="mx-auto grid min-h-[calc(100vh-9rem)] max-w-[1480px] place-items-center px-4 text-sm text-[#718078]">
+      <div className="mx-auto grid min-h-[calc(100vh-9rem)] max-w-[1480px] place-items-center px-4 text-sm text-[#817b72]">
         Reopening your case securely…
       </div>
     );
@@ -97,12 +90,12 @@ export default function HomeChatPage() {
 
   return (
     <div className="mx-auto flex min-h-[calc(100vh-9rem)] max-w-[1480px] flex-col px-3 py-3 sm:px-5 sm:py-5 lg:px-8">
-      <div className="mb-3 flex rounded-2xl border border-[#dbe4de] bg-white p-1 md:hidden" aria-label="Mobile workspace view">
-        <button type="button" onClick={() => setMobileView('chat')} className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold ${mobileView === 'chat' ? 'bg-[#174e3b] text-white' : 'text-[#68766f]'}`}><MessageCircle className="size-4" />Chat</button>
-        <button type="button" onClick={() => setMobileView('workspace')} className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold ${mobileView === 'workspace' ? 'bg-[#174e3b] text-white' : 'text-[#68766f]'}`}><PanelRight className="size-4" />Case workspace</button>
+      <div className="mb-3 flex rounded-2xl border border-[#e9e3d7] bg-white p-1 md:hidden" aria-label="Mobile workspace view">
+        <button type="button" onClick={() => setMobileView('chat')} className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold ${mobileView === 'chat' ? 'bg-[#181818] text-white' : 'text-[#746f67]'}`}><MessageCircle className="size-4" />Chat</button>
+        <button type="button" onClick={() => setMobileView('workspace')} className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold ${mobileView === 'workspace' ? 'bg-[#181818] text-white' : 'text-[#746f67]'}`}><PanelRight className="size-4" />Case workspace</button>
       </div>
 
-      <div className="grid flex-1 grid-cols-1 gap-4 overflow-hidden md:grid-cols-12 lg:gap-5">
+      <div className="grid flex-1 grid-cols-1 gap-4 overflow-hidden md:grid-cols-12 md:overflow-visible lg:gap-5">
         <div className={`${mobileView === 'chat' ? 'flex' : 'hidden'} min-h-0 flex-col md:col-span-7 md:flex lg:col-span-8`}>
           <ChatInterface
             activeProfile={profile}
@@ -115,9 +108,10 @@ export default function HomeChatPage() {
             injectedBotMessage={injectedMessage}
           />
         </div>
-        <div className={`${mobileView === 'workspace' ? 'flex' : 'hidden'} min-h-0 flex-col md:col-span-5 md:flex lg:col-span-4`}>
+        <div className={`${mobileView === 'workspace' ? 'flex' : 'hidden'} min-h-0 flex-col md:sticky md:top-[86px] md:col-span-5 md:flex md:self-start lg:col-span-4`}>
           <CaseWorkspacePanel
             profile={profile}
+            viewportScroll
             onTriggerDocumentModal={openDocument}
             onEvidenceReviewed={(response) => {
               setProfile(response.case_profile);
@@ -128,7 +122,7 @@ export default function HomeChatPage() {
         </div>
       </div>
 
-      <div className="mt-3 flex items-center justify-center gap-2 text-[10px] text-[#7e8a84]">
+      <div className="mt-3 flex items-center justify-center gap-2 text-[10px] text-[#928a80]">
         <BriefcaseBusiness className="size-3.5" aria-hidden="true" /> Your conversation becomes a saved, actionable case—not a one-off chat.
       </div>
 

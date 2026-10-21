@@ -120,6 +120,8 @@ def _extract_case_data(record: ChatCaseSessionModel, user: UserModel) -> dict:
         "complainant_city":   _get("user_city") or user.city or "",
         "complainant_state":  _get("user_state") or user.state or "",
         "complainant_phone":  _get("user_phone") or user.phone or "",
+        "complainant_email":  _get("user_email") or user.email or "",
+        "complainant_pin":    _get("user_pin_code", "user_pincode") or user.pin_code or "",
         "opposite_party_name": _get("opposite_party_name", "bank_name", "police_station_name"),
         "opposite_party_address": _get("opposite_party_address"),
         "property_address":   _get("property_address"),
@@ -180,16 +182,21 @@ async def start_browser_session(
         portal_url=portal.url,
         task=task,
         fill_values=_mock_portal_values(record, current_user) if use_mock else None,
+        case_data=None if use_mock else case_data,
+        entry_hints=() if use_mock else portal.entry_hints,
+        entry_avoid=() if use_mock else portal.entry_avoid,
     )
 
     # Fire-and-forget: run the agent in the background
     start_browser_session_task(session)
 
     logger.info(
-        "case_id=%s session_id=%s portal=%s event=browser_session_started",
+        "case_id=%s session_id=%s category=%s portal=%s mock=%s event=browser_session_started",
         case_id,
         session.session_id,
+        category or "-",
         portal.label,
+        use_mock,
     )
 
     return session_to_dict(session)

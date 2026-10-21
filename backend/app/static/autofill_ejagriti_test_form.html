@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>e-Jagriti layout (NyayaBot local test)</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; color: #24313b; background: #f4f6f9; font: 14px/1.5 system-ui, "Segoe UI", sans-serif; }
+  .banner { padding: 8px 20px; background: #fff2cc; border-bottom: 1px solid #e5cf78; }
+  .shell { display: flex; min-height: 100vh; }
+  aside { width: 220px; padding: 20px; color: white; background: #183662; }
+  aside a { display: block; margin: 12px 0; color: white; text-decoration: none; cursor: pointer; }
+  main { flex: 1; padding: 24px; max-width: 1050px; }
+  section { margin: 16px 0; padding: 20px; background: white; border: 1px solid #d6dfe8; border-radius: 8px; }
+  h1, h2 { margin-top: 0; }
+  h2 { font-size: 18px; color: #214975; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px 20px; }
+  .MuiFormControl-root { display: flex; flex-direction: column; gap: 4px; }
+  .MuiInputLabel-root { font-weight: 600; }
+  .MuiInputBase-input, input { width: 100%; padding: 9px; border: 1px solid #aebac6; border-radius: 4px; font: inherit; }
+  [role="combobox"] { padding: 9px; border: 1px solid #aebac6; border-radius: 4px; background: #fff; }
+  button { margin-right: 8px; padding: 9px 15px; border: 0; border-radius: 4px; color: white; background: #245588; cursor: pointer; }
+  .case-type-option { width: 320px; padding: 10px 14px; border: 1px solid #9eb7d1; background: #eaf1f8; cursor: pointer; }
+  #received { white-space: pre-wrap; padding: 12px; color: #dce7f5; background: #132337; }
+  #alarm { display: none; padding: 15px; color: white; background: #a62121; font-weight: 700; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div id="alarm">SUBMIT OR PAY WAS PRESSED. The helper must never do this.</div>
+<div class="banner">Local development copy of e-Jagriti field layout. Fake data only; nothing is sent to the portal.</div>
+<div class="shell">
+  <aside aria-label="Portal menu">
+    <strong>e-Jagriti (test)</strong>
+    <button type="button" id="openMenu" aria-label="Open menu">☰</button>
+    <nav id="sidebarLinks" hidden>
+      <a href="#dashboard">Dashboard</a>
+      <a href="#case-type" id="fileNewCase">File New Case</a>
+      <a href="#payment">Payment History</a>
+      <a href="#drafts">Draft Cases</a>
+    </nav>
+  </aside>
+  <main>
+    <div id="dashboardView">
+      <h1>Dashboard</h1>
+      <p>Choose File New Case from the left menu. Do not open payment history or drafts.</p>
+    </div>
+    <!-- The account's one-time "Complete Profile" page (Personal Information → Address
+         Information → Upload Documents). Only the user's own details live here. -->
+    <div id="profileView" hidden>
+      <h1>Complete Profile</h1>
+      <p>Fill up the required details to get started</p>
+      <ol class="profile-steps" aria-label="Profile steps"><li>Personal Information</li><li><b>Address Information</b></li><li>Upload Documents</li></ol>
+      <form id="profileForm" autocomplete="off">
+        <section class="MuiPaper-root">
+          <h5 class="card-primary-header-title">Address Information</h5>
+          <label><input type="checkbox" id="profileNri" name="profile.nri"> NRI</label>
+          <div class="grid">
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="profileAddressType">Address Type*</label><div id="profileAddressType" role="combobox" aria-label="Address Type">Select</div></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="profileHouse">House No./Door No./Building/Flat</label><input class="MuiInputBase-input" id="profileHouse" name="profile.houseNumber" maxlength="51"></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="profileBlock">Block/Street/Mohalla/Sector</label><input class="MuiInputBase-input" id="profileBlock" name="profile.block"></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="profileLandmark">Landmark/Locality</label><input class="MuiInputBase-input" id="profileLandmark" name="profile.landmark"></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="profileCountry">Country*</label><div id="profileCountry" role="combobox" aria-label="Country">INDIA</div></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="profilePin">Pin Code*</label><input class="MuiInputBase-input" id="profilePin" name="profile.pinCode" maxlength="6"></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="profileState">State*</label><div id="profileState" role="combobox" aria-label="State">Select</div></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="profileDistrict">District*</label><div id="profileDistrict" role="combobox" aria-label="District">Select</div></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="profilePost">Post Office*</label><div id="profilePost" role="combobox" aria-label="Post Office">Select</div></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="profilePolice">Police Station</label><input class="MuiInputBase-input" id="profilePolice" name="profile.policeStation"></div>
+          </div>
+        </section>
+        <button type="button" id="profileBack">Back</button><button type="button" id="profileNext">Next</button>
+      </form>
+      <section><h2>What the portal received</h2><pre id="profileReceived">{}</pre></section>
+    </div>
+    <div id="caseTypeView" hidden>
+      <h1>File New Case</h1>
+      <section class="MuiPaper-root">
+        <div class="MuiFormControl-root">
+          <label class="MuiInputLabel-root" for="caseTypeControl">Case Type</label>
+          <div id="caseTypeControl" role="combobox" aria-label="Case Type" tabindex="0" aria-expanded="false">Select</div>
+        </div>
+        <div id="caseTypeOptions" role="listbox" hidden>
+          <div class="case-type-option" role="option" id="consumerComplaint">Consumer Complaint <span>CC</span></div>
+          <div class="case-type-option" role="option" id="otherCaseType">Other Case Type</div>
+        </div>
+        <p>Review the required documents and applicable fee structure before continuing.</p>
+        <button type="button" id="caseTypeNext" disabled>Next</button>
+        <div id="filingDialog" class="MuiDialog-paper" role="dialog" aria-modal="true" aria-labelledby="filingDialogTitle" hidden>
+          <h2 id="filingDialogTitle">Select Filing Type</h2>
+          <label><input type="radio" name="filingType" value="normal" checked> Normal Filing</label>
+          <label><input type="radio" name="filingType" value="unfair"> Complaints Against Unfair Contract</label>
+          <div><button type="button" id="filingCancel">Cancel</button><button type="button" id="filingSubmit">Submit</button></div>
+        </div>
+      </section>
+    </div>
+    <div id="formView" hidden>
+      <h1>File New Case</h1>
+      <div class="MuiStepper-root" aria-label="Filing steps">
+        <span class="MuiStepLabel-root Mui-active"><span class="MuiStepLabel-label Mui-active">Case Details</span></span>
+        <span class="MuiStepLabel-root"><span class="MuiStepLabel-label">Complainant / Opposite Party</span></span>
+        <span class="MuiStepLabel-root"><span class="MuiStepLabel-label">Additional Complainant</span></span>
+        <span class="MuiStepLabel-root"><span class="MuiStepLabel-label">Additional Opposite Party</span></span>
+        <span class="MuiStepLabel-root"><span class="MuiStepLabel-label">Document Upload</span></span>
+        <span class="MuiStepLabel-root"><span class="MuiStepLabel-label">Final Submission &amp; Checkout</span></span>
+      </div>
+      <form id="caseForm" autocomplete="off">
+        <section class="MuiPaper-root">
+          <h2 class="card-title">Case Details</h2>
+          <div class="grid">
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="paid">Paid as consideration</label><input class="MuiInputBase-input" id="paid" name="case.paidConsideration" type="number"></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="claim">Claim Consideration</label><input class="MuiInputBase-input" id="claim" name="case.claimConsideration" type="number"></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="causeDate">Date of Cause of Action</label><input class="MuiInputBase-input" id="causeDate" name="case.causeDate" type="date"></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="causeState">State of Cause of Action</label><div id="causeState" role="combobox" aria-label="State of Cause of Action" data-options="Delhi|Maharashtra|Rajasthan|Uttar Pradesh">Select</div></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="causeDistrict">District of Cause of Action</label><div id="causeDistrict" role="combobox" aria-label="District of Cause of Action" data-options="Jaipur|Jodhpur|Udaipur">Select</div></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="caseCategory">Case Category</label><div id="caseCategory" role="combobox" aria-label="Case Category" data-options="Banking|E-Commerce|Insurance|Telecom">Select</div></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="subCategory">Sub Category</label><div id="subCategory" role="combobox" aria-label="Sub Category" data-options="Defective Goods|Non Delivery|Refund Not Given">Select</div></div>
+          </div>
+        </section>
+        <section class="MuiPaper-root">
+          <h2 class="card-title">Complainant Details</h2>
+          <div class="grid">
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="complainantName">Full Name</label><input class="MuiInputBase-input" id="complainantName" name="complainant.fullName"></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="complainantMobile">Mobile Number</label><input class="MuiInputBase-input" id="complainantMobile" name="complainant.mobile" type="tel" maxlength="10"></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="complainantEmail">Email Address</label><input class="MuiInputBase-input" id="complainantEmail" name="complainant.email" type="email"></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="complainantHouse">House No./Door No./Building/Flat</label><input class="MuiInputBase-input" id="complainantHouse" name="complainant.houseNumber" maxlength="51"></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="complainantPin">Pin Code</label><input class="MuiInputBase-input" id="complainantPin" name="complainant.pinCode" maxlength="6"></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="complainantState">State</label><input class="MuiInputBase-input" id="complainantState" name="complainant.state"></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="complainantDistrict">District</label><input class="MuiInputBase-input" id="complainantDistrict" name="complainant.district"></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="complainantPost">Post Office</label><input class="MuiInputBase-input" id="complainantPost" name="complainant.postOffice"></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="addressType">Address Type</label><div id="addressType" role="combobox" aria-label="Address Type">Select</div></div>
+          </div>
+        </section>
+        <section class="MuiPaper-root">
+          <h2 class="card-title">Opposite Party Details</h2>
+          <div class="grid">
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="oppositeName">Full Name</label><input class="MuiInputBase-input" id="oppositeName" name="oppositeParty.fullName"></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="oppositeMobile">Mobile Number</label><input class="MuiInputBase-input" id="oppositeMobile" name="oppositeParty.mobile" type="tel" maxlength="10"></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="oppositeEmail">Email Address</label><input class="MuiInputBase-input" id="oppositeEmail" name="oppositeParty.email" type="email"></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="oppositeHouse">House No./Door No./Building/Flat</label><input class="MuiInputBase-input" id="oppositeHouse" name="oppositeParty.houseNumber" maxlength="51"></div>
+            <div class="MuiFormControl-root"><label class="MuiInputLabel-root" for="oppositePin">Pin Code</label><input class="MuiInputBase-input" id="oppositePin" name="oppositeParty.pinCode" maxlength="6"></div>
+          </div>
+        </section>
+        <button type="button" id="formNext">Next</button>
+        <section><h2 class="card-title">Final Submission &amp; Checkout</h2>
+          <label><input type="checkbox" id="declaration"> I agree to the declaration</label>
+          <button type="submit" id="submitBtn">Submit</button><button type="button" id="payBtn">Pay</button>
+        </section>
+      </form>
+      <section><h2>What the portal received</h2><pre id="received">{}</pre></section>
+    </div>
+  </main>
+</div>
+<script>
+(() => {
+  const form = document.getElementById('caseForm');
+  const received = document.getElementById('received');
+  const alarm = document.getElementById('alarm');
+  const render = () => {
+    const data = {};
+    form.querySelectorAll('input:not([type=checkbox])').forEach((field) => { data[field.name] = field.value; });
+    form.querySelectorAll('[role=combobox][data-options]').forEach((box) => { data[box.id] = box.textContent; });
+    received.textContent = JSON.stringify(data, null, 2);
+  };
+  const show = () => {
+    const filing = location.hash === '#form';
+    const choosingType = location.hash === '#case-type';
+    const profile = location.hash === '#profile';
+    document.getElementById('dashboardView').hidden = filing || choosingType || profile;
+    document.getElementById('profileView').hidden = !profile;
+    document.getElementById('caseTypeView').hidden = !choosingType;
+    document.getElementById('formView').hidden = !filing;
+  };
+  // Complete Profile: a framework-style model, and a PIN that fills State, District and Post Office.
+  const profileForm = document.getElementById('profileForm');
+  const renderProfile = () => {
+    const data = {};
+    profileForm.querySelectorAll('input:not([type=checkbox])').forEach((field) => { data[field.name] = field.value; });
+    for (const id of ['profileState', 'profileDistrict', 'profilePost']) data[id] = document.getElementById(id).textContent;
+    document.getElementById('profileReceived').textContent = JSON.stringify(data, null, 2);
+  };
+  profileForm.addEventListener('input', (event) => {
+    if (event.target.id === 'profilePin' && /^\d{6}$/.test(event.target.value)) {
+      setTimeout(() => {
+        document.getElementById('profileState').textContent = 'Rajasthan';
+        document.getElementById('profileDistrict').textContent = 'Jaipur';
+        document.getElementById('profilePost').textContent = 'Jaipur GPO';
+        renderProfile();
+      }, 60);
+    }
+    renderProfile();
+  });
+  profileForm.addEventListener('submit', (event) => { event.preventDefault(); alarm.style.display = 'block'; });
+  window.addEventListener('hashchange', show);
+  document.getElementById('openMenu').addEventListener('click', () => {
+    document.getElementById('sidebarLinks').hidden = false;
+    document.getElementById('openMenu').setAttribute('aria-label', 'Close menu');
+  });
+  document.getElementById('caseTypeControl').addEventListener('click', () => {
+    document.getElementById('caseTypeOptions').hidden = false;
+    document.getElementById('caseTypeControl').setAttribute('aria-expanded', 'true');
+  });
+  document.getElementById('consumerComplaint').addEventListener('click', () => {
+    document.getElementById('caseTypeControl').textContent = 'Consumer Complaint';
+    document.getElementById('caseTypeControl').setAttribute('aria-expanded', 'false');
+    document.getElementById('caseTypeOptions').hidden = true;
+    document.getElementById('caseTypeNext').disabled = false;
+  });
+  document.getElementById('caseTypeNext').addEventListener('click', () => { document.getElementById('filingDialog').hidden = false; });
+  document.getElementById('filingCancel').addEventListener('click', () => { document.getElementById('filingDialog').hidden = true; });
+  document.getElementById('filingSubmit').addEventListener('click', () => {
+    document.getElementById('filingDialog').hidden = true;
+    location.hash = '#form';
+  });
+  // Portal dropdowns open on mouse-down (as MUI's do), list role="option" items, and
+  // close on Escape. A chosen option is shown in the dropdown and reaches the model.
+  const closeLists = () => document.querySelectorAll('.test-list').forEach((list) => list.remove());
+  document.querySelectorAll('[role=combobox][data-options]').forEach((box) => {
+    box.addEventListener('mousedown', () => {
+      closeLists();
+      const list = document.createElement('div');
+      list.className = 'test-list';
+      list.setAttribute('role', 'listbox');
+      for (const text of box.dataset.options.split('|')) {
+        const option = document.createElement('div');
+        option.setAttribute('role', 'option');
+        option.textContent = text;
+        option.addEventListener('click', () => { box.textContent = text; closeLists(); render(); });
+        list.appendChild(option);
+      }
+      box.after(list);
+    });
+  });
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeLists(); });
+  const now = new Date();
+  document.getElementById('causeDate').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  form.addEventListener('input', (event) => {
+    if (event.target.id === 'complainantPin' && /^\d{6}$/.test(event.target.value)) {
+      setTimeout(() => {
+        for (const [id, value] of [['complainantState', 'Rajasthan'], ['complainantDistrict', 'Jaipur'], ['complainantPost', 'Jaipur GPO']]) {
+          const field = document.getElementById(id);
+          field.value = value;
+          field.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        render();
+      }, 60);
+    }
+    render();
+  });
+  form.addEventListener('change', render);
+  form.addEventListener('submit', (event) => { event.preventDefault(); alarm.style.display = 'block'; });
+  document.getElementById('payBtn').addEventListener('click', () => { alarm.style.display = 'block'; });
+  show();
+  render();
+})();
+</script>
+</body>
+</html>

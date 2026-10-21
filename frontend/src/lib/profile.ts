@@ -4,6 +4,7 @@ export interface UserProfile {
   id: string;
   full_name: string;
   date_of_birth: string | null;
+  gender: 'woman' | 'man' | 'non_binary' | 'another_gender' | 'prefer_not_to_say' | null;
   email: string;
   phone: string | null;
   state: string | null;

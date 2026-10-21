@@ -1,0 +1,65 @@
+{
+  "manifest_version": 3,
+  "name": "NyayaBot Portal Helper",
+  "version": "0.4.0",
+  "description": "Fills your NyayaBot case details into official portal forms. You log in and submit yourself.",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://cybercrime.gov.in/*",
+    "https://*.cybercrime.gov.in/*",
+    "https://e-jagriti.gov.in/*",
+    "https://*.e-jagriti.gov.in/*",
+    "https://pgportal.gov.in/*",
+    "https://*.pgportal.gov.in/*",
+    "https://cms.rbi.org.in/*",
+    "https://samadhan.labour.gov.in/*",
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "NyayaBot Portal Helper"
+  },
+  "side_panel": {
+    "default_path": "sidepanel/sidepanel.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*"
+      ],
+      "js": [
+        "content/bridge.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://cybercrime.gov.in/*",
+        "https://*.cybercrime.gov.in/*",
+        "https://e-jagriti.gov.in/*",
+        "https://*.e-jagriti.gov.in/*",
+        "https://pgportal.gov.in/*",
+        "https://*.pgportal.gov.in/*",
+        "https://cms.rbi.org.in/*",
+        "https://samadhan.labour.gov.in/*",
+        "http://localhost:8000/api/v1/autofill/test-*",
+        "http://127.0.0.1:8000/api/v1/autofill/test-*"
+      ],
+      "js": [
+        "lib/page.js",
+        "content/portal.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}

@@ -365,7 +365,7 @@ normally 1 network request
 maximum 2 network requests
 ```
 
-Only a very short provider-indicated retry is allowed.
+One provider-indicated retry is allowed when the wait fits the per-minute window.
 
 Config:
 
@@ -373,7 +373,15 @@ Config:
 GROQ_RATE_LIMIT_MAX_RETRY_WAIT_SECONDS
 ```
 
-Expected bound: 0–2 sec; discussed default about 1 sec.
+Bound: 0–120 sec; default 60 sec.
+
+Changed 2026-10-16 from the earlier 0–2 sec bound (default 1 sec). One turn is two
+Groq calls (extraction, then chat) totalling roughly 10–13k tokens, above the free
+tier's 8,000 tokens/minute, so the second call is routinely told to wait 5–50 sec.
+With a 1–2 sec cap every such turn fell back to limited demo mode, including "hi".
+In QA wave 1 (cap raised by the launcher) every retry that waited out Groq's
+retry-after succeeded. Hourly/daily caps return retry-after of minutes to hours,
+which still exceeds the cap and falls back immediately.
 
 Examples:
 
@@ -381,11 +389,10 @@ Examples:
 Retry-After 0.2 sec
 → wait and retry once
 
-Retry-After 5 sec
-→ no retry
-→ local fallback
+Retry-After 24 sec (per-minute token window)
+→ wait 24 sec and retry once
 
-Retry-After 40 sec
+Retry-After 1645 sec (hourly/daily cap)
 → no retry
 → local fallback
 

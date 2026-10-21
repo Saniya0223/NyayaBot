@@ -18,6 +18,8 @@ from app.llm.groq_provider import (
     CHAT_SYSTEM_PROMPT,
     EXTRACTION_SYSTEM_PROMPT,
     GroqProvider,
+    _strip_schema_titles,
+    compact_schema_json,
 )
 from app.schemas.chat import PendingInteraction
 from app.services.document_registry import DOCUMENT_DEFINITIONS
@@ -161,8 +163,12 @@ def test_full_extraction_schema_is_canonical_without_contract_changes(provider, 
     second_system = provider._client.chat.completions.create.await_args.kwargs["messages"][0]["content"]
 
     assert first_system == second_system
-    supplied_schema = json.loads(first_system.split("You MUST output valid JSON matching this schema:\n", 1)[1])
-    assert supplied_schema == original_schema
+    supplied_text = first_system.split("You MUST output valid JSON matching this schema:\n", 1)[1]
+    supplied_schema = json.loads(supplied_text)
+    # The only difference from the contract's own schema is the removed
+    # auto-generated titles; see test_schema_compaction_* below.
+    assert supplied_schema == _strip_schema_titles(original_schema)
+    assert supplied_text == compact_schema_json(original_schema)
     assert set(supplied_schema["$defs"]["ExtractedCaseFacts"]["properties"]) == set(
         CaseExtraction.model_fields["facts"].annotation.model_fields
     )
@@ -300,3 +306,85 @@ def test_success_logs_numeric_usage_without_private_data(provider, caplog, opera
     assert "private-" not in caplog.text
     assert "unit-test-placeholder" not in caplog.text
     assert provider._client.chat.completions.create.await_count == 1
+
+
+def _walk_schema_nodes(node):
+    """Yield every dict that is a schema node (skips property-name mappings)."""
+    if isinstance(node, list):
+        for item in node:
+            yield from _walk_schema_nodes(item)
+    elif isinstance(node, dict):
+        yield node
+        for key, value in node.items():
+            if key in {"properties", "$defs"} and isinstance(value, dict):
+                for sub in value.values():
+                    yield from _walk_schema_nodes(sub)
+            elif key not in {"enum", "const", "default", "examples"}:
+                yield from _walk_schema_nodes(value)
+
+
+def test_schema_compaction_removes_only_auto_titles_and_padding():
+    original = CaseExtraction.model_json_schema()
+    compact = json.loads(compact_schema_json(original))
+
+    assert any("title" in node for node in _walk_schema_nodes(original))
+    assert not any("title" in node for node in _walk_schema_nodes(compact))
+
+    def without_titles(node):
+        if isinstance(node, list):
+            return [without_titles(item) for item in node]
+        if not isinstance(node, dict):
+            return node
+        return {
+            key: (value if key in {"enum", "const", "default", "examples"}
+                  else {name: without_titles(sub) for name, sub in value.items()}
+                  if key in {"properties", "$defs"} and isinstance(value, dict)
+                  else without_titles(value))
+            for key, value in node.items() if not (key == "title" and isinstance(value, str))
+        }
+
+    # Nothing but titles changed: same fields, types, bounds, enums, required, refs.
+    assert compact == without_titles(original)
+    assert set(compact["properties"]) == set(original["properties"])
+    assert compact["required"] == original["required"]
+    assert compact["$defs"].keys() == original["$defs"].keys()
+    assert ", " not in compact_schema_json({"a": [1, 2]}) and ": " not in compact_schema_json({"a": 1})
+    assert len(compact_schema_json(original)) < len(json.dumps(original, ensure_ascii=False, sort_keys=True)) * 0.7
+
+
+def test_schema_compaction_keeps_a_field_that_is_itself_named_title():
+    schema = {
+        "title": "Doc", "type": "object",
+        "properties": {"title": {"title": "Title", "type": "string", "maxLength": 80}},
+        "required": ["title"],
+        "$defs": {"title": {"title": "Title", "enum": ["title", "x"]}},
+    }
+    assert _strip_schema_titles(schema) == {
+        "type": "object",
+        "properties": {"title": {"type": "string", "maxLength": 80}},
+        "required": ["title"],
+        "$defs": {"title": {"enum": ["title", "x"]}},
+    }
+
+
+def test_per_turn_data_uses_compact_separators_without_changing_content(provider):
+    asyncio.run(provider.extract_case_updates(extraction_context("a")))
+    request = provider._client.chat.completions.create.await_args.kwargs
+    data_text = request["messages"][1]["content"].split("INPUT_DATA:\n", 1)[1]
+    assert data_text == json.dumps(json.loads(data_text), ensure_ascii=False, separators=(",", ":"))
+    assert input_data(request)["newest_user_message"] == "synthetic-newest-a"
+
+
+def test_chat_prompt_leads_with_unchanging_fields_and_ends_with_the_newest_message(provider):
+    provider._client.chat.completions.create.return_value = completion("Local fake reply")
+    asyncio.run(provider.chat(LLMResponseContext(
+        user_message="synthetic-newest", helpline_registry=[{"number": "100", "service": "Police"}],
+        recent_messages=[{"sender": "user", "text": "synthetic-history"}],
+        case_summary={}, workflow={},
+    )))
+    request = provider._client.chat.completions.create.await_args.kwargs
+    fields = list(input_data(request))
+    assert fields[:2] == ["helpline_registry", "response_mode"]
+    assert fields[-1] == "user_message"
+    assert fields.index("helpline_registry") < fields.index("recent_messages")
+    assert set(fields) == set(LLMResponseContext(user_message="x", case_summary={}, workflow={}).model_payload())

@@ -15,7 +15,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <AuthProvider>
           <Navbar />
           <main className="w-full flex-1">{children}</main>
-          <footer className="border-t border-[#dfe6e2] bg-white px-5 py-4 text-center text-[11px] leading-relaxed text-[#6c7873]">
+          <footer className="border-t border-[#e9e3d7] bg-white px-5 py-4 text-center text-[11px] leading-relaxed text-[#777169]">
             <p className="mx-auto max-w-3xl">
               NyayaBot provides legal information and drafting assistance, not legal representation. Laws, forums, and deadlines can depend on your facts and State; verify important steps with an advocate or legal-services authority.
             </p>

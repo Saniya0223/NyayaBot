@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE_URL } from "@/lib/api";
@@ -25,7 +25,7 @@ interface BrowserSession {
   screenshot_b64: string | null;
   error: string | null;
   error_code?: string | null;
-  pause_kind?: "review" | "sensitive" | null;
+  pause_kind?: "review" | "sensitive" | "login" | "no_progress" | null;
   review_fields?: { label: string; status: "filled" | "missing" | "manual" }[];
   steps?: string[];
   cdp_port?: number | null;
@@ -51,9 +51,24 @@ const STATUS_LABELS: Record<SessionStatus, string> = {
   error:     "⚠️ Error",
 };
 
+// Nothing was prepared (pause_kind "no_progress"): never show "Review approved".
+function statusLabel(session: { status: SessionStatus; pause_kind?: string | null }): string {
+  if (session.pause_kind === "no_progress") {
+    if (session.status === "paused") return "⚠️ Automatic fill did not complete";
+    if (session.status === "approved") return "✋ Manual mode — nothing was filled automatically";
+  }
+  if (session.pause_kind === "login" && session.status === "paused") return "🔐 Sign-in needed — your turn";
+  return STATUS_LABELS[session.status];
+}
+
+function statusColor(session: { status: SessionStatus; pause_kind?: string | null }): string {
+  if (session.pause_kind === "no_progress" && session.status === "approved") return "#d97706";
+  return STATUS_COLORS[session.status];
+}
+
 const STATUS_COLORS: Record<SessionStatus, string> = {
-  pending:   "#6b7280",
-  running:   "#2563eb",
+  pending:   "#817b72",
+  running:   "#9d6b00",
   paused:    "#d97706",
   approved:  "#16a34a",
   cancelled: "#dc2626",
@@ -350,8 +365,8 @@ export default function BrowserAgentPanel({ caseId, onClose }: Props) {
                 style={{
                   ...styles.toggleBtn,
                   background:  liveMode ? "rgba(59,130,246,0.2)" : "rgba(255,255,255,0.06)",
-                  borderColor: liveMode ? "#3b82f6" : "#334155",
-                  color:       liveMode ? "#60a5fa" : "#94a3b8",
+                  borderColor: liveMode ? "#9d6b00" : "#44413b",
+                  color:       liveMode ? "#d2a632" : "#9b9489",
                 }}
                 onClick={() => setLiveMode(m => !m)}
               >
@@ -372,7 +387,7 @@ export default function BrowserAgentPanel({ caseId, onClose }: Props) {
               <div style={styles.startTitle}>Fill the govt form automatically</div>
               <div style={styles.startDesc}>
                 NyayaBot opens the correct government portal, pre-fills your case details,
-                then <strong style={{ color: "#f1f5f9" }}>hands the live browser over to you</strong> — right
+                then <strong style={{ color: "#fcfaf5" }}>hands the live browser over to you</strong> — right
                 here inside this panel. Click, type, scroll. Sensitive fields (Aadhaar, OTP)
                 are always yours to fill directly.
               </div>
@@ -395,14 +410,14 @@ export default function BrowserAgentPanel({ caseId, onClose }: Props) {
               <div
                 style={{
                   ...styles.statusBar,
-                  borderColor: STATUS_COLORS[session.status],
-                  color:       STATUS_COLORS[session.status],
+                  borderColor: statusColor(session),
+                  color:       statusColor(session),
                 }}
               >
                 <span style={styles.statusDot}>●</span>
-                {STATUS_LABELS[session.status]}
+                {statusLabel(session)}
                 {liveShowing && (
-                  <span style={{ marginLeft: "auto", fontSize: "11px", color: "#22d3ee", fontWeight: 700 }}>
+                  <span style={{ marginLeft: "auto", fontSize: "11px", color: "#f2bf43", fontWeight: 700 }}>
                     ⚡ Live
                   </span>
                 )}
@@ -475,7 +490,7 @@ export default function BrowserAgentPanel({ caseId, onClose }: Props) {
                 {isActive && !session.screenshot_b64 && !cdpConnected && !liveMode && (
                   <div style={styles.canvasPlaceholder}>
                     {session.cdp_ready ? "Browser ready." : "Starting browser…"}
-                    <span style={{ color: "#64748b" }}>Switch to Live to see the browser when ready.</span>
+                    <span style={{ color: "#817b72" }}>Switch to Live to see the browser when ready.</span>
                   </div>
                 )}
               </div>
@@ -527,7 +542,15 @@ export default function BrowserAgentPanel({ caseId, onClose }: Props) {
                       onClick={handleApprove}
                       disabled={actionLoading}
                     >
-                      {actionLoading ? "…" : session.pause_kind === "sensitive" ? "Continue after manual step" : "Approve review"}
+                      {actionLoading
+                        ? "…"
+                        : session.pause_kind === "login"
+                          ? "I've logged in — Continue"
+                          : session.pause_kind === "sensitive"
+                            ? "Continue after manual step"
+                            : session.pause_kind === "no_progress"
+                              ? "Continue manually"
+                              : "Approve review"}
                     </button>
                     <button
                       id="browser-agent-cancel-btn"
@@ -574,21 +597,21 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem",
   },
   panel: {
-    background: "#0f172a", border: "1px solid #1e293b", borderRadius: "1rem",
+    background: "#222222", border: "1px solid #292929", borderRadius: "1rem",
     width: "100%", maxWidth: "920px", maxHeight: "92vh",
     display: "flex", flexDirection: "column", overflow: "hidden",
     boxShadow: "0 30px 70px rgba(0,0,0,0.75)",
   },
   header: {
     display: "flex", alignItems: "center", justifyContent: "space-between",
-    padding: "0.875rem 1.25rem", borderBottom: "1px solid #1e293b", background: "#0d1526",
+    padding: "0.875rem 1.25rem", borderBottom: "1px solid #292929", background: "#1b1b1b",
   },
   headerLeft: { display: "flex", alignItems: "center", gap: "0.75rem" },
   headerIcon: { fontSize: "1.4rem" },
-  headerTitle: { fontWeight: 700, fontSize: "1rem", color: "#f1f5f9", fontFamily: "Inter, sans-serif" },
-  headerSubtitle: { fontSize: "0.72rem", color: "#64748b", marginTop: "2px" },
+  headerTitle: { fontWeight: 700, fontSize: "1rem", color: "#fcfaf5", fontFamily: "Inter, sans-serif" },
+  headerSubtitle: { fontSize: "0.72rem", color: "#817b72", marginTop: "2px" },
   closeBtn: {
-    background: "none", border: "none", color: "#64748b",
+    background: "none", border: "none", color: "#817b72",
     fontSize: "1.1rem", cursor: "pointer", padding: "0.25rem 0.5rem", borderRadius: "0.25rem",
   },
   toggleBtn: {
@@ -604,10 +627,10 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "1rem", padding: "2rem 1rem", textAlign: "center",
   },
   startIcon: { fontSize: "3rem" },
-  startTitle: { fontSize: "1.2rem", fontWeight: 700, color: "#f1f5f9", fontFamily: "Inter, sans-serif" },
-  startDesc: { fontSize: "0.875rem", color: "#94a3b8", lineHeight: 1.65, maxWidth: "500px" },
+  startTitle: { fontSize: "1.2rem", fontWeight: 700, color: "#fcfaf5", fontFamily: "Inter, sans-serif" },
+  startDesc: { fontSize: "0.875rem", color: "#9b9489", lineHeight: 1.65, maxWidth: "500px" },
   startBtn: {
-    background: "linear-gradient(135deg, #3b82f6, #6366f1)",
+    background: "linear-gradient(135deg, #9d6b00, #ad851f)",
     color: "#fff", border: "none", borderRadius: "0.5rem",
     padding: "0.75rem 2rem", fontSize: "0.95rem", fontWeight: 600, cursor: "pointer",
   },
@@ -619,12 +642,12 @@ const styles: Record<string, React.CSSProperties> = {
   },
   statusDot: { fontSize: "0.55rem" },
   message: {
-    fontSize: "0.85rem", color: "#94a3b8", lineHeight: 1.5,
-    background: "#1e293b", borderRadius: "0.5rem", padding: "0.65rem 0.875rem",
+    fontSize: "0.85rem", color: "#9b9489", lineHeight: 1.5,
+    background: "#292929", borderRadius: "0.5rem", padding: "0.65rem 0.875rem",
   },
   browserWrap: {
     borderRadius: "0.75rem", overflow: "hidden",
-    border: "1px solid #1e293b", background: "#0a0f1e",
+    border: "1px solid #292929", background: "#111111",
     minHeight: "220px", position: "relative",
   },
   canvas: {
@@ -635,7 +658,7 @@ const styles: Record<string, React.CSSProperties> = {
     position: "absolute", inset: 0,
     display: "flex", alignItems: "center", justifyContent: "center",
     flexDirection: "column", gap: "0.5rem",
-    color: "#475569", fontSize: "0.85rem", textAlign: "center", padding: "1rem",
+    color: "#666159", fontSize: "0.85rem", textAlign: "center", padding: "1rem",
   },
   interactBanner: {
     position: "absolute", top: 0, left: 0, right: 0, zIndex: 10,
@@ -644,28 +667,28 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: "center", backdropFilter: "blur(4px)",
   },
   screenshotWrap: { display: "flex", flexDirection: "column", gap: "0.4rem" },
-  screenshotLabel: { fontSize: "0.75rem", color: "#64748b", fontWeight: 600 },
+  screenshotLabel: { fontSize: "0.75rem", color: "#817b72", fontWeight: 600 },
   screenshotHint: { fontWeight: 400, color: "#d97706" },
-  screenshot: { width: "100%", borderRadius: "0.5rem", border: "1px solid #1e293b", objectFit: "contain" },
+  screenshot: { width: "100%", borderRadius: "0.5rem", border: "1px solid #292929", objectFit: "contain" },
   scrollControls: { display: "flex", gap: "0.5rem" },
   scrollBtn: {
-    flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid #334155",
-    borderRadius: "0.4rem", color: "#94a3b8", fontSize: "0.8rem", fontWeight: 600,
+    flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid #44413b",
+    borderRadius: "0.4rem", color: "#9b9489", fontSize: "0.8rem", fontWeight: 600,
     padding: "0.4rem", cursor: "pointer",
   },
   stepsLog: {
-    background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem",
+    background: "#292929", border: "1px solid #44413b", borderRadius: "0.5rem",
     padding: "0.65rem 0.875rem", fontSize: "0.7rem", lineHeight: 1.6,
-    color: "#94a3b8", maxHeight: "110px", overflowY: "auto",
+    color: "#9b9489", maxHeight: "110px", overflowY: "auto",
   },
-  stepsTitle: { fontWeight: 700, color: "#f1f5f9", marginBottom: "4px", fontSize: "0.75rem" },
+  stepsTitle: { fontWeight: 700, color: "#fcfaf5", marginBottom: "4px", fontSize: "0.75rem" },
   portalLink: {
     display: "inline-flex", alignItems: "center", gap: "4px",
-    fontSize: "0.75rem", color: "#059669", textDecoration: "underline", fontWeight: 600,
+    fontSize: "0.75rem", color: "#a47811", textDecoration: "underline", fontWeight: 600,
   },
   actions: { display: "flex", gap: "0.75rem", flexWrap: "wrap" },
   approveBtn: {
-    background: "linear-gradient(135deg, #16a34a, #15803d)",
+    background: "linear-gradient(135deg, #16a34a, #8e6512)",
     color: "#fff", border: "none", borderRadius: "0.5rem",
     padding: "0.625rem 1.5rem", fontSize: "0.9rem", fontWeight: 700, cursor: "pointer", flex: 1,
   },

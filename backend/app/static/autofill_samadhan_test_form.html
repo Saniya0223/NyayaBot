@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Samadhan layout (NyayaBot local test)</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; color: #1f2b37; background: #f2f5f4; font: 14px/1.5 system-ui, "Segoe UI", sans-serif; }
+  .banner { padding: 8px 20px; background: #fff2cc; border-bottom: 1px solid #e5cf78; }
+  .shell { display: flex; min-height: 100vh; }
+  aside { width: 210px; padding: 18px; color: #fff; background: #12503f; }
+  aside a { display: block; margin: 10px 0; color: #fff; text-decoration: none; }
+  main { flex: 1; max-width: 1000px; padding: 20px; }
+  .card { background: #fff; border: 1px solid #d3dcd8; border-radius: 8px; padding: 18px; margin: 14px 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 18px; }
+  .mb-3 { display: flex; flex-direction: column; gap: 4px; }
+  .form-label { font-weight: 600; }
+  .form-control { width: 100%; padding: 8px; border: 1px solid #a9b8b2; border-radius: 4px; font: inherit; }
+  textarea.form-control { min-height: 110px; }
+  [role="combobox"] { padding: 8px; border: 1px solid #a9b8b2; border-radius: 4px; background: #fff; }
+  .test-list { border: 1px solid #a9b8b2; background: #fff; }
+  .test-list [role=option] { padding: 6px 10px; cursor: pointer; }
+  button { padding: 8px 14px; border: 0; border-radius: 4px; color: #fff; background: #1b7a5e; cursor: pointer; }
+  #received { white-space: pre-wrap; padding: 12px; color: #dce7f5; background: #132337; }
+  #alarm { display: none; padding: 15px; color: #fff; background: #a62121; font-weight: 700; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div id="alarm">SUBMIT WAS PRESSED. The helper must never do this.</div>
+<div class="banner">Local development copy of the Samadhan layout, with the portal's own field wording. Fake data only; nothing is sent anywhere.</div>
+<div class="shell">
+  <aside aria-label="Portal menu">
+    <strong>Samadhan (test)</strong>
+    <a href="#dashboard">Dashboard</a>
+    <a href="#status">Application Status</a>
+    <a href="#strike">Strike Notice</a>
+  </aside>
+  <main>
+    <div id="dashboardView" class="card">
+      <h1>Worker Dashboard</h1>
+      <p>Raise a claim or dispute with your employer.</p>
+      <button type="button" id="fileNew">File New Application</button>
+    </div>
+
+    <form id="applicationForm" autocomplete="off" hidden>
+      <div class="card">
+        <h5>Application Details</h5>
+        <div class="grid">
+          <div class="mb-3"><label class="form-label" for="appCategory">Select Category</label>
+            <div id="appCategory" role="combobox" aria-label="Select Category" data-model="category"
+                 data-options="Claim adjudication under code on wages,2019|Industrial Dispute under Section 2(q)|Gratuity claim under the Code on Social Security, 2020|Complaint for Maternity Benefit">Select</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <h5>Worker Details</h5>
+        <div class="grid">
+          <div class="mb-3"><label class="form-label" for="wName">Name</label><input class="form-control" id="wName" name="workerName" placeholder="Enter your name"></div>
+          <div class="mb-3"><label class="form-label" for="wMobile">Mobile</label><input class="form-control" id="wMobile" name="workerMobile" placeholder="Enter your mobile number" maxlength="10"></div>
+          <div class="mb-3"><label class="form-label" for="wEmail">Email</label><input class="form-control" id="wEmail" name="workerEmail" type="email" placeholder="Enter your email"></div>
+          <div class="mb-3"><label class="form-label" for="wGender">Gender</label><select class="form-control" id="wGender" name="workerGender"><option value="">Select Gender</option><option>Male</option><option>Female</option></select></div>
+          <div class="mb-3"><label class="form-label" for="wAddress">Address</label><input class="form-control" id="wAddress" name="workerAddress" placeholder="Enter your address"></div>
+          <div class="mb-3"><label class="form-label" for="wPin">Pincode</label><input class="form-control" id="wPin" name="workerPin" maxlength="6"></div>
+          <div class="mb-3"><label class="form-label" for="wRole">Designation</label><input class="form-control" id="wRole" name="workerDesignation"></div>
+          <div class="mb-3"><label class="form-label" for="wSalary">Salary</label><input class="form-control" id="wSalary" name="workerSalary" type="number" placeholder="Enter Salary"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h5>Employer / Establishment Details</h5>
+        <div class="grid">
+          <div class="mb-3"><label class="form-label" for="eType">Establishment Type</label>
+            <div id="eType" role="combobox" aria-label="Establishment Type" data-model="establishmentType"
+                 data-options="Factory|Shop / Commercial Establishment|Construction|Mine|Other">Select</div></div>
+          <div class="mb-3"><label class="form-label" for="eName">Name of Establishment</label><input class="form-control" id="eName" name="establishmentName" placeholder="Enter Establishment Name"></div>
+          <div class="mb-3"><label class="form-label" for="eEmployer">Name and Designation of Employer</label><input class="form-control" id="eEmployer" name="employerNameDesignation" placeholder="Enter Name and designation of employer"></div>
+          <div class="mb-3"><label class="form-label" for="eAddress">Address of the Establishment</label><input class="form-control" id="eAddress" name="establishmentAddress" placeholder="Enter Address of the Establishment"></div>
+          <div class="mb-3"><label class="form-label" for="eMobile">Mobile</label><input class="form-control" id="eMobile" name="employerMobile" maxlength="10"></div>
+          <div class="mb-3"><label class="form-label" for="eEmail">Email</label><input class="form-control" id="eEmail" name="employerEmail" type="email"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h5>Claim Details</h5>
+        <div class="grid">
+          <div class="mb-3"><label class="form-label" for="cAmount">Claim Amount</label><input class="form-control" id="cAmount" name="claimAmount" type="number"></div>
+          <div class="mb-3"><label class="form-label" for="cDesc">Description</label><textarea class="form-control" id="cDesc" name="description" placeholder="Enter Description"></textarea></div>
+          <div class="mb-3"><label class="form-label" for="cUpload">Upload supporting documents</label><input class="form-control" id="cUpload" type="file"></div>
+        </div>
+        <label><input type="checkbox" id="declaration"> I declare that the above information is true</label>
+      </div>
+      <button type="submit" id="submitBtn">Submit</button>
+    </form>
+
+    <div class="card"><h2>What the portal received</h2><pre id="received">{}</pre></div>
+  </main>
+</div>
+<script>
+(() => {
+  const model = {};
+  const render = () => { document.getElementById('received').textContent = JSON.stringify(model, null, 2); };
+  const show = () => {
+    const filing = location.hash === '#apply';
+    document.getElementById('dashboardView').hidden = filing;
+    document.getElementById('applicationForm').hidden = !filing;
+  };
+  document.getElementById('fileNew').addEventListener('click', () => { location.hash = '#apply'; });
+  const form = document.getElementById('applicationForm');
+  const record = (event) => {
+    const el = event.target;
+    if (!el.name || el.type === 'checkbox') return;
+    model[el.name] = el.value;
+    render();
+  };
+  form.addEventListener('input', record);
+  form.addEventListener('change', record);
+  form.addEventListener('submit', (event) => { event.preventDefault(); document.getElementById('alarm').style.display = 'block'; });
+  // React-style lists: open on mouse-down, close on Escape.
+  const closeLists = () => document.querySelectorAll('.test-list').forEach((list) => list.remove());
+  document.querySelectorAll('[role=combobox][data-options]').forEach((box) => {
+    box.addEventListener('mousedown', () => {
+      closeLists();
+      const list = document.createElement('div');
+      list.className = 'test-list';
+      list.setAttribute('role', 'listbox');
+      for (const text of box.dataset.options.split('|')) {
+        const option = document.createElement('div');
+        option.setAttribute('role', 'option');
+        option.textContent = text;
+        option.addEventListener('click', () => { box.textContent = text; model[box.dataset.model] = text; closeLists(); render(); });
+        list.appendChild(option);
+      }
+      box.after(list);
+    });
+  });
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeLists(); });
+  window.addEventListener('hashchange', show);
+  show();
+})();
+</script>
+</body>
+</html>

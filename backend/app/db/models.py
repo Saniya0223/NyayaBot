@@ -20,6 +20,7 @@ class UserModel(Base):
     city = Column(String(100), nullable=True)
     state = Column(String(100), nullable=True)
     date_of_birth = Column(String(10), nullable=True)
+    gender = Column(String(30), nullable=True)
     pin_code = Column(String(6), nullable=True)
     full_address = Column(String(500), nullable=True)
     preferred_language = Column(String(20), nullable=True)
@@ -177,3 +178,27 @@ class ChatCaseSessionModel(Base):
 
     case = relationship("CaseModel", back_populates="chat_session")
     user = relationship("UserModel", back_populates="chat_cases")
+
+
+class AutofillSessionModel(Base):
+    """Short-lived link between one NyayaBot case and the browser extension.
+
+    The raw code exists only in the user's browser; the database keeps its hash.
+    A code is tied to one user, one case and one portal, and stops working when it
+    expires or the user cancels.
+    """
+
+    __tablename__ = "autofill_sessions"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    case_id = Column(String(36), nullable=False, index=True)
+    portal = Column(String(40), nullable=False)
+    code_hash = Column(String(64), unique=True, nullable=False, index=True)
+    # active | reviewed | cancelled. Never "submitted": NyayaBot cannot see that.
+    status = Column(String(20), nullable=False, default="active")
+    filled_count = Column(Integer, nullable=False, default=0)
+    failed_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    reviewed_at = Column(DateTime, nullable=True)

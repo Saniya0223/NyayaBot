@@ -50,6 +50,7 @@ from app.llm.contracts import (
     LLMProvider,
     LLMProviderError,
     LLMRateLimitedError,
+    LLMTransientError,
     LLMResponseContext,
 )
 from app.llm.factory import get_llm_provider
@@ -468,10 +469,11 @@ class GeminiConversationService:
             )
             reply = await self.provider.chat(response_context)
             return self._finish_chat_response(profile, reply, response_context, declined_offer)
-        except LLMRateLimitedError:
+        except (LLMRateLimitedError, LLMTransientError) as exc:
             logger.warning(
-                "provider=%s model=%s reason=RATE_LIMITED event=turn_fell_back_to_limited_demo",
+                "provider=%s model=%s reason=%s event=turn_fell_back_to_limited_demo",
                 self.provider.status.provider, self.provider.status.model,
+                "RATE_LIMITED" if isinstance(exc, LLMRateLimitedError) else "TRANSIENT_FAILURE",
             )
             if not extraction_succeeded:
                 # Undo any staged pending-confirmation changes. Failed extraction

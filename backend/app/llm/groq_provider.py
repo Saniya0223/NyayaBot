@@ -10,6 +10,7 @@ from email.utils import parsedate_to_datetime
 from typing import Any, Type, TypeVar
 
 from groq import APIConnectionError, APIStatusError, APITimeoutError, AsyncGroq, RateLimitError
+from httpx import Timeout
 from pydantic import BaseModel
 
 from app.config import settings
@@ -22,6 +23,7 @@ from app.llm.contracts import (
     LLMProvider,
     LLMProviderError,
     LLMRateLimitedError,
+    LLMTransientError,
     LLMResponseContext,
     ProviderStatus,
 )
@@ -31,7 +33,49 @@ logger = logging.getLogger("uvicorn.error")
 CHAT_MAX_OUTPUT_TOKENS = 2048
 GROQ_MAX_NETWORK_ATTEMPTS = 2
 GROQ_TRANSIENT_RETRY_DELAY_SECONDS = 0.4
+# The installed SDK defaults to a 5-second connect timeout, shorter than our
+# per-attempt limit. Allow a slow local connection without extending that limit.
+GROQ_CONNECT_TIMEOUT_SECONDS = 15.0
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
+# Chat-prompt fields that never change between turns go first so Groq's prefix
+# cache can cover them; everything else keeps its order and the newest message
+# stays last.
+CHAT_STABLE_PAYLOAD_FIELDS = ("helpline_registry", "response_mode")
+# Names whose values are data, not schema nodes, so a "title" inside is left alone.
+_SCHEMA_DATA_KEYS = frozenset({"enum", "const", "default", "examples"})
+_SCHEMA_NAME_MAPS = frozenset({"properties", "$defs", "definitions"})
+
+
+def _strip_schema_titles(node: Any) -> Any:
+    """Drop pydantic's auto-generated "title" annotations from a JSON schema.
+
+    Each title only restates its field or class name ("User Intent" for
+    user_intent), so it adds tokens, not rules. Every other key, every field
+    name and every constraint is kept. A *field* called "title" survives:
+    names under "properties"/"$defs" are keys of a mapping, not annotations.
+    """
+    if isinstance(node, list):
+        return [_strip_schema_titles(item) for item in node]
+    if not isinstance(node, dict):
+        return node
+    result: dict[str, Any] = {}
+    for key, value in node.items():
+        if key == "title" and isinstance(value, str):
+            continue
+        if key in _SCHEMA_DATA_KEYS:
+            result[key] = value
+        elif key in _SCHEMA_NAME_MAPS and isinstance(value, dict):
+            result[key] = {name: _strip_schema_titles(sub) for name, sub in value.items()}
+        else:
+            result[key] = _strip_schema_titles(value)
+    return result
+
+
+def compact_schema_json(schema: dict[str, Any]) -> str:
+    """Canonical (sorted) schema JSON without titles or padding spaces."""
+    return json.dumps(
+        _strip_schema_titles(schema), ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    )
 
 
 EXTRACTION_SYSTEM_PROMPT = """You are the structured intake engine for NyayaBot, an Indian legal-information assistant.
@@ -147,7 +191,16 @@ class GroqProvider(LLMProvider):
     def __init__(self, api_key: str | None = None, model: str | None = None):
         self.model = (model or settings.LLM_MODEL).strip()
         self._api_key = (api_key if api_key is not None else settings.GROQ_API_KEY).strip()
-        self._client = AsyncGroq(api_key=self._api_key, max_retries=0) if self._api_key else None
+        self._client = (
+            AsyncGroq(
+                api_key=self._api_key,
+                max_retries=0,
+                timeout=Timeout(
+                    settings.LLM_TIMEOUT_SECONDS,
+                    connect=min(GROQ_CONNECT_TIMEOUT_SECONDS, settings.LLM_TIMEOUT_SECONDS),
+                ),
+            ) if self._api_key else None
+        )
 
     @property
     def status(self) -> ProviderStatus:
@@ -193,7 +246,10 @@ class GroqProvider(LLMProvider):
         # model_payload(), not model_dump(): it strips internal profile field names
         # from next_fact_candidates (finding D1). Never call model_dump here.
         payload = context.model_payload()
-        # Preserve every context field and keep the newest message at the end.
+        # Preserve every context field. Unchanging fields lead (cacheable prefix)
+        # and the newest message stays at the end.
+        stable = {name: payload.pop(name) for name in CHAT_STABLE_PAYLOAD_FIELDS if name in payload}
+        payload = {**stable, **payload}
         payload["user_message"] = payload.pop("user_message")
         prompt = self._json_prompt(
             "Respond to the newest user turn using this already validated state. Do not output JSON.",
@@ -231,7 +287,7 @@ class GroqProvider(LLMProvider):
         full_system_prompt = (
             f"{system_prompt}\n\n"
             f"You MUST output valid JSON matching this schema:\n"
-            f"{json.dumps(schema.model_json_schema(), ensure_ascii=False, sort_keys=True)}"
+            f"{compact_schema_json(schema.model_json_schema())}"
         )
         messages = [
             {"role": "system", "content": full_system_prompt},
@@ -273,6 +329,7 @@ class GroqProvider(LLMProvider):
 
         for attempt in range(GROQ_MAX_NETWORK_ATTEMPTS):
             retry_delay: float | None = None
+            started_at = time.monotonic()
             try:
                 response = await asyncio.wait_for(
                     self._client.chat.completions.create(**kwargs),
@@ -318,18 +375,28 @@ class GroqProvider(LLMProvider):
                 last_error = exc
 
             logger.warning(
-                "provider=groq model=%s operation=%s attempt=%s error_type=%s event=api_call_failed",
+                "provider=groq model=%s operation=%s attempt=%s error_type=%s http_status=%s "
+                "elapsed_seconds=%.2f event=api_call_failed",
                 self.model,
                 operation,
                 attempt + 1,
                 type(last_error).__name__,
+                # Numeric only. A bare APIStatusError hides which status it was
+                # (e.g. 413 "request too large" vs 498/5xx), so record it.
+                getattr(last_error, "status_code", None),
+                time.monotonic() - started_at,
             )
             if retry_delay is None:
                 break
             await asyncio.sleep(retry_delay)
 
         if isinstance(last_error, (asyncio.TimeoutError, APITimeoutError)):
-            raise LLMProviderError("Groq request timed out") from last_error
+            raise LLMTransientError("Groq request timed out") from last_error
+        if isinstance(last_error, APIConnectionError) or (
+            isinstance(last_error, APIStatusError)
+            and (last_error.status_code in {408, 409} or last_error.status_code >= 500)
+        ):
+            raise LLMTransientError("Groq is temporarily unreachable") from last_error
         raise LLMProviderError("Groq request failed") from last_error
 
     @staticmethod
@@ -455,4 +522,8 @@ class GroqProvider(LLMProvider):
 
     @staticmethod
     def _json_prompt(instruction: str, payload: dict[str, Any]) -> str:
-        return f"{instruction}\n\nINPUT_DATA:\n{json.dumps(payload, ensure_ascii=False, default=str)}"
+        # Compact separators: identical data, fewer tokens. Still plain JSON.
+        return (
+            f"{instruction}\n\nINPUT_DATA:\n"
+            f"{json.dumps(payload, ensure_ascii=False, default=str, separators=(',', ':'))}"
+        )

@@ -251,6 +251,10 @@ class LLMRateLimitedError(LLMProviderError):
     """The provider exhausted the bounded retry policy for this operation."""
 
 
+class LLMTransientError(LLMProviderError):
+    """A timeout or temporary connection/service failure can retry the saved turn."""
+
+
 class LLMProvider(ABC):
     @property
     @abstractmethod

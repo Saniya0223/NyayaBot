@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CPGRAMS layout (NyayaBot local test)</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; color: #1f2d3d; background: #f3f5f8; font: 14px/1.5 system-ui, "Segoe UI", sans-serif; }
+  .banner { padding: 8px 20px; background: #fff2cc; border-bottom: 1px solid #e5cf78; }
+  header { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; padding: 10px 20px; background: #0b3d6e; color: #fff; }
+  header strong { margin-right: auto; }
+  header a { color: #fff; text-decoration: none; cursor: pointer; }
+  main { max-width: 980px; margin: 0 auto; padding: 18px; }
+  section, form { background: #fff; border: 1px solid #d5dde6; border-radius: 6px; padding: 18px; margin: 14px 0; }
+  .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 18px; }
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  label { font-weight: 600; }
+  input, select, textarea { width: 100%; padding: 8px; border: 1px solid #aab6c3; border-radius: 4px; font: inherit; }
+  textarea { min-height: 110px; }
+  button { padding: 8px 14px; border: 0; border-radius: 4px; color: #fff; background: #0b5ea8; cursor: pointer; }
+  #received { white-space: pre-wrap; padding: 12px; color: #dce7f5; background: #132337; }
+  #alarm { display: none; padding: 15px; color: #fff; background: #a62121; font-weight: 700; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div id="alarm">SUBMIT WAS PRESSED. The helper must never do this.</div>
+<div class="banner">Local development copy of the CPGRAMS layout and wording. Fake data only; nothing is sent anywhere.</div>
+<header>
+  <strong>CPGRAMS (test)</strong>
+  <nav aria-label="Main menu">
+    <a href="#home">Home</a>
+    <a href="#lodge">Lodge Public Grievance</a>
+    <a href="#pension">Lodge Pension Grievance</a>
+    <a href="#status">Grievance Status</a>
+    <a href="#register">Register / Login</a>
+  </nav>
+</header>
+<main>
+  <div id="homeView">
+    <h1>Centralized Public Grievance Redress And Monitoring System</h1>
+    <p>Lodge your grievance against a government department. Grievances can be lodged only by registered users.</p>
+  </div>
+
+  <!-- The public sign-up form, with the real portal's labels, ids and placeholders. -->
+  <form id="registerForm" autocomplete="off" hidden>
+    <h4>Registration/Sign up Form</h4>
+    <div class="row">
+      <div class="form-group"><label for="Name">Name</label><input id="Name" name="Name" maxlength="100"></div>
+      <div class="form-group"><span>Gender</span>
+        <label><input type="radio" id="Sex_M" name="Sex" value="M"> Male</label>
+        <label><input type="radio" id="Sex_F" name="Sex" value="F"> Female</label>
+        <label><input type="radio" id="Sex_O" name="Sex" value="O"> Transgender</label></div>
+      <div class="form-group"><label for="Premise">Address</label><input id="Premise" name="Address1" placeholder="Premise Number or Name" maxlength="100"></div>
+      <div class="form-group"><input id="SubLocality" name="Address2" placeholder="Sub-locality" aria-label="Sub-locality"></div>
+      <div class="form-group"><input id="Locality" name="Address3" placeholder="Locality" aria-label="Locality"></div>
+      <div class="form-group"><label for="country">Country</label><select id="country" name="Country"><option>India</option></select></div>
+      <div class="form-group"><label for="state">State</label><select id="state" name="State"><option value="">--Select--</option><option>Delhi</option><option>Rajasthan</option><option>Uttar Pradesh</option></select></div>
+      <div class="form-group"><label for="district">District</label><select id="district" name="District" disabled><option value="">--Select--</option></select></div>
+      <div class="form-group"><label for="Pincode">Pincode</label><input id="Pincode" name="Pincode" maxlength="6"></div>
+      <div class="form-group"><label for="MobileNo">Mobile number</label><input id="MobileNo" name="MobileNo" type="tel" maxlength="10"></div>
+      <div class="form-group"><label for="PhoneNo">Phone number</label><input id="PhoneNo" name="PhoneNo" placeholder="Phone number with STD code. (e.g 011XXXXXXXX)"></div>
+      <div class="form-group"><label for="EmailAddress">E-mail address</label><input id="EmailAddress" name="EmailAddress" type="email"></div>
+      <div class="form-group"><label for="Captcha">Security Code</label><input id="Captcha" name="Captcha"></div>
+    </div>
+    <p><button type="submit" id="registerSubmit">Submit</button></p>
+  </form>
+
+  <!-- Lodge Public Grievance (signed in). -->
+  <form id="lodgeForm" autocomplete="off" hidden>
+    <h4>Lodge Public Grievance</h4>
+    <div class="row">
+      <div class="form-group"><label for="ministry">Ministry/Department/State Government</label>
+        <select id="ministry" name="Ministry"><option value="">--Select--</option>
+          <option>Department of Consumer Affairs</option><option>Department of Financial Services (Banking Division)</option>
+          <option>Department of Posts</option><option>Ministry of Labour and Employment</option>
+          <option>Ministry of Railways (Railway Board)</option><option>Department of Telecommunications</option>
+          <option>Ministry of Home Affairs</option><option>Delhi</option></select></div>
+      <div class="form-group"><label for="category">Grievance Category</label>
+        <select id="category" name="Category"><option value="">--Select--</option>
+          <option>Delay in service</option><option>Refund not received</option><option>Corruption</option>
+          <option>Staff behaviour</option><option>Others</option></select></div>
+      <div class="form-group"><label for="desc">Grievance Description</label><textarea id="desc" name="Description" maxlength="4000"></textarea></div>
+      <div class="form-group"><label for="doc">Upload document (PDF)</label><input id="doc" name="Document" type="file"></div>
+    </div>
+    <label><input type="checkbox" id="declare"> I declare that the information is correct</label>
+    <p><button type="submit" id="lodgeSubmit">Submit</button></p>
+  </form>
+
+  <section><h2>What the portal received</h2><pre id="received">{}</pre></section>
+</main>
+<script>
+(() => {
+  const model = {};
+  const show = () => {
+    const view = location.hash.slice(1) || 'home';
+    document.getElementById('homeView').hidden = !['home', 'pension', 'status'].includes(view);
+    document.getElementById('registerForm').hidden = view !== 'register';
+    document.getElementById('lodgeForm').hidden = view !== 'lodge';
+  };
+  const record = (event) => {
+    const el = event.target;
+    if (!el.name || el.type === 'checkbox') return;
+    if (el.type === 'radio' && !el.checked) return;
+    model[el.name] = el.value;
+    document.getElementById('received').textContent = JSON.stringify(model, null, 2);
+  };
+  for (const form of document.querySelectorAll('form')) {
+    form.addEventListener('input', record);
+    form.addEventListener('change', record);
+    form.addEventListener('submit', (event) => { event.preventDefault(); document.getElementById('alarm').style.display = 'block'; });
+  }
+  // Dependent list: districts arrive a moment after the state is chosen.
+  const districts = { Delhi: ['New Delhi', 'South Delhi'], Rajasthan: ['Jaipur', 'Jodhpur'], 'Uttar Pradesh': ['Lucknow', 'Noida'] };
+  document.getElementById('state').addEventListener('change', (event) => {
+    const list = districts[event.target.value] || [];
+    const district = document.getElementById('district');
+    setTimeout(() => {
+      district.innerHTML = '<option value="">--Select--</option>' + list.map((d) => `<option>${d}</option>`).join('');
+      district.disabled = list.length === 0;
+    }, 60);
+  });
+  window.addEventListener('hashchange', show);
+  show();
+})();
+</script>
+</body>
+</html>

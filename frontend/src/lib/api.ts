@@ -434,6 +434,32 @@ export async function sendChatMessage(payload: {
   return res.json();
 }
 
+export async function transcribeVoiceRecording(
+  audio: Blob,
+  language: 'auto' | 'hi',
+  signal?: AbortSignal,
+): Promise<string> {
+  const extension = audio.type.includes('mp4') ? 'mp4' : audio.type.includes('ogg') ? 'ogg' : 'webm';
+  const form = new FormData();
+  form.append('upload', audio, `voice.${extension}`);
+  form.append('language', language);
+  const res = await apiFetch(`${API_BASE_URL}/chat/transcribe`, { method: 'POST', body: form, signal });
+  if (!res.ok) throw new ApiError(await apiErrorMessage(res, 'Could not transcribe your voice.'), res.status);
+  const data: { text: string } = await res.json();
+  return data.text;
+}
+
+export async function fetchSaritaSpeech(caseId: string, messageId: string, signal?: AbortSignal): Promise<Blob> {
+  const res = await apiFetch(`${API_BASE_URL}/chat/speech`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ case_id: caseId, message_id: messageId }),
+    signal,
+  });
+  if (!res.ok) throw new ApiError(await apiErrorMessage(res, 'Sarita voice is unavailable.'), res.status);
+  return res.blob();
+}
+
 export async function retryChatStage(payload: {
   case_id: string;
   message_id: string;
@@ -583,6 +609,11 @@ export async function fetchChatCase(caseId: string): Promise<ChatSessionResponse
   return res.json();
 }
 
+export async function deleteChatCase(caseId: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE_URL}/chat/cases/${encodeURIComponent(caseId)}`, { method: 'DELETE' });
+  if (!res.ok) throw new ApiError(await apiErrorMessage(res, 'Could not delete this case.'), res.status);
+}
+
 export interface CaseSummaryResponse { text: string; cached: boolean }
 
 export async function generateCaseSummary(caseId: string): Promise<CaseSummaryResponse> {
@@ -619,4 +650,49 @@ export function absoluteDocumentUrl(path?: string): string | undefined {
   if (!path) return undefined;
   if (/^https?:\/\//.test(path)) return path;
   return `${API_BASE_URL.replace(/\/api\/v1\/?$/, '')}${path}`;
+}
+
+// ── Fill on Portal (browser extension) ─────────────────────────────────────
+
+export interface PortalAutofillStart {
+  session_id: string;
+  code: string;
+  expires_at: string;
+  portal: { key: string; label: string; url: string };
+}
+
+export interface PortalOption {
+  key: string;
+  label: string;
+  /** One line on when this portal fits the case. */
+  when: string;
+  /** The local test layout to open instead, while the backend's test mode is on. */
+  test: string | null;
+}
+
+/** The official portals that fit this case (decided by the server from the case type). */
+export async function getPortalOptions(caseId: string): Promise<{ test_mode: boolean; portals: PortalOption[] }> {
+  const res = await apiFetch(`${API_BASE_URL}/autofill/portals?case_id=${encodeURIComponent(caseId)}`);
+  if (!res.ok) throw new ApiError(`Could not load portals (HTTP ${res.status}).`, res.status);
+  return res.json();
+}
+
+/** Starts a short-lived Fill on Portal session for one of the user's cases. `portal`: "auto", a portal key, or a test layout. */
+export async function startPortalAutofill(caseId: string, portal: string = 'auto'): Promise<PortalAutofillStart> {
+  const res = await apiFetch(`${API_BASE_URL}/autofill/session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ case_id: caseId, portal }),
+  });
+  if (!res.ok) {
+    let message = `Could not start Fill on Portal (HTTP ${res.status}).`;
+    try {
+      const body = await res.json();
+      const detail = body?.detail;
+      if (typeof detail === 'string') message = detail;
+      else if (detail?.message) message = detail.message;
+    } catch { /* keep the generic message */ }
+    throw new ApiError(message, res.status);
+  }
+  return res.json();
 }
