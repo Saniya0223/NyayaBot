@@ -11,15 +11,15 @@ function loadModule(relativePath, imports, globals = {}) {
   const code = ts.transpileModule(source, { compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
   } }).outputText;
-  const module = { exports: {} };
+  const loaded = { exports: {} };
   runInNewContext(code, {
-    module, exports: module.exports, ...globals,
+    module: loaded, exports: loaded.exports, ...globals,
     require(name) {
       assert.ok(Object.hasOwn(imports, name), `Unexpected import: ${name}`);
       return imports[name];
     },
   });
-  return module.exports;
+  return loaded.exports;
 }
 
 function harness(fetchReply, { savedStage = true, initialMessages } = {}) {
@@ -53,6 +53,9 @@ function harness(fetchReply, { savedStage = true, initialMessages } = {}) {
   const jsx = (type, props) => ({ type, props });
   const { default: ChatInterface } = loadModule('../src/components/ChatInterface.tsx', {
     react, 'react/jsx-runtime': { jsx, jsxs: jsx },
+    'next/image': () => null,
+    './FormattedMessage': () => null,
+    './VoiceChatOrb': () => null,
     'lucide-react': new Proxy({}, { get: () => () => null }),
     '@/lib/api': api, '@/lib/documentHandoff': handoff,
   }, { console: { warn() {} } });
@@ -76,7 +79,7 @@ function harness(fetchReply, { savedStage = true, initialMessages } = {}) {
 function retryButton(node) {
   if (!node) return undefined;
   if (Array.isArray(node)) return node.map(retryButton).find(Boolean);
-  if (node.type === 'button' && node.props.children === 'Try Groq again') return node;
+  if (node.type === 'button' && ['Retry failed response', 'Resend original message'].includes(node.props['aria-label'])) return node;
   return retryButton(node.props?.children);
 }
 
@@ -158,14 +161,17 @@ test('a failed retry POST is not automatically resubmitted or added to conversat
   assert.equal(app.messages()[1].text, 'Local fallback');
 });
 
-test('legacy retry labels without a saved stage cannot become conversational text', async () => {
+test('legacy retry resends the original message instead of the button label', async () => {
   const app = harness(() => response('groq'), { savedStage: false });
   const button = retryButton(app.render());
-  assert.equal(button.props.disabled, true);
+  assert.equal(button.props.disabled, false);
+  assert.equal(button.props['aria-label'], 'Resend original message');
   button.props.onClick();
   await settle();
-  assert.equal(app.posts.length, 0);
-  assert.equal(app.messages().length, 2);
+  assert.equal(app.posts.length, 1);
+  assert.equal(app.posts[0].url, 'http://mock-backend/api/v1/chat/message');
+  assert.equal(JSON.parse(app.posts[0].options.body).message, 'My landlord has not returned my deposit.');
+  assert.ok(!app.messages().some((item) => item.sender === 'user' && item.text === 'Try Groq again'));
 });
 
 test('a new failed chat response exposes a stage retry without resending user history', async () => {

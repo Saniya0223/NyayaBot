@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from app import main
 from app.db.models import ChatCaseSessionModel, UserMemoryModel
 from app.db.session import SessionLocal
-from app.llm.contracts import CaseExtraction, LLMRateLimitedError, LLMTransientError, ProviderStatus
+from app.llm.contracts import CaseExtraction, LLMProviderError, LLMRateLimitedError, LLMTransientError, ProviderStatus
 from app.services.chat_retry import RETRY_STATE_KEY
 
 
@@ -188,6 +188,32 @@ def test_extraction_timeout_can_retry_original_turn_without_new_chat_content(rig
     result = retry(client, failed)
     assert result["llm_mode"] == "groq"
     assert [item["user_message"] for item in provider.extractions] == [ORIGINAL, ORIGINAL]
+    assert len(applications) == 1
+    assert_control_is_not_content(client, failed["case_profile"]["case_id"], provider, rag_queries)
+
+
+@pytest.mark.parametrize("operation,stage", [
+    ("extract_case_updates", "EXTRACTION"), ("chat", "FINAL_CHAT"),
+])
+def test_generic_provider_failure_saves_clickable_retry(rig, monkeypatch, operation, stage):
+    client, provider, rag_queries, applications, _ = rig
+    original = getattr(provider, operation)
+    attempts = 0
+
+    async def fail_once(context):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise LLMProviderError("Invalid provider response")
+        return await original(context)
+
+    monkeypatch.setattr(provider, operation, fail_once)
+    failed = send(client)
+    assert failed["retry_action"]["message_id"] == failed["message_id"]
+    _, messages = saved(failed["case_profile"]["case_id"])
+    assert messages[-1][RETRY_STATE_KEY]["stage"] == stage
+    result = retry(client, failed)
+    assert result["llm_mode"] == "groq"
     assert len(applications) == 1
     assert_control_is_not_content(client, failed["case_profile"]["case_id"], provider, rag_queries)
 

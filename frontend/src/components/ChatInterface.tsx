@@ -218,7 +218,16 @@ export default function ChatInterface({
   }
 
   async function handleRetry(message: ChatMessageItem) {
-    if (!caseId || !message.retry_action || isSending || requestInFlight.current) return;
+    if (!caseId || isSending || requestInFlight.current) return;
+    if (!message.retry_action) {
+      // Older failures have no checkpoint. Resend the actual user message,
+      // never the retry button's label, through the normal chat flow.
+      const index = messages.findIndex((item) => item.id === message.id);
+      const original = messages.slice(0, index).findLast((item) => item.sender === 'user');
+      if (original) await handleSend(original.text);
+      else setSendError('The original message is unavailable. Please type it again.');
+      return;
+    }
     requestInFlight.current = true;
     controlPlayback('stop');
     setSendError(null);
@@ -381,9 +390,9 @@ export default function ChatInterface({
                               key={reply}
                               type="button"
                               onClick={() => { if (retryControl) void handleRetry(message); else void handleSend(reply); }}
-                              disabled={isSending || (retryControl && !message.retry_action)}
-                              aria-label={retryControl ? 'Retry failed response' : undefined}
-                              title={retryControl ? (message.retry_action ? 'Retry failed response' : 'This older response has no saved retry stage. Send the original message again.') : undefined}
+                              disabled={isSending}
+                              aria-label={retryControl ? (message.retry_action ? 'Retry failed response' : 'Resend original message') : undefined}
+                              title={retryControl ? (message.retry_action ? 'Retry failed response' : 'Resend the original message to try again') : undefined}
                               className="rounded-full border border-[#e3dccf] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#5e5a53] transition hover:border-[#d9bd6b] hover:bg-[#fff7df] hover:text-[#181818] disabled:opacity-50"
                             >
                               {retryControl ? <RotateCcw className="size-4" aria-hidden="true" /> : reply}

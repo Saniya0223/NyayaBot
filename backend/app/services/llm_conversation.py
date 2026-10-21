@@ -469,11 +469,13 @@ class GeminiConversationService:
             )
             reply = await self.provider.chat(response_context)
             return self._finish_chat_response(profile, reply, response_context, declined_offer)
-        except (LLMRateLimitedError, LLMTransientError) as exc:
+        except LLMProviderError as exc:
             logger.warning(
                 "provider=%s model=%s reason=%s event=turn_fell_back_to_limited_demo",
                 self.provider.status.provider, self.provider.status.model,
-                "RATE_LIMITED" if isinstance(exc, LLMRateLimitedError) else "TRANSIENT_FAILURE",
+                ("RATE_LIMITED" if isinstance(exc, LLMRateLimitedError)
+                 else "TRANSIENT_FAILURE" if isinstance(exc, LLMTransientError)
+                 else "PROVIDER_FAILURE"),
             )
             if not extraction_succeeded:
                 # Undo any staged pending-confirmation changes. Failed extraction
@@ -499,34 +501,6 @@ class GeminiConversationService:
                 "evidence_context": evidence_context or {},
             }
             return response
-        except LLMProviderError:
-            logger.warning(
-                "provider=%s model=%s event=turn_fell_back_to_limited_demo",
-                self.provider.status.provider,
-                self.provider.status.model,
-            )
-            if profile is None:
-                fallback = self.workflow_agent.process_turn(req, existing_profile)
-                fallback.case_profile.professional_help = evaluate_professional_help(fallback.case_profile)
-                fallback.reply_text = self._temporary_failure_prefix() + (
-                    self._fallback_professional_help(fallback.case_profile, style)
-                    if asks_about_legal_help(req.message) else fallback.reply_text
-                )
-                return self._tag_response(fallback, "limited_demo")
-
-            self._refresh_workflow(profile)
-            profile.professional_help = evaluate_professional_help(profile)
-            response = ChatTurnResponse(
-                reply_text=self._temporary_failure_prefix() + (
-                    self._fallback_professional_help(profile, style)
-                    if asks_about_legal_help(req.message) else self._safe_next_prompt(profile)
-                ),
-                case_profile=profile,
-                quick_replies=[f"Try {self._provider_title} again"],
-                suggested_action=profile.recommended_next_action,
-                message_id=str(uuid.uuid4()),
-            )
-            return self._tag_response(response, "limited_demo")
 
     def _finish_chat_response(
         self, profile: StructuredCaseProfile, reply: str,
