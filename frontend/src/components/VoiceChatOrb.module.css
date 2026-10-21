@@ -1,11 +1,19 @@
 .root { position: static; flex: none; }
+.controls { display: flex; align-items: center; gap: 6px; }
 .launcher { display: grid; width: 40px; height: 40px; place-items: center; border: 1px solid #e5d7ad; border-radius: 14px; background: #fff6d9; color: #252017; transition: transform .2s, background .2s, box-shadow .2s; }
 .launcher:hover, .launcherOpen { transform: translateY(-2px); background: #ffe79c; box-shadow: 0 5px 16px #c69b4030; }
-.launcher:focus-visible, .orb:focus-visible, .iconButton:focus-visible, .stopAudio:focus-visible { outline: 3px solid #b67c12; outline-offset: 3px; }
-.panel { position: absolute; z-index: 30; left: 50%; bottom: calc(100% + 10px); width: min(260px, calc(100vw - 34px)); transform: translateX(-50%); padding: 8px; color: #252019; text-align: center; }
-.iconButton { position: absolute; top: 4px; right: 4px; display: grid; width: 27px; height: 27px; place-items: center; border: 1px solid #e7dbbf; border-radius: 50%; background: #fffefa; box-shadow: 0 4px 14px #2b230e1f; color: #5f5748; }
+.launcher:disabled, .orbLauncher:disabled { opacity: .5; cursor: not-allowed; }
+.orbLauncher { display: grid; width: 40px; height: 40px; place-items: center; overflow: hidden; border: 1px solid #e5c775; border-radius: 50%; background: #fff2bd; box-shadow: 0 0 0 3px #fff7dc; transition: transform .2s, box-shadow .2s; }
+.orbLauncher img { width: 100%; height: 100%; object-fit: cover; }
+.orbLauncher:hover:not(:disabled), .orbLauncherOpen { transform: scale(1.07); box-shadow: 0 0 0 5px #ffeaa8, 0 4px 14px #c69b4030; }
+.launcher:focus-visible, .orbLauncher:focus-visible, .orb:focus-visible, .iconButton:focus-visible, .stopAudio:focus-visible { outline: 3px solid #b67c12; outline-offset: 3px; }
+.dictationStatus, .dictationError { position: absolute; z-index: 25; right: 60px; bottom: calc(100% + 6px); max-width: min(330px, 80vw); padding: 8px 11px; border: 1px solid #ead8af; border-radius: 12px; background: #fffdf7; box-shadow: 0 8px 24px #2b230e1a; color: #725d2f; font-size: 11px; font-weight: 650; }
+.dictationError { color: #a24335; border-color: #f0c2b9; }
+.panel { position: absolute; z-index: 30; left: 50%; bottom: calc(100% + 10px); width: min(340px, calc(100vw - 34px)); max-height: min(75vh, 520px); overflow-y: auto; transform: translateX(-50%); padding: 16px; border: 1px solid #eadfc6; border-radius: 24px; background: #fffdf8; box-shadow: 0 24px 60px #2b230e35; color: #252019; text-align: center; }
+.iconButton { position: absolute; top: 10px; right: 10px; display: grid; width: 27px; height: 27px; place-items: center; border: 1px solid #e7dbbf; border-radius: 50%; background: #fffefa; box-shadow: 0 4px 14px #2b230e1f; color: #5f5748; }
 .iconButton:hover { background: #f7efd8; }
-.center { display: flex; flex-direction: column; align-items: center; padding: 8px 0 10px; }
+.panelTitle { margin: 0; padding: 1px 28px 0; color: #312817; font-size: 13px; font-weight: 800; }
+.center { display: flex; flex-direction: column; align-items: center; padding: 15px 0 10px; }
 .orb { position: relative; display: flex; width: 150px; height: 150px; align-items: flex-end; justify-content: center; overflow: hidden; border: 2px solid #f4cf67; border-radius: 50%; background: radial-gradient(circle at 50% 35%, #fff8d9 3%, #ffe28b 65%, #d99c3b 100%); box-shadow: 0 0 0 8px #fff4c5, 0 10px 28px #b7822b3d; transition: transform .25s, box-shadow .25s; animation: breathe 3.4s ease-in-out infinite; }
 .orb:hover { transform: scale(1.045); }
 .orb:disabled { cursor: not-allowed; opacity: .55; }
@@ -13,6 +21,11 @@
 .mascot { position: relative; z-index: 1; width: 155px; height: 155px; object-fit: cover; object-position: center top; transform: translateY(15px); animation: mascotFloat 3.4s ease-in-out infinite; }
 .listening { border-color: #c95849; box-shadow: 0 0 0 8px #ffe8df, 0 0 0 17px #f4a89d68, 0 12px 30px #ae563840; animation: listeningPulse 1.15s ease-in-out infinite; }
 .speaking { border-color: #d6a52c; box-shadow: 0 0 0 8px #fff1c0, 0 0 0 17px #f5d26670, 0 12px 30px #b7822b40; animation: speakingPulse .75s ease-in-out infinite; }
+.speaking .mascot { animation: mascotTalk .42s ease-in-out infinite alternate; }
+.speechWave { position: absolute; z-index: 2; bottom: 7px; left: 50%; display: flex; height: 22px; align-items: center; gap: 3px; padding: 3px 7px; border-radius: 999px; background: #fff9e6de; transform: translateX(-50%); }
+.speechWave i { width: 3px; height: 7px; border-radius: 999px; background: #9b6500; animation: voiceBar .55s ease-in-out infinite alternate; }
+.speechWave i:nth-child(2), .speechWave i:nth-child(4) { animation-delay: -.25s; }
+.speechWave i:nth-child(3) { animation-delay: -.4s; }
 .processing { border-color: #c9af66; animation: breathe 1.3s ease-in-out infinite; }
 .stopAudio { display: inline-flex; align-items: center; gap: 5px; margin: 2px 0 6px; padding: 6px 10px; border: 1px solid #e7dbbf; border-radius: 999px; background: #fffefa; color: #6a5332; font-size: 11px; font-weight: 700; }
 .stopAudio:hover { background: #fff4d5; }
@@ -21,12 +34,16 @@
 .meterTrack { display: block; width: 72%; height: 6px; overflow: hidden; border-radius: 999px; background: #eee4d0; }
 .meterFill { display: block; height: 100%; border-radius: inherit; background: #c99527; transition: width .12s ease-out; }
 .meterCaption { color: #877962; font-size: 10px; }
+.hint { margin: 6px 0 0; color: #806b42; font-size: 10px; }
+.transcript { width: 100%; max-height: 65px; overflow-y: auto; margin: 8px 0 0; padding: 7px; border-radius: 10px; background: #fffefa; color: #4f4430; font-size: 11px; line-height: 1.4; }
 .languageLabel { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 0; padding: 5px 7px; border-radius: 10px; background: #fffefa; box-shadow: 0 4px 16px #2b230e1a; color: #686050; font-size: 11px; font-weight: 600; }
 .languageLabel select { max-width: 155px; padding: 6px 8px; border: 1px solid #e7ddc5; border-radius: 9px; background: white; color: #352f23; font-size: 11px; }
 .error { margin: 8px 0 0; padding: 6px; border-radius: 9px; background: #fffefa; color: #a24335; font-size: 11px; line-height: 1.4; }
 .privacy { margin: 8px 0 0; padding: 5px; border-radius: 9px; background: #fffefa; color: #8b8170; font-size: 10px; line-height: 1.35; }
 @keyframes breathe { 0%, 100% { box-shadow: 0 0 0 8px #fff4c5, 0 10px 28px #b7822b3d; } 50% { box-shadow: 0 0 0 12px #fff2b4, 0 14px 34px #b7822b4d; } }
 @keyframes mascotFloat { 0%, 100% { transform: translateY(15px); } 50% { transform: translateY(10px); } }
+@keyframes mascotTalk { from { transform: translateY(14px) rotate(-1deg) scale(1); } to { transform: translateY(9px) rotate(1deg) scale(1.035); } }
+@keyframes voiceBar { from { height: 5px; } to { height: 17px; } }
 @keyframes listeningPulse { 0%, 100% { box-shadow: 0 0 0 8px #ffe8df, 0 0 0 15px #f4a89d54; } 50% { box-shadow: 0 0 0 11px #ffe8df, 0 0 0 22px #f4a89d36; } }
 @keyframes speakingPulse { 0%, 100% { box-shadow: 0 0 0 8px #fff1c0, 0 0 0 16px #f5d26664; } 50% { box-shadow: 0 0 0 12px #fff1c0, 0 0 0 20px #f5d26642; } }
-@media (prefers-reduced-motion: reduce) { .orb, .mascot, .listening, .speaking, .processing { animation: none; } .launcher, .orb { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .orb, .mascot, .speaking .mascot, .listening, .speaking, .processing, .speechWave i { animation: none; } .launcher, .orbLauncher, .orb { transition: none; } }

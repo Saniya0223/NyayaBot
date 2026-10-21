@@ -457,7 +457,10 @@ export default function ChatInterface({
             draftText={inputText}
             onOpenChange={setVoiceModeOpen}
             onTranscriptChange={setInputText}
-            onTranscriptReady={() => inputRef.current?.focus()}
+            onTranscriptReady={(text, autoSend) => {
+              if (autoSend) void handleSend(text);
+              else inputRef.current?.focus();
+            }}
             onBusyChange={setVoiceRecordingBusy}
             responseToSpeak={responseToSpeak}
             playbackCommand={playbackCommand}

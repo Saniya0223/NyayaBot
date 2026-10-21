@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
-import { Mic, Volume2, VolumeX, X } from 'lucide-react';
+import { Mic, Square, VolumeX, X } from 'lucide-react';
 import { ApiError, fetchSaritaSpeech, transcribeVoiceRecording } from '@/lib/api';
 import styles from './VoiceChatOrb.module.css';
 
@@ -29,7 +29,7 @@ interface VoiceChatOrbProps {
   draftText: string;
   onOpenChange: (open: boolean) => void;
   onTranscriptChange: (text: string) => void;
-  onTranscriptReady: () => void;
+  onTranscriptReady: (text: string, autoSend: boolean) => void;
   onBusyChange: (busy: boolean) => void;
   responseToSpeak: { id: string; messageId: string; text: string } | null;
   playbackCommand: { id: number; action: 'pause' | 'resume' | 'stop' } | null;
@@ -78,6 +78,7 @@ export default function VoiceChatOrb({ isOpen, isSending, caseId, draftText, onO
   const [error, setError] = useState<string | null>(null);
   const [microphoneLevel, setMicrophoneLevel] = useState(0);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [conversationTranscript, setConversationTranscript] = useState('');
   const recognitionRef = useRef<BrowserRecognition | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -100,10 +101,27 @@ export default function VoiceChatOrb({ isOpen, isSending, caseId, draftText, onO
   const transcriptRef = useRef('');
   const interimRef = useRef('');
   const draftAtStartRef = useRef('');
+  const conversationRef = useRef(false);
+  const recordingModeRef = useRef<'dictation' | 'conversation'>('dictation');
+  const heardVoiceRef = useRef(false);
+  const lastVoiceAtRef = useRef(0);
 
   function publishTranscript() {
     const spoken = `${transcriptRef.current} ${interimRef.current}`.trim();
-    onTranscriptChange([draftAtStartRef.current, spoken].filter(Boolean).join(' '));
+    if (recordingModeRef.current === 'conversation') setConversationTranscript(spoken);
+    else onTranscriptChange([draftAtStartRef.current, spoken].filter(Boolean).join(' '));
+  }
+
+  function completeTranscript() {
+    const spoken = transcriptRef.current.trim();
+    updateStatus('idle');
+    if (!spoken) return;
+    if (recordingModeRef.current === 'conversation') {
+      setConversationTranscript('');
+      onTranscriptReady(spoken, true);
+    } else {
+      onTranscriptReady([draftAtStartRef.current, spoken].filter(Boolean).join(' '), false);
+    }
   }
 
   function updateStatus(next: 'idle' | 'requesting' | 'listening' | 'transcribing' | 'preparing' | 'speaking' | 'paused') {
@@ -130,6 +148,15 @@ export default function VoiceChatOrb({ isOpen, isSending, caseId, draftText, onO
     playbackProviderRef.current = null;
     if (statusRef.current === 'preparing' || statusRef.current === 'speaking' || statusRef.current === 'paused') updateStatus('idle');
     onPlaybackChange(null, 'idle');
+  }
+
+  function finishSpeaking() {
+    stopSpeaking();
+    if (conversationRef.current) {
+      window.setTimeout(() => {
+        if (conversationRef.current && statusRef.current === 'idle') void startListening('conversation');
+      }, 300);
+    }
   }
 
   function pauseSpeaking() {
@@ -206,11 +233,7 @@ export default function VoiceChatOrb({ isOpen, isSending, caseId, draftText, onO
     const playNext = () => {
       if (playbackSessionRef.current !== session) return;
       if (index >= chunks.length) {
-        speechRef.current = null;
-        activeMessageRef.current = null;
-        updateStatus('idle');
-        playbackProviderRef.current = null;
-        onPlaybackChange(null, 'idle');
+        finishSpeaking();
         return;
       }
       const utterance = new SpeechSynthesisUtterance(chunks[index++]);
@@ -264,7 +287,7 @@ export default function VoiceChatOrb({ isOpen, isSending, caseId, draftText, onO
       const audio = new Audio(url);
       audioRef.current = audio;
       playbackProviderRef.current = 'sarita';
-      audio.onended = () => { if (playbackSessionRef.current === session) stopSpeaking(); };
+      audio.onended = () => { if (playbackSessionRef.current === session) finishSpeaking(); };
       audio.onerror = () => {
         if (playbackSessionRef.current !== session) return;
         audioRef.current = null;
@@ -342,16 +365,20 @@ export default function VoiceChatOrb({ isOpen, isSending, caseId, draftText, onO
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playbackCommand]);
 
-  async function startListening() {
+  async function startListening(mode: 'dictation' | 'conversation') {
     if (!supported || statusRef.current !== 'idle') {
       if (!supported) setError('Voice recording needs microphone access in a supported browser. Please type your message instead.');
       return;
     }
     stopSpeaking();
     setError(null);
-    draftAtStartRef.current = draftText.trim();
+    recordingModeRef.current = mode;
+    draftAtStartRef.current = mode === 'dictation' ? draftText.trim() : '';
     transcriptRef.current = '';
     interimRef.current = '';
+    heardVoiceRef.current = false;
+    lastVoiceAtRef.current = 0;
+    setConversationTranscript('');
     setRecordingSeconds(0);
     const session = ++sessionRef.current;
     updateStatus('requesting');
@@ -405,8 +432,7 @@ export default function VoiceChatOrb({ isOpen, isSending, caseId, draftText, onO
             publishTranscript();
           }
           if (transcriptRef.current.trim()) {
-            updateStatus('idle');
-            onTranscriptReady();
+            completeTranscript();
             return;
           }
           const audio = new Blob(chunks, { type: recorder.mimeType });
@@ -423,7 +449,7 @@ export default function VoiceChatOrb({ isOpen, isSending, caseId, draftText, onO
               transcriptRef.current = `${transcriptRef.current} ${text}`.trim();
               publishTranscript();
               setError(null);
-              onTranscriptReady();
+              completeTranscript();
             }
           } catch (error) {
             if (sessionRef.current === session) {
@@ -457,6 +483,10 @@ export default function VoiceChatOrb({ isOpen, isSending, caseId, draftText, onO
             transcriptRef.current = `${transcriptRef.current} ${finalText.trim()}`.trim();
           }
           interimRef.current = interimText.trim();
+          if (finalText.trim() || interimText.trim()) {
+            heardVoiceRef.current = true;
+            lastVoiceAtRef.current = Date.now();
+          }
           publishTranscript();
         };
         recognition.onerror = () => { if (recognitionRef.current === recognition) recognitionRef.current = null; };
@@ -483,14 +513,19 @@ export default function VoiceChatOrb({ isOpen, isSending, caseId, draftText, onO
         meterTimerRef.current = setInterval(() => {
           analyser.getByteTimeDomainData(samples);
           const energy = samples.reduce((sum, value) => sum + ((value - 128) / 128) ** 2, 0) / samples.length;
-          setMicrophoneLevel(Math.min(100, Math.round(Math.sqrt(energy) * 450)));
+          const level = Math.min(100, Math.round(Math.sqrt(energy) * 450));
+          setMicrophoneLevel(level);
+          if (mode === 'conversation' && level > 9) {
+            heardVoiceRef.current = true;
+            lastVoiceAtRef.current = Date.now();
+          }
         }, 120);
       } catch { /* Recording still works if the visual meter is unavailable. */ }
       const startedAt = Date.now();
       recordingTimerRef.current = setInterval(() => {
         const elapsed = Math.floor((Date.now() - startedAt) / 1000);
         setRecordingSeconds(elapsed);
-        if (elapsed >= 60) stopListening();
+        if (elapsed >= 60 || (mode === 'conversation' && elapsed >= 2 && heardVoiceRef.current && Date.now() - lastVoiceAtRef.current > 1800)) stopListening();
       }, 1000);
       updateStatus('listening');
     } catch {
@@ -500,33 +535,49 @@ export default function VoiceChatOrb({ isOpen, isSending, caseId, draftText, onO
   }
 
   function close() {
-    if (interimRef.current) {
-      interimRef.current = '';
-      publishTranscript();
-    }
+    conversationRef.current = false;
     cancelRecording();
     stopSpeaking();
+    setConversationTranscript('');
     onOpenChange(false);
   }
+
+  function toggleConversation() {
+    if (isOpen) {
+      close();
+      return;
+    }
+    conversationRef.current = true;
+    onOpenChange(true);
+    if (supported) void startListening('conversation');
+    else setError('Voice conversation needs microphone access in a supported browser. Text chat still works.');
+  }
+
+  const dictating = !isOpen && recordingModeRef.current === 'dictation'
+    && (status === 'requesting' || status === 'listening' || status === 'transcribing');
 
   return (
     <div className={styles.root}>
       {isOpen && (
         <div className={styles.panel} role="group" aria-label="Voice chat with NyayaBot">
           <button type="button" className={styles.iconButton} onClick={close} aria-label="Close voice chat"><X size={17} /></button>
+          <h3 className={styles.panelTitle}>Voice conversation</h3>
           <div className={styles.center}>
             <button
               type="button"
               className={`${styles.orb} ${status === 'listening' ? styles.listening : ''} ${status === 'speaking' ? styles.speaking : ''} ${isSending || status === 'transcribing' || status === 'preparing' ? styles.processing : ''}`}
-              onClick={status === 'listening' ? stopListening : status === 'speaking' ? pauseSpeaking : status === 'paused' ? resumeSpeaking : () => { void startListening(); }}
+              onClick={status === 'listening' ? stopListening : status === 'speaking' ? pauseSpeaking : status === 'paused' ? resumeSpeaking : () => { void startListening('conversation'); }}
               disabled={status === 'requesting' || status === 'transcribing' || status === 'preparing' || ((supported === false || isSending) && status !== 'speaking' && status !== 'paused')}
               aria-label={status === 'listening' ? 'Stop listening' : status === 'speaking' ? 'Pause reading' : status === 'paused' ? 'Resume reading' : 'Start speaking'}
               title={status === 'listening' ? 'Stop listening' : status === 'speaking' ? 'Pause reading' : status === 'paused' ? 'Resume reading' : 'Tap to speak'}
             >
               <span className={styles.orbHalo} aria-hidden="true" />
               <Image src="/nyayabot-voice-orb.png" width={240} height={240} alt="" className={styles.mascot} priority={false} />
+              {status === 'speaking' && <span className={styles.speechWave} aria-hidden="true"><i /><i /><i /><i /><i /></span>}
             </button>
             <span className={styles.state} role="status">{status === 'requesting' ? 'Waiting for microphone permission…' : status === 'listening' ? `Recording ${recordingSeconds}s · tap to stop` : status === 'transcribing' ? 'Turning your voice into text…' : status === 'preparing' ? 'Preparing Sarita voice…' : status === 'speaking' ? 'Reading aloud · tap to pause' : status === 'paused' ? 'Paused · tap to resume' : isSending ? 'Preparing your reply…' : 'Tap the orb to speak'}</span>
+            {conversationTranscript && <p className={styles.transcript} aria-live="polite">{conversationTranscript}</p>}
+            {status === 'listening' && <p className={styles.hint}>Pause after speaking to send automatically, or tap the orb to finish.</p>}
             {status === 'listening' && (
               <div className={styles.meterWrap} aria-label={`Microphone input level ${microphoneLevel} percent`}>
                 <span className={styles.meterTrack}><span className={styles.meterFill} style={{ width: `${Math.max(2, microphoneLevel)}%` }} /></span>
@@ -544,12 +595,19 @@ export default function VoiceChatOrb({ isOpen, isSending, caseId, draftText, onO
           {error && <p className={styles.error} role="alert">{error}</p>}
           {supported === false && <p className={styles.error}>Voice recording needs a supported browser on localhost or HTTPS. Text chat still works.</p>}
           {!canSpeak && <p className={styles.error}>This browser does not support spoken replies. Text replies still work.</p>}
-          <p className={styles.privacy}>Dictation appears in the chat box; you choose when to send it. For Sarita playback, reply text is sent to Shunya Labs. Audio is not saved to your case.</p>
+          <p className={styles.privacy}>Voice conversation sends your completed spoken turn after a pause, then reads NyayaBot&apos;s reply. For Sarita playback, reply text is sent to Shunya Labs; if unavailable, browser voice is used. Audio is not saved to your case.</p>
         </div>
       )}
-      <button type="button" className={`${styles.launcher} ${isOpen ? styles.launcherOpen : ''}`} onClick={() => isOpen ? close() : onOpenChange(true)} aria-label={isOpen ? 'Close voice chat' : 'Open voice chat'} aria-expanded={isOpen} title="Talk to NyayaBot">
-        {isOpen ? <Volume2 size={19} /> : <Mic size={19} />}
-      </button>
+      {!isOpen && dictating && <span className={styles.dictationStatus} role="status">{status === 'listening' ? `Recording ${recordingSeconds}s - tap mic to stop` : status === 'transcribing' ? 'Transcribing...' : 'Opening microphone...'}</span>}
+      {!isOpen && error && <span className={styles.dictationError} role="alert">{error}</span>}
+      <div className={styles.controls}>
+        <button type="button" className={`${styles.launcher} ${dictating ? styles.launcherOpen : ''}`} onClick={() => status === 'listening' ? stopListening() : void startListening('dictation')} disabled={isOpen || isSending || (status !== 'idle' && status !== 'listening')} aria-label={dictating ? 'Stop voice recording' : 'Record voice message'} title={dictating ? 'Stop recording; review text before sending' : 'Record voice message; review text before sending'}>
+          {dictating ? <Square size={16} /> : <Mic size={19} />}
+        </button>
+        <button type="button" className={`${styles.orbLauncher} ${isOpen ? styles.orbLauncherOpen : ''}`} onClick={toggleConversation} disabled={!isOpen && (isSending || status === 'requesting' || status === 'listening' || status === 'transcribing' || status === 'preparing')} aria-label={isOpen ? 'End voice conversation' : 'Start hands-free voice conversation'} aria-expanded={isOpen} title={isOpen ? 'End voice conversation' : 'Talk back and forth with NyayaBot'}>
+          <Image src="/nyayabot-voice-orb.png" width={40} height={40} alt="" />
+        </button>
+      </div>
     </div>
   );
 }
