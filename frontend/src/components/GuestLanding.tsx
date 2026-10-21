@@ -1,4 +1,3 @@
-import Image from 'next/image';
 import Link from 'next/link';
 import {
   ArrowRight,
@@ -35,10 +34,10 @@ const steps = [
 export default function GuestLanding({ loginHref = '/login' }: { loginHref?: string }) {
   return (
     <div className="mx-auto w-full max-w-[1480px] px-4 pb-10 pt-8 sm:px-6 lg:px-8">
-      <section className="grid min-w-0 grid-cols-[minmax(0,1fr)] items-center gap-5 lg:min-h-[430px] lg:grid-cols-[minmax(0,1fr)_minmax(0,0.95fr)]" aria-label="NyayaBot introduction">
+      <section className="grid min-w-0 grid-cols-[minmax(0,1fr)] items-center gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-12 xl:gap-16" aria-label="NyayaBot introduction">
         <div className="relative z-10 min-w-0 max-w-[640px] py-4 lg:py-8">
           <span className="inline-flex rounded-full bg-gradient-to-r from-[#fff7db] to-[#ffecac] px-4 py-2 text-xs font-bold text-[#765218]">Your AI legal companion</span>
-          <h1 className="mt-5 text-[clamp(2.7rem,7vw,6.2rem)] font-extrabold leading-[0.95] tracking-[-0.07em] text-[#111111]">Justice Made<br />Simple.</h1>
+          <h1 className="mt-5 text-[clamp(2.7rem,5.5vw,5.5rem)] font-extrabold leading-[1.02] tracking-[-0.06em] text-[#111111]">Justice Made<br />Simple.</h1>
           <p className="mt-5 max-w-[520px] text-base leading-7 text-[#68645d] sm:text-lg">Get clear guidance, create legal documents, and track your case — all in one place.</p>
           <Link href={loginHref} className="mt-7 flex max-w-[590px] items-center justify-between gap-4 rounded-2xl border border-[#e5e0d5] bg-white p-2 pl-5 text-sm text-[#77736b] shadow-[0_12px_34px_rgba(88,70,32,0.06)] transition hover:border-[#ecc857]" aria-label="Log in to tell NyayaBot about your legal problem">
             <span className="flex min-w-0 items-center gap-3"><Search className="size-5 shrink-0 text-[#827b6f]" aria-hidden="true" /><span className="truncate">Tell us your legal problem...</span></span>
@@ -50,26 +49,29 @@ export default function GuestLanding({ loginHref = '/login' }: { loginHref?: str
             <Link href={loginHref} className="rounded-full border border-[#ece6d9] bg-white px-3 py-1.5 hover:border-[#e4bd55]">My employer hasn’t paid me</Link>
           </div>
         </div>
-        <div className="gold-glow relative mx-auto flex h-[320px] min-w-0 w-full max-w-[600px] items-end justify-center overflow-hidden rounded-[38px] sm:h-[440px] lg:rounded-none" aria-hidden="true">
-          <Image src="/nyayabot-mascot-hero.png" alt="" width={1240} height={1240} priority className="hero-mascot relative z-10 h-auto w-[87%] max-w-[540px] translate-y-[12%] object-contain" />
-        </div>
-      </section>
-
-      <section className="mt-5" aria-label="Legal issue categories">
-        <div className="soft-scrollbar overflow-x-auto rounded-2xl border border-[#eee7d9] bg-white/85 py-4 shadow-[0_12px_32px_rgba(82,63,21,0.04)]">
-          <div className="grid min-w-[980px] grid-cols-7 divide-x divide-[#eee9df] lg:min-w-0">
-            {categories.map(({ title, detail, icon: Icon }) => (
-              <Link key={title} href={loginHref} className="group flex min-w-0 flex-col px-4 py-1 transition hover:bg-[#fff9e9]" aria-label={`Log in to ask about ${title}`}>
-                <Icon className="size-6 text-[#1a1a1a] transition group-hover:text-[#9d6b00]" strokeWidth={1.8} aria-hidden="true" />
-                <span className="mt-2 text-xs font-bold text-[#1b1b1b]">{title}</span>
-                <span className="mt-1 text-[10px] leading-4 text-[#777169]">{detail}</span>
+        <section className="min-w-0 rounded-[28px] border border-[#eae3d5] bg-[#fcfaf5] p-4 sm:p-6" aria-labelledby="category-title">
+          <div className="mb-5">
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#967332]">Explore by category</p>
+            <h2 id="category-title" className="mt-2 text-xl font-bold tracking-[-0.03em] text-[#24211c] sm:text-2xl">What do you need help with?</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            {categories.map(({ title, detail, icon: Icon }, index) => (
+              <Link key={title} href={loginHref} className={`group flex min-w-0 items-center gap-3 rounded-2xl border p-3.5 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b18b3f] ${index === categories.length - 1 ? 'border-transparent bg-[#f2ecdf] hover:bg-[#ece2cb] sm:col-span-2' : 'h-full border-[#ede7dc] bg-white hover:border-[#d9bf87] hover:shadow-[0_4px_12px_rgba(82,63,21,0.05)]'}`} aria-label={`Log in to ask about ${title}`}>
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#faf5e7] text-[#8b6a2f] transition group-hover:bg-[#f5e9c7]">
+                  <Icon className="size-[18px]" strokeWidth={1.7} aria-hidden="true" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] font-bold leading-5 text-[#28251f]">{title}</span>
+                  <span className="mt-1 block text-[11px] leading-[1.6] text-[#81796a]">{detail}</span>
+                </span>
+                {index === categories.length - 1 ? <ArrowRight className="size-4 shrink-0 text-[#8b6a2f] transition group-hover:translate-x-0.5" aria-hidden="true" /> : null}
               </Link>
             ))}
           </div>
-        </div>
+        </section>
       </section>
 
-      <section className="mt-5 grid gap-7 rounded-[30px] border border-[#f2e8ce] bg-gradient-to-r from-[#fffdf7] via-[#fff9e8] to-[#fff2c9] p-6 sm:p-8 lg:grid-cols-[minmax(230px,1fr)_minmax(0,2.8fr)] lg:items-center" aria-labelledby="process-title">
+      <section className="mt-8 grid gap-7 rounded-[30px] border border-[#f2e8ce] bg-gradient-to-r from-[#fffdf7] via-[#fff9e8] to-[#fff2c9] p-6 sm:p-8 lg:mt-10 lg:grid-cols-[minmax(230px,1fr)_minmax(0,2.8fr)] lg:items-center" aria-labelledby="process-title">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#8a6423]">How it works <span className="ml-2 inline-block h-px w-6 align-middle bg-[#e6ba48]" /></p>
           <h2 id="process-title" className="mt-2 text-3xl font-extrabold leading-[1.05] tracking-[-0.05em] text-[#161616]">From Problem<br className="hidden lg:block" /> to Action</h2>

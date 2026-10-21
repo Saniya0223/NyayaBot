@@ -303,7 +303,7 @@ export default function ChatInterface({
     <section className="flex h-full min-h-[620px] flex-col overflow-hidden rounded-[26px] border border-[#ebe6dc] bg-white paper-shadow" aria-label="Conversation with NyayaBot">
       <header className="flex items-center justify-between border-b border-[#eee8dd] px-4 py-3.5 sm:px-5">
         <div className="flex items-center gap-3">
-          <Image src="/nyayabot-mascot-avatar-v2.png" alt="NyayaBot mascot" width={44} height={44} className="size-11 shrink-0 rounded-full border border-[#f1dc9e] object-cover" />
+          <Image src="/nyayabot-voice-orb.png" alt="NyayaBot mascot" width={44} height={44} className="size-11 shrink-0 rounded-full border border-[#f1dc9e] object-cover" />
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-bold text-[#222222]">Ask NyayaBot</h2>

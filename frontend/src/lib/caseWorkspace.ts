@@ -14,11 +14,18 @@ const factualLabels: Record<string, string> = {
   eviction_proceeding_started: 'Eviction proceeding started',
   formal_proceeding_started: 'Formal proceeding started',
   court_notice_received: 'Court or tribunal notice received',
+  issue_description: 'Situation', threat_details: 'Incident details',
+  police_contacted: 'Police contacted', police_approached: 'Police approached',
+  police_station_name: 'Police station', written_complaint_available: 'Written complaint available',
+  evidence_available: 'Incident evidence available', repeated_incidents: 'Repeated incidents',
+  immediate_danger: 'Immediate danger reported',
 };
 
-function recordedSource(source: string): boolean {
+function recordedSource(source: string, confirmed?: boolean): boolean {
   return source === 'chat' || source.endsWith('_chat') || source === 'document_confirmation'
-    || source === 'user_conflict_confirmation' || source.startsWith('upload:');
+    || source === 'user_conflict_confirmation' || source.startsWith('upload:')
+    || source === 'deterministic_backfill'
+    || (source === 'deterministic_safety_triage' && confirmed === true);
 }
 
 export function caseTypeLabel(profile: StructuredCaseProfile): string {
@@ -30,7 +37,7 @@ export function caseTypeLabel(profile: StructuredCaseProfile): string {
 export function keyFacts(profile: StructuredCaseProfile): Array<{ key: string; text: string }> {
   return Object.entries(factualLabels).flatMap(([key, label]) => {
     const metadata = profile.fact_metadata?.[key];
-    if (!metadata || !recordedSource(metadata.source) || ((metadata.confidence ?? 0) < 0.75 && !metadata.confirmed)) return [];
+    if (!metadata || !recordedSource(metadata.source, metadata.confirmed) || ((metadata.confidence ?? 0) < 0.75 && !metadata.confirmed)) return [];
     const value = key in profile ? profile[key as keyof StructuredCaseProfile] : profile.key_facts?.[key];
     if (value === null || value === undefined || value === '' || (Array.isArray(value) && !value.length)) return [];
     if (JSON.stringify(value) !== JSON.stringify(metadata.value)) return [];

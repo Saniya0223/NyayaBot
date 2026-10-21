@@ -64,6 +64,9 @@ function CaseWorkspaceContent({ profile, onTriggerDocumentModal, onEvidenceRevie
 
   const facts = profile ? keyFacts(profile) : [];
   const laws = profile?.legal_sources ?? [];
+  const rights = profile?.rights_summary;
+  const hasRights = Boolean(rights?.what_this_means || rights?.possible_rights?.length || rights?.sources?.length);
+  const workflowStages = profile?.legal_journey ?? [];
   const provided = profile?.provided_documents ?? [];
   const generated = profile?.documents ?? [];
   const documentCount = provided.length + generated.length;
@@ -123,7 +126,14 @@ function CaseWorkspaceContent({ profile, onTriggerDocumentModal, onEvidenceRevie
               {law.source_url ? <a href={law.source_url} target="_blank" rel="noreferrer" className="mt-1 inline-block font-semibold text-[#2d6d53] hover:underline">View source{law.source_authority ? ` · ${law.source_authority}` : ''}</a> : null}
             </div>
           </details>
-        ))}</div> : <p className="mt-2 text-[11px] leading-5 text-[#999187]">Relevant laws will appear once identified for this case.</p>}
+        ))}</div> : !hasRights ? <p className="mt-2 text-[11px] leading-5 text-[#999187]">Relevant laws will appear once identified for this case.</p> : null}
+        {hasRights ? <div className="mt-3 space-y-2 text-[11px] leading-5 text-[#6a655e]">
+          <p className="text-[10px] font-semibold text-[#9d6b00]">General guidance for this case type</p>
+          {rights?.what_this_means ? <p>{rights.what_this_means}</p> : null}
+          {rights?.possible_rights?.length ? <ul className="list-disc space-y-1 pl-4">{rights.possible_rights.map((right) => <li key={right}>{right}</li>)}</ul> : null}
+          {rights?.sources?.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer" className="block font-semibold text-[#2d6d53] hover:underline">{source.title} · {source.authority}</a>)}
+          {!laws.length ? <p className="text-[10px] text-[#999187]">Case-specific statutory provisions have not been retrieved. The links above are general official references.</p> : null}
+        </div> : null}
       </section>
 
       <section className="mt-3 rounded-2xl border border-[#ebe5da] p-4" aria-label="Case documents">
@@ -138,6 +148,15 @@ function CaseWorkspaceContent({ profile, onTriggerDocumentModal, onEvidenceRevie
 
       <section className="mt-3 rounded-2xl border border-[#ebe5da] p-4" aria-label="Legal journey">
         <h3 className="flex items-center gap-2 text-xs font-bold text-[#303030]"><BookOpen className="size-4 text-[#9d6b00]" />Legal journey{journey.length ? <span className="font-medium text-[#999187]">{journey.length}</span> : null}</h3>
+        {workflowStages.length ? <details className="mt-3 rounded-xl bg-[#fdfbf6] p-3" open>
+          <summary className="cursor-pointer text-[11px] font-semibold text-[#383530]">Workflow guide</summary>
+          <p className="mt-1 text-[10px] leading-4 text-[#999187]">These stages show the possible path, not proof that an action has happened.</p>
+          <ol className="mt-3 space-y-3">{workflowStages.map((stage) => <li key={stage.id} className={`border-l-2 pl-3 ${stage.is_current ? 'border-[#d8b54d]' : 'border-[#e9e3d7]'}`}>
+            <p className={`text-[11px] font-semibold ${stage.is_current ? 'text-[#8a651c]' : 'text-[#6a655e]'}`}>{stage.title}</p>
+            <p className="text-[10px] text-[#999187]">{stage.is_current ? 'Current focus' : 'Workflow stage'}</p>
+            {stage.description ? <p className="mt-1 text-[10px] leading-4 text-[#817b72]">{stage.description}</p> : null}
+          </li>)}</ol>
+        </details> : null}
         {journey.length ? <ol className="mt-3 space-y-2">{journey.map((event) => (
           <li key={event.id} className="border-l-2 border-[#d8b54d] pl-3">
             <details>

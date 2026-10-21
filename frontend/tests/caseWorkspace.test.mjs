@@ -46,6 +46,37 @@ test('journey contains actual recorded events and generated files, never planned
   assert.equal(journeyEvents(value)[0].origin, 'reported');
 });
 
+test('police workspace shows recorded police and confirmed safety facts', () => {
+  const value = profile({
+    category: 'POLICE_COMPLAINT', police_station_name: 'Central station',
+    key_facts: { police_contacted: true, threat_details: 'Repeated threats', evidence_available: false },
+    fact_metadata: {
+      police_station_name: { value: 'Central station', source: 'deterministic_backfill', confidence: 0.9 },
+      police_contacted: { value: true, source: 'groq_chat', confidence: 0.95 },
+      threat_details: { value: 'Repeated threats', source: 'deterministic_safety_triage', confidence: 1, confirmed: true },
+      evidence_available: { value: false, source: 'deterministic_safety_triage', confidence: 1, confirmed: true },
+    },
+  });
+  const facts = keyFacts(value);
+  assert.equal(facts.length, 4);
+  assert.ok(facts.some((fact) => fact.text === 'Police contacted: Yes'));
+  assert.ok(facts.some((fact) => fact.text === 'Incident evidence available: No'));
+  assert.ok(facts.some((fact) => fact.text === 'Police station: Central station'));
+  assert.ok(facts.some((fact) => fact.text === 'Incident details: Repeated threats'));
+});
+
+test('unconfirmed triage, weak backfill and mismatched police facts stay hidden', () => {
+  const value = profile({
+    key_facts: { threat_details: 'Unconfirmed', police_contacted: true, evidence_available: true },
+    fact_metadata: {
+      threat_details: { value: 'Unconfirmed', source: 'deterministic_safety_triage', confidence: 1 },
+      police_contacted: { value: true, source: 'deterministic_backfill', confidence: 0.5 },
+      evidence_available: { value: false, source: 'groq_chat', confidence: 1 },
+    },
+  });
+  assert.deepEqual(keyFacts(value), []);
+});
+
 test('suggestions come from backend state and do not imply completed actions', () => {
   const value = profile({
     key_facts: { product_name: 'Phone' },
