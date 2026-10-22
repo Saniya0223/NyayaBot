@@ -226,8 +226,6 @@ export default function VoiceChatOrb({ isOpen, isSending, caseId, draftText, onO
     }
     playbackProviderRef.current = 'browser';
     const spokenLanguage = /[\u0900-\u097f]/.test(text) ? 'hi-IN' : 'en-IN';
-    const voices = window.speechSynthesis.getVoices();
-    const matchingVoice = voices.find((voice) => voice.lang.toLowerCase() === spokenLanguage.toLowerCase());
     const chunks = speechChunks(text);
     let index = 0;
     const playNext = () => {
@@ -239,6 +237,17 @@ export default function VoiceChatOrb({ isOpen, isSending, caseId, draftText, onO
       const utterance = new SpeechSynthesisUtterance(chunks[index++]);
       utterance.lang = spokenLanguage;
       utterance.rate = 0.95;
+      // Browsers expose no gender field; prefer known female voices by name.
+      // Refresh for each chunk because some browsers load their voices lazily.
+      const voices = window.speechSynthesis.getVoices();
+      const language = spokenLanguage.toLowerCase();
+      const sameLanguage = voices.filter((voice) => voice.lang.toLowerCase().split('-')[0] === language.split('-')[0]);
+      const isFemale = (voice: SpeechSynthesisVoice) =>
+        /\b(female|heera|kalpana|swara|neerja|zira|hazel|susan|samantha|victoria|karen|moira|tessa|veena)\b/i.test(voice.name);
+      const matchingVoice = sameLanguage.find((voice) => voice.lang.toLowerCase() === language && isFemale(voice))
+        ?? sameLanguage.find(isFemale)
+        ?? sameLanguage.find((voice) => voice.lang.toLowerCase() === language)
+        ?? sameLanguage[0];
       if (matchingVoice) utterance.voice = matchingVoice;
       utterance.onend = () => { if (playbackSessionRef.current === session && speechRef.current === utterance) playNext(); };
       utterance.onerror = () => {
