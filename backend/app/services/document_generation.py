@@ -12,7 +12,7 @@ FIELD_LABELS = {
     "complainant_pin_code": "Your PIN code", "complainant_phone": "Your phone number",
     "recipient_name": "Recipient name", "opposite_party_name": "Other party name",
     "police_station_name": "Police station", "bank_name": "Bank / payment app",
-    "disputed_amount": "Amount claimed", "incident_narrative": "What happened / purpose of the document",
+    "disputed_amount": "Amount claimed", "incident_narrative": "Draft statement of facts (review and edit)",
     "property_address": "Rented property address", "vacating_date": "Vacating / handover date",
     "incident_date": "Incident date", "transaction_id": "Transaction ID",
 }

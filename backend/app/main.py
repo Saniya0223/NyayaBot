@@ -62,6 +62,7 @@ from app.schemas.document import (
 )
 from app.schemas.fact_graph import EvidenceItem, FactGraphSchema, FinancialBreakdown, PartyInfo
 from app.services.doc_generator import doc_generator
+from app.services.document_narrative import draft_document_narrative
 from app.services.document_registry import (
     list_document_definitions,
 )
@@ -582,8 +583,7 @@ def _document_context(db: Session, case_id: str, current_user: UserModel):
     ).first()
     profile = _load_chat_profile(chat_record) if chat_record else None
     if profile:
-        messages = _messages_for_session(chat_record)
-        narrative = "\n".join(message.text for message in messages if message.sender == "user") or profile.title
+        narrative = draft_document_narrative(profile)
         facts = _profile_to_fact_graph(profile, narrative)
     elif case.fact_graph:
         stored = case.fact_graph
